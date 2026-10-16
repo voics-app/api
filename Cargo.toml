@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+publish = false
+rust-version = "1.85"
+
+[workspace.dependencies]
+domain = { path = "crates/domain" }
+application = { path = "crates/application" }
+contracts = { path = "crates/contracts" }
+infrastructure = { path = "crates/infrastructure" }
+interface = { path = "crates/interface" }
+
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+argon2 = "0.5"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+ed25519-dalek = { version = "2", features = ["pkcs8", "pem", "rand_core"] }
+hex = "0.4"
+hmac = "0.12"
+http = "1"
+jsonwebtoken = "9"
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
+opentelemetry = "0.27"
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "reqwest-client", "trace"] }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+rand = "0.8"
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager", "script"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rskafka = { version = "0.5", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["postgres"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "net"] }
+totp-rs = "5"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "request-id", "util"] }
+tracing = "0.1"
+tracing-opentelemetry = "0.28"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
