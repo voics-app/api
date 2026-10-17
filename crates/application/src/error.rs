@@ -18,6 +18,7 @@ pub enum Resource {
     Invite,
     KeyPackage,
     Member,
+    Message,
     Overwrite,
     Role,
     User,

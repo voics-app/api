@@ -20,6 +20,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, channel_id: Snowflake) -> App
         .publish(DomainEvent::TypingStart {
             channel_id,
             guild_id: access.channel.guild_id,
+            recipient_ids: access.channel.recipient_ids.clone(),
             user_id: actor.user_id,
             timestamp: ports.clock.now(),
             member,

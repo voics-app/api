@@ -77,12 +77,20 @@ pub trait AssetStorage: Send + Sync {
     async fn put(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> AppResult<()>;
 }
 
+/// A message as stored by the `messages` service.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredMessage {
+    pub id: Snowflake,
+    /// The full Discord-shaped message object.
+    pub body: Value,
+}
+
 /// Messages are owned by the `messages` service.
 #[async_trait]
 pub trait MessageService: Send + Sync {
-    /// Creates a message on behalf of a bot, webhook or interaction; returns its id.
-    async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<Snowflake>;
-    async fn edit(&self, channel_id: Snowflake, message_id: Snowflake, patch: Value) -> AppResult<()>;
+    /// Creates a message on behalf of a bot, webhook or interaction.
+    async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage>;
+    async fn edit(&self, channel_id: Snowflake, message_id: Snowflake, patch: Value) -> AppResult<StoredMessage>;
     async fn delete(&self, channel_id: Snowflake, message_id: Snowflake) -> AppResult<()>;
 }
 

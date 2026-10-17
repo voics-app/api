@@ -4,12 +4,14 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use domain::application::Interaction;
 use domain::audit::AuditLogEntry;
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
 use domain::emoji::Emoji;
 use domain::guild::{Guild, GuildSnapshot, MemberProfile, Role};
 use domain::invite::Invite;
+use domain::permissions::Permissions;
 use domain::relationship::RelationshipType;
 use domain::user::{User, UserSettings};
 use domain::Snowflake;
@@ -65,6 +67,8 @@ pub enum DomainEvent {
     TypingStart {
         channel_id: Snowflake,
         guild_id: Option<Snowflake>,
+        /// Participants of a DM or group DM (empty for guild channels).
+        recipient_ids: Vec<Snowflake>,
         user_id: Snowflake,
         timestamp: DateTime<Utc>,
         member: Option<Box<MemberProfile>>,
@@ -74,9 +78,13 @@ pub enum DomainEvent {
     InteractionCreate {
         application_id: Snowflake,
         bot_user_id: Snowflake,
-        guild_id: Option<Snowflake>,
-        channel_id: Snowflake,
-        payload: Value,
+        interaction: Interaction,
+        /// The raw interaction token; only its hash is stored.
+        token: String,
+        /// The bot's permissions in the channel.
+        app_permissions: Permissions,
+        user: User,
+        member: Option<Box<MemberProfile>>,
     },
     /// Sent back to the invoking user (modal or autocomplete result).
     InteractionUserNotice {
