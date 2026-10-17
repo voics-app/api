@@ -1,6 +1,15 @@
+pub mod applications;
+pub mod audit;
 pub mod auth;
+pub mod bans;
 pub mod channels;
+pub mod commands;
 pub mod devices;
+pub mod emojis;
 pub mod guilds;
+pub mod invites;
+pub mod members;
 pub mod relationships;
+pub mod roles;
 pub mod users;
+pub mod voice;
