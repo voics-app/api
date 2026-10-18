@@ -16,13 +16,16 @@ use application::use_cases::applications::list_applications;
 use application::use_cases::applications::reset_bot_token;
 use application::use_cases::applications::update_application::{self, UpdateApplicationInput};
 use application::use_cases::commands::command_rules::CommandInput;
+use application::use_cases::commands::guild_command_index;
 use application::use_cases::commands::{
     create_command, delete_command, get_command, list_commands, overwrite_commands, update_command,
 };
 use application::use_cases::interactions::create_interaction::{self, CreateInteractionInput};
 use application::use_cases::interactions::respond_to_interaction::{self, InteractionResponse};
 use application::Resource;
-use contracts::objects::{ApplicationCommandDto, ApplicationDto, GuildDto, UserDto};
+use contracts::objects::{
+    ApplicationCommandDto, ApplicationDto, CommandIndexDto, GuildDto, UserDto,
+};
 use contracts::requests::{
     ApplicationCommandRequest, CreateApplicationRequest, CreateInteractionRequest,
     InteractionResponseRequest, ModifyApplicationRequest, OAuth2AuthorizeRequest,
@@ -172,6 +175,25 @@ async fn commands(
     Ok(Json(
         found.iter().map(ApplicationCommandDto::from).collect(),
     ))
+}
+
+#[derive(Deserialize)]
+struct GuildPath {
+    id: String,
+}
+
+async fn command_index(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(path): Path<GuildPath>,
+) -> Result<Json<CommandIndexDto>, ApiError> {
+    let index =
+        guild_command_index::execute(&state.ports, &actor, snowflake(&path.id, Resource::Guild)?)
+            .await?;
+    Ok(Json(CommandIndexDto::new(
+        &index.applications,
+        &index.commands,
+    )))
 }
 
 #[derive(Deserialize)]
@@ -386,6 +408,7 @@ pub fn routes() -> Router<AppState> {
                 .patch(command_modify)
                 .delete(command_remove),
         )
+        .route("/guilds/{id}/application-command-index", get(command_index))
         .route("/oauth2/authorize", get(authorize_info).post(authorize))
         .route("/interactions", post(create_interaction_handler))
         .route("/interactions/{id}/{token}/callback", post(callback))
