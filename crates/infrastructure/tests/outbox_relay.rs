@@ -5,6 +5,7 @@
 mod support;
 
 use std::net::TcpListener;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rskafka::client::partition::UnknownTopicHandling;
@@ -99,7 +100,7 @@ async fn relay_publishes_committed_envelopes_to_redpanda() {
     let publisher = KafkaPublisher::connect(brokers.clone())
         .await
         .expect("publisher");
-    let relay = OutboxRelay::new(database.pool.clone(), publisher);
+    let relay = OutboxRelay::new(database.pool.clone(), Arc::new(publisher));
     let relayed = relay.relay_batch().await.expect("relay");
     assert_eq!(relayed, 1);
 

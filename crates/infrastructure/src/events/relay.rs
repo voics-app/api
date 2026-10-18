@@ -1,6 +1,7 @@
 //! Outbox relay: publishes unsent rows to Redpanda and marks them sent.
 //! Delivery is at-least-once; consumers deduplicate on the envelope `id`.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::PgPool;
@@ -16,11 +17,11 @@ const ERROR_BACKOFF: Duration = Duration::from_secs(2);
 
 pub struct OutboxRelay {
     pool: PgPool,
-    publisher: KafkaPublisher,
+    publisher: Arc<KafkaPublisher>,
 }
 
 impl OutboxRelay {
-    pub fn new(pool: PgPool, publisher: KafkaPublisher) -> Self {
+    pub fn new(pool: PgPool, publisher: Arc<KafkaPublisher>) -> Self {
         Self { pool, publisher }
     }
 
