@@ -20,7 +20,7 @@ fn data_uri(content_type: &str, bytes: usize) -> String {
 }
 
 #[tokio::test]
-async fn image_routes_accept_seven_mib_and_reject_nine_mib_with_400() {
+async fn image_routes_accept_ten_mib_and_reject_eleven_mib_with_400() {
     let database = start_database().await;
     let (private, public) = jwt_keys();
     let app = interface::router(AppState {
@@ -62,23 +62,23 @@ async fn image_routes_accept_seven_mib_and_reject_nine_mib_with_400() {
         Method::PATCH,
         &guild_path,
         &token,
-        Some(json!({"icon": data_uri("image/gif", 7 * MIB)})),
+        Some(json!({"icon": data_uri("image/gif", 10 * MIB)})),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "a 7 MiB GIF icon is accepted");
+    assert_eq!(status, StatusCode::OK, "a 10 MiB GIF icon is accepted");
 
     let (status, body) = call(
         &app,
         Method::PATCH,
         &guild_path,
         &token,
-        Some(json!({"icon": data_uri("image/gif", 9 * MIB)})),
+        Some(json!({"icon": data_uri("image/gif", 11 * MIB)})),
     )
     .await;
     assert_eq!(
         status,
         StatusCode::BAD_REQUEST,
-        "a 9 MiB icon is a validation error, not a dropped connection"
+        "an 11 MiB icon is a validation error, not a dropped connection"
     );
     assert!(body.to_string().contains("BINARY_TYPE_MAX_SIZE"), "{body}");
 

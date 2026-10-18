@@ -1,8 +1,8 @@
 use crate::context::Ports;
 use crate::error::{AppError, AppResult};
 
-/// 8 MiB upper bound for avatars and icons.
-pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+/// 10 MiB upper bound for avatars, icons and banners.
+pub const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
 
 /// A decoded image from a Discord-style data URI.
 #[derive(Debug, Clone, PartialEq, Eq)]
