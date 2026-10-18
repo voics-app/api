@@ -36,4 +36,7 @@ uuid.workspace = true
 [dev-dependencies]
 axum.workspace = true
 testcontainers.workspace = true
+interface.workspace = true
+http-body-util.workspace = true
+tower.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
