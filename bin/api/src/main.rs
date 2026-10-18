@@ -2,13 +2,13 @@
 //! the application ports, starts the outbox relay and serves HTTP.
 
 mod config;
+mod telemetry;
 
 use std::error::Error;
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tracing_subscriber::EnvFilter;
 
 use application::{Ports, Settings, VoiceRegion};
 use config::Config;
@@ -26,6 +26,7 @@ use infrastructure::storage::MinioAssets;
 use infrastructure::system::clock::SystemClock;
 use infrastructure::system::ids::SnowflakeIds;
 use interface::state::{AppState, RatePolicy};
+use telemetry::Telemetry;
 
 const DATABASE_MAX_CONNECTIONS: u32 = 16;
 
@@ -38,23 +39,22 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    init_tracing(&config.log_level);
-    match run(config).await {
+    let telemetry = match Telemetry::install(&config.log_level, config.otlp_endpoint.as_ref()) {
+        Ok(telemetry) => telemetry,
+        Err(error) => {
+            eprintln!("telemetry error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let outcome = run(config).await;
+    telemetry.shutdown();
+    match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "api stopped with an error");
             ExitCode::FAILURE
         }
     }
-}
-
-fn init_tracing(level: &str) {
-    let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .json()
-        .with_target(false)
-        .init();
 }
 
 async fn run(config: Config) -> Result<(), Box<dyn Error>> {
@@ -123,7 +123,15 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     };
     let listener = TcpListener::bind(config.bind_addr).await?;
     tracing::info!(addr = %config.bind_addr, "api listening");
-    axum::serve(listener, interface::router(state))
+    let metrics = telemetry::prometheus()?;
+    let app = interface::router(state).route(
+        "/metrics",
+        axum::routing::get(move || {
+            let metrics = metrics.clone();
+            async move { metrics.render() }
+        }),
+    );
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())

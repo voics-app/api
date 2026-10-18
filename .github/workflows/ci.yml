@@ -1,0 +1,19 @@
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  rust:
+    uses: discordy-voics/.github/.github/workflows/rust.yml@main
+    with:
+      description: Discordy REST API (Rust)
+
+  docker:
+    needs: rust
+    uses: discordy-voics/.github/.github/workflows/docker.yml@main
+    with:
+      image-name: ghcr.io/discordy-voics/api
+      description: Discordy REST API
