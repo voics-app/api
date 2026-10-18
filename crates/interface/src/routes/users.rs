@@ -98,6 +98,7 @@ async fn update_settings_handler(
 ) -> Result<Json<UserSettingsDto>, ApiError> {
     let input = UpdateSettingsInput {
         default_delivery_mode: body.default_delivery_mode,
+        e2ee_calls_default: body.e2ee_calls_default,
         theme: body.theme,
         locale: body.locale,
         status: body.status,

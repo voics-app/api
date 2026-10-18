@@ -61,6 +61,7 @@ impl From<UserRow> for User {
 struct SettingsRow {
     user_id: i64,
     default_delivery_mode: String,
+    e2ee_calls_default: bool,
     theme: String,
     locale: String,
     status: String,
@@ -74,6 +75,7 @@ impl From<SettingsRow> for UserSettings {
         UserSettings {
             user_id: sf(row.user_id),
             default_delivery_mode: mode(&row.default_delivery_mode),
+            e2ee_calls_default: row.e2ee_calls_default,
             theme: Theme::parse(&row.theme).unwrap_or_default(),
             locale: row.locale,
             status: PresenceStatus::parse(&row.status).unwrap_or_default(),
@@ -85,7 +87,7 @@ impl From<SettingsRow> for UserSettings {
 }
 
 const SETTINGS_COLUMNS: &str =
-    "user_id, default_delivery_mode, theme, locale, status, custom_status, developer_mode, accent_color";
+    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color";
 
 #[async_trait]
 impl UserRepository for PgStore {
