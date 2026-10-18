@@ -39,7 +39,10 @@ pub async fn execute(
     };
     let message = ports
         .messages
-        .create(interaction.channel_id, compose(Some(data), origin, true)?)
+        .create(
+            interaction.channel_id,
+            compose(interaction.channel_id, Some(data), origin, true)?,
+        )
         .await?;
     let mut writes = WriteSet::new();
     writes.mutate(Mutation::UpdateInteraction {

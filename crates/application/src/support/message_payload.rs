@@ -115,6 +115,62 @@ fn require_body(fields: &Map<String, Value>) -> AppResult<()> {
     }
 }
 
+/// Whether `raw` names an upload made for `channel_id` by the presign step,
+/// shaped `attachments/{channel_id}/{attachment_id}/{filename}`.
+fn is_upload_key(raw: &str, channel_id: Snowflake) -> bool {
+    let mut parts = raw.splitn(4, '/');
+    let (Some("attachments"), Some(channel), Some(attachment), Some(filename)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    channel == channel_id.to_string()
+        && attachment.parse::<Snowflake>().is_ok()
+        && !filename.is_empty()
+        && !filename.contains('/')
+}
+
+fn unknown_upload() -> AppError {
+    AppError::invalid(
+        "attachments",
+        "UNKNOWN_UPLOAD_REFERENCE",
+        "Unknown attachment upload.",
+    )
+}
+
+/// Translates client attachment references into messages' upload-reference
+/// shape, rejecting any that do not name an upload made to this channel.
+fn upload_references(channel_id: Snowflake, raw: Value) -> AppResult<Value> {
+    let Value::Array(references) = raw else {
+        return Err(unknown_upload());
+    };
+    references
+        .iter()
+        .map(|reference| upload_reference(channel_id, reference))
+        .collect::<AppResult<Vec<_>>>()
+        .map(Value::Array)
+}
+
+fn upload_reference(channel_id: Snowflake, raw: &Value) -> AppResult<Value> {
+    let object = raw.as_object().ok_or_else(unknown_upload)?;
+    let uploaded = object
+        .get("uploaded_filename")
+        .and_then(Value::as_str)
+        .filter(|key| is_upload_key(key, channel_id))
+        .ok_or_else(unknown_upload)?;
+    let mut reference = Map::new();
+    reference.insert(
+        "uploaded_filename".to_owned(),
+        Value::String(uploaded.to_owned()),
+    );
+    for key in ["id", "filename"] {
+        if let Some(value) = object.get(key).filter(|value| !value.is_null()) {
+            reference.insert(key.to_owned(), value.clone());
+        }
+    }
+    Ok(Value::Object(reference))
+}
+
 fn is_ephemeral(fields: &Map<String, Value>) -> bool {
     fields
         .get("flags")
@@ -124,7 +180,12 @@ fn is_ephemeral(fields: &Map<String, Value>) -> bool {
 
 /// A new message: sanitized `data` plus its origin. `needs_body` rejects
 /// messages without content, embeds, components or attachments.
-pub fn compose(data: Option<Value>, origin: MessageOrigin, needs_body: bool) -> AppResult<Value> {
+pub fn compose(
+    channel_id: Snowflake,
+    data: Option<Value>,
+    origin: MessageOrigin,
+    needs_body: bool,
+) -> AppResult<Value> {
     let is_webhook = origin.webhook_id.is_some();
     let allowed: Vec<&str> = if is_webhook {
         CREATE_FIELDS
@@ -136,6 +197,11 @@ pub fn compose(data: Option<Value>, origin: MessageOrigin, needs_body: bool) -> 
         CREATE_FIELDS.to_vec()
     };
     let mut fields = keep_only(object(data)?, &allowed);
+    if let Some(references) = fields.get_mut("attachments") {
+        if !references.is_null() {
+            *references = upload_references(channel_id, references.take())?;
+        }
+    }
     validate(&fields)?;
     if needs_body {
         require_body(&fields)?;
@@ -182,6 +248,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn channel() -> Snowflake {
+        Snowflake::new(100)
+    }
+
     fn bot_origin() -> MessageOrigin {
         MessageOrigin {
             author_id: Some(Snowflake::new(1)),
@@ -195,6 +265,7 @@ mod tests {
     #[test]
     fn interaction_bodies_have_exactly_the_pinned_fields() {
         let message = compose(
+            channel(),
             Some(json!({
                 "content": "hi",
                 "id": "forged",
@@ -223,6 +294,7 @@ mod tests {
             ..Default::default()
         };
         let message = compose(
+            channel(),
             Some(json!({"content": "hi", "avatar_url": "https://cdn.test/a.png"})),
             origin.clone(),
             true,
@@ -240,6 +312,7 @@ mod tests {
         );
 
         let custom = compose(
+            channel(),
             Some(json!({"content": "hi", "username": "Custom"})),
             origin,
             true,
@@ -249,27 +322,76 @@ mod tests {
     }
 
     #[test]
-    fn references_and_attachments_pass_through() {
+    fn message_references_pass_through() {
         let message = compose(
+            channel(),
             Some(json!({
                 "content": "re",
                 "message_reference": {"message_id": "5"},
-                "attachments": [{"uploaded_filename": "attachments/1/2/a.png"}],
             })),
             bot_origin(),
             true,
         )
         .unwrap();
         assert_eq!(message["message_reference"], json!({"message_id": "5"}));
+    }
+
+    #[test]
+    fn client_attachments_map_to_upload_references() {
+        let message = compose(
+            channel(),
+            Some(json!({
+                "content": "pic",
+                "attachments": [{
+                    "id": "5",
+                    "filename": "cat.png",
+                    "uploaded_filename": "attachments/100/5/cat.png",
+                    "size": 12
+                }],
+            })),
+            bot_origin(),
+            true,
+        )
+        .unwrap();
         assert_eq!(
-            message["attachments"][0]["uploaded_filename"],
-            "attachments/1/2/a.png"
+            message["attachments"],
+            json!([{
+                "id": "5",
+                "filename": "cat.png",
+                "uploaded_filename": "attachments/100/5/cat.png"
+            }])
         );
+    }
+
+    #[test]
+    fn attachments_without_a_known_upload_for_this_channel_are_rejected() {
+        let rejected = [
+            json!({"id": "5", "filename": "cat.png"}),
+            json!({"uploaded_filename": "attachments/101/5/cat.png"}),
+            json!({"uploaded_filename": "avatars/100/5/cat.png"}),
+            json!({"uploaded_filename": "attachments/100/x/cat.png"}),
+            json!({"uploaded_filename": "attachments/100/5/"}),
+            json!({"uploaded_filename": "attachments/100/5/dir/cat.png"}),
+            json!("attachments/100/5/cat.png"),
+        ];
+        for attachment in rejected {
+            let result = compose(
+                channel(),
+                Some(json!({"content": "x", "attachments": [attachment.clone()]})),
+                bot_origin(),
+                true,
+            );
+            assert!(
+                matches!(result, Err(AppError::Validation(_))),
+                "{attachment} should be rejected with 50035"
+            );
+        }
     }
 
     #[test]
     fn ephemeral_replies_name_only_the_invoker() {
         let ephemeral = compose(
+            channel(),
             Some(json!({"content": "x", "flags": 64})),
             bot_origin(),
             true,
@@ -278,18 +400,24 @@ mod tests {
         assert_eq!(ephemeral["flags"], 64);
         assert_eq!(ephemeral["target_user_ids"], json!(["9"]));
 
-        let public = compose(Some(json!({"content": "x"})), bot_origin(), true).unwrap();
+        let public = compose(channel(), Some(json!({"content": "x"})), bot_origin(), true).unwrap();
         assert!(public.get("target_user_ids").is_none());
     }
 
     #[test]
     fn rejects_empty_and_oversized_bodies() {
         let origin = MessageOrigin::default();
-        assert!(compose(Some(json!({})), origin.clone(), true).is_err());
-        assert!(compose(Some(json!({})), origin.clone(), false).is_ok());
+        assert!(compose(channel(), Some(json!({})), origin.clone(), true).is_err());
+        assert!(compose(channel(), Some(json!({})), origin.clone(), false).is_ok());
         let long = "x".repeat(MAX_CONTENT_CHARS + 1);
-        assert!(compose(Some(json!({ "content": long })), origin.clone(), true).is_err());
-        assert!(compose(Some(json!("text")), origin, true).is_err());
+        assert!(compose(
+            channel(),
+            Some(json!({ "content": long })),
+            origin.clone(),
+            true
+        )
+        .is_err());
+        assert!(compose(channel(), Some(json!("text")), origin, true).is_err());
     }
 
     #[test]

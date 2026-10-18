@@ -24,7 +24,10 @@ pub async fn execute(
         };
         return ports
             .messages
-            .create(webhook.channel_id, compose(Some(data), origin, true)?)
+            .create(
+                webhook.channel_id,
+                compose(webhook.channel_id, Some(data), origin, true)?,
+            )
             .await;
     }
     let interaction = followup_interaction(ports, id, token).await?;
@@ -42,6 +45,9 @@ pub async fn execute(
     };
     ports
         .messages
-        .create(interaction.channel_id, compose(Some(data), origin, true)?)
+        .create(
+            interaction.channel_id,
+            compose(interaction.channel_id, Some(data), origin, true)?,
+        )
         .await
 }
