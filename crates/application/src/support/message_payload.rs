@@ -236,9 +236,15 @@ pub fn compose(
     Ok(Value::Object(body))
 }
 
-/// A partial update to an existing message.
-pub fn edit_patch(data: Option<Value>) -> AppResult<Value> {
-    let fields = keep_only(object(data)?, &EDIT_FIELDS);
+/// A partial update to an existing message. Attachments are mapped exactly as
+/// on create, so only uploads made to `channel_id` are accepted.
+pub fn edit_patch(channel_id: Snowflake, data: Option<Value>) -> AppResult<Value> {
+    let mut fields = keep_only(object(data)?, &EDIT_FIELDS);
+    if let Some(references) = fields.get_mut("attachments") {
+        if !references.is_null() {
+            *references = upload_references(channel_id, references.take())?;
+        }
+    }
     validate(&fields)?;
     Ok(Value::Object(fields))
 }
@@ -422,7 +428,48 @@ mod tests {
 
     #[test]
     fn edit_patch_drops_identity_fields() {
-        let patch = edit_patch(Some(json!({"content": "new", "author_id": "9"}))).unwrap();
+        let patch =
+            edit_patch(channel(), Some(json!({"content": "new", "author_id": "9"}))).unwrap();
         assert_eq!(patch, json!({"content": "new"}));
+    }
+
+    #[test]
+    fn edit_patch_maps_attachments_like_create() {
+        let attachment = json!({
+            "id": "5",
+            "filename": "cat.png",
+            "uploaded_filename": "attachments/100/5/cat.png",
+            "size": 12
+        });
+        let patch = edit_patch(
+            channel(),
+            Some(json!({"content": "pic", "attachments": [attachment.clone()]})),
+        )
+        .unwrap();
+        let created = compose(
+            channel(),
+            Some(json!({"content": "pic", "attachments": [attachment]})),
+            bot_origin(),
+            true,
+        )
+        .unwrap();
+        assert_eq!(patch["attachments"], created["attachments"]);
+        assert_eq!(
+            patch["attachments"],
+            json!([{
+                "id": "5",
+                "filename": "cat.png",
+                "uploaded_filename": "attachments/100/5/cat.png"
+            }])
+        );
+    }
+
+    #[test]
+    fn edit_patch_rejects_attachments_without_a_channel_upload() {
+        let result = edit_patch(
+            channel(),
+            Some(json!({"attachments": [{"id": "5", "filename": "cat.png"}]})),
+        );
+        assert!(matches!(result, Err(AppError::Validation(_))));
     }
 }

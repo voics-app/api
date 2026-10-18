@@ -74,7 +74,7 @@ pub async fn execute(
                 .source_message_id
                 .ok_or(InteractionError::InvalidCallback)?;
             if callback == CallbackKind::UpdateMessage {
-                let patch = edit_patch(response.data)?;
+                let patch = edit_patch(interaction.channel_id, response.data)?;
                 ports
                     .messages
                     .edit(interaction.channel_id, source, patch)
