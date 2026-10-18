@@ -46,8 +46,8 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: CreateInteractionInput
     }
 
     let app_permissions = match &access.guild {
-        Some(_) => {
-            let bot = GuildContext::load(ports, access.channel.guild_id.unwrap_or_default(), application.bot_user_id).await?;
+        Some(guild) => {
+            let bot = GuildContext::load(ports, guild.guild.id, application.bot_user_id).await?;
             bot.channel_permissions(&access.channel, access.parent.as_ref())
         }
         None => PRIVATE_CHANNEL_PERMISSIONS,
