@@ -17,6 +17,7 @@ use infrastructure::events::kafka::KafkaPublisher;
 use infrastructure::events::relay::OutboxRelay;
 use infrastructure::messages_client::HttpMessages;
 use infrastructure::postgres::{connect, migrate, PgStore, PgUnitOfWork};
+use infrastructure::ratelimit::ValkeyRateLimiter;
 use infrastructure::security::jwt::Ed25519Tokens;
 use infrastructure::security::password::Argon2Passwords;
 use infrastructure::security::secrets::OsSecrets;
@@ -24,7 +25,7 @@ use infrastructure::security::totp::Rfc6238;
 use infrastructure::storage::MinioAssets;
 use infrastructure::system::clock::SystemClock;
 use infrastructure::system::ids::SnowflakeIds;
-use interface::state::AppState;
+use interface::state::{AppState, RatePolicy};
 
 const DATABASE_MAX_CONNECTIONS: u32 = 16;
 
@@ -117,6 +118,8 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let state = AppState {
         ports,
         internal_token: Arc::from(config.internal_token.as_str()),
+        rate_limiter: Arc::new(ValkeyRateLimiter::connect(&config.valkey_url).await?),
+        rate_policy: RatePolicy::default(),
     };
     let listener = TcpListener::bind(config.bind_addr).await?;
     tracing::info!(addr = %config.bind_addr, "api listening");

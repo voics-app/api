@@ -35,6 +35,8 @@ async fn guild_administration_follows_the_contract() {
     let app = interface::router(AppState {
         ports: ports(&database.pool, &public, &private),
         internal_token: support::http::INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
     });
     let (owner, _owner_id) = register(&app, "owner@example.com", "owner").await;
     let (guest, guest_id) = register(&app, "guest@example.com", "guest").await;

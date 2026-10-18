@@ -105,6 +105,8 @@ pub struct RateLimitDecision {
     pub limit: u32,
     pub remaining: u32,
     pub reset_after: Duration,
+    /// How long a rejected caller must wait before the next token is available.
+    pub retry_after: Duration,
 }
 
 #[async_trait]

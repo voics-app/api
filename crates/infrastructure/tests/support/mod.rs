@@ -165,3 +165,25 @@ pub fn ports(pool: &PgPool, public_pem: &[u8], private_pem: &[u8]) -> Ports {
         settings: Settings::default(),
     }
 }
+
+/// Rate limiter that never throttles, for tests that are not about throttling.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AllowAll;
+
+#[async_trait]
+impl application::ports::RateLimiter for AllowAll {
+    async fn hit(
+        &self,
+        _key: &str,
+        limit: u32,
+        window: Duration,
+    ) -> AppResult<application::ports::RateLimitDecision> {
+        Ok(application::ports::RateLimitDecision {
+            allowed: true,
+            limit,
+            remaining: limit,
+            reset_after: window,
+            retry_after: Duration::ZERO,
+        })
+    }
+}

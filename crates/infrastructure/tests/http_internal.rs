@@ -44,6 +44,8 @@ async fn internal_endpoints_require_the_token_and_serve_state() {
     let app = interface::router(AppState {
         ports: ports(&database.pool, &public, &private),
         internal_token: INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
     });
     let (alice_token, alice_id) = register(&app, "alice@example.com", "alice").await;
     let (_bob_token, bob_id) = register(&app, "bob@example.com", "bob").await;

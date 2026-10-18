@@ -4,6 +4,7 @@
 pub mod error;
 pub mod extract;
 pub mod images;
+pub mod ratelimit;
 pub mod routes;
 pub mod state;
 
@@ -24,6 +25,10 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::emojis::routes())
         .merge(routes::applications::routes())
         .merge(routes::webhooks::routes());
+    let public = public.layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        ratelimit::enforce,
+    ));
     Router::new()
         .merge(routes::health::routes())
         .merge(routes::internal::routes())

@@ -32,6 +32,8 @@ async fn applications_commands_authorization_and_webhooks_follow_the_contract() 
     let app = interface::router(AppState {
         ports: ports(&database.pool, &public, &private),
         internal_token: INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
     });
     let owner = register(&app, "dev@example.com", "developer").await;
 

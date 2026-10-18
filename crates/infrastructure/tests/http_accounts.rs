@@ -67,6 +67,8 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
     let state = AppState {
         ports: ports(&database.pool, &public, &private),
         internal_token: INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
     };
     let app = interface::router(state);
 
