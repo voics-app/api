@@ -4,9 +4,18 @@ use domain::Snowflake;
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Resource};
 
-pub async fn execute(ports: &Ports, actor: &Actor, device_id: Snowflake, packages: Vec<Vec<u8>>) -> AppResult<()> {
+pub async fn execute(
+    ports: &Ports,
+    actor: &Actor,
+    device_id: Snowflake,
+    packages: Vec<Vec<u8>>,
+) -> AppResult<()> {
     actor.require_user()?;
-    let device = ports.devices.find(device_id).await?.ok_or(AppError::NotFound(Resource::Device))?;
+    let device = ports
+        .devices
+        .find(device_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Device))?;
     if device.user_id != actor.user_id {
         return Err(AppError::NotFound(Resource::Device));
     }

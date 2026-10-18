@@ -17,7 +17,11 @@ pub struct UpdateCurrentUserInput {
     pub avatar: Option<Option<ImageUpload>>,
 }
 
-pub async fn execute(ports: &Ports, actor: &Actor, input: UpdateCurrentUserInput) -> AppResult<User> {
+pub async fn execute(
+    ports: &Ports,
+    actor: &Actor,
+    input: UpdateCurrentUserInput,
+) -> AppResult<User> {
     let mut user = require_user(ports, actor.user_id).await?;
     let mut errors = ValidationErrors::new();
     if let Some(username) = &input.username {
@@ -49,7 +53,9 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: UpdateCurrentUserInput
         };
     }
     let mut writes = WriteSet::new();
-    writes.mutate(Mutation::UpdateUser(user.clone())).emit(DomainEvent::UserUpdate(user.clone()));
+    writes
+        .mutate(Mutation::UpdateUser(user.clone()))
+        .emit(DomainEvent::UserUpdate(user.clone()));
     ports.unit_of_work.commit(writes).await?;
     Ok(user)
 }

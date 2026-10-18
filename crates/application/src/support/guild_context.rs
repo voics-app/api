@@ -21,14 +21,23 @@ pub struct GuildContext {
 impl GuildContext {
     /// Loads the guild and the caller's membership (50001 if not a member).
     pub async fn load(ports: &Ports, guild_id: Snowflake, user_id: Snowflake) -> AppResult<Self> {
-        let guild = ports.guilds.find(guild_id).await?.ok_or(AppError::NotFound(Resource::Guild))?;
+        let guild = ports
+            .guilds
+            .find(guild_id)
+            .await?
+            .ok_or(AppError::NotFound(Resource::Guild))?;
         let member = ports
             .guilds
             .member(guild_id, user_id)
             .await?
             .ok_or_else(AppError::missing_access)?;
         let roles = ports.guilds.roles(guild_id).await?;
-        Ok(Self { guild, roles, member, now: ports.clock.now() })
+        Ok(Self {
+            guild,
+            roles,
+            member,
+            now: ports.clock.now(),
+        })
     }
 
     pub fn access(&self) -> GuildAccess<'_> {
@@ -55,7 +64,12 @@ impl GuildContext {
         self.access().in_channel(&self.member, channel, parent)
     }
 
-    pub fn require_in_channel(&self, channel: &Channel, parent: Option<&Channel>, required: Permissions) -> AppResult<()> {
+    pub fn require_in_channel(
+        &self,
+        channel: &Channel,
+        parent: Option<&Channel>,
+        required: Permissions,
+    ) -> AppResult<()> {
         let permissions = self.channel_permissions(channel, parent);
         if !permissions.contains(Permissions::VIEW_CHANNEL) {
             return Err(AppError::missing_access());
@@ -92,7 +106,10 @@ impl GuildContext {
     }
 
     pub fn role(&self, role_id: Snowflake) -> AppResult<&Role> {
-        self.roles.iter().find(|r| r.id == role_id).ok_or(AppError::NotFound(Resource::Role))
+        self.roles
+            .iter()
+            .find(|r| r.id == role_id)
+            .ok_or(AppError::NotFound(Resource::Role))
     }
 
     pub fn highest_position(&self) -> i32 {

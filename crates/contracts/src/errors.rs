@@ -38,6 +38,10 @@ pub struct ErrorBody {
 
 impl ErrorBody {
     pub fn new(code: u32, message: impl Into<String>) -> Self {
-        Self { code, message: message.into(), errors: None }
+        Self {
+            code,
+            message: message.into(),
+            errors: None,
+        }
     }
 }

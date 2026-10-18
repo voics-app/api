@@ -72,11 +72,33 @@ impl AuditAction {
     pub const ALL: [AuditAction; 27] = {
         use AuditAction::*;
         [
-            GuildUpdate, ChannelCreate, ChannelUpdate, ChannelDelete, ChannelOverwriteCreate,
-            ChannelOverwriteUpdate, ChannelOverwriteDelete, MemberKick, MemberBanAdd, MemberBanRemove,
-            MemberUpdate, MemberRoleUpdate, BotAdd, RoleCreate, RoleUpdate, RoleDelete, InviteCreate,
-            InviteDelete, WebhookCreate, WebhookUpdate, WebhookDelete, EmojiCreate, EmojiUpdate,
-            EmojiDelete, ThreadCreate, ThreadUpdate, ThreadDelete,
+            GuildUpdate,
+            ChannelCreate,
+            ChannelUpdate,
+            ChannelDelete,
+            ChannelOverwriteCreate,
+            ChannelOverwriteUpdate,
+            ChannelOverwriteDelete,
+            MemberKick,
+            MemberBanAdd,
+            MemberBanRemove,
+            MemberUpdate,
+            MemberRoleUpdate,
+            BotAdd,
+            RoleCreate,
+            RoleUpdate,
+            RoleDelete,
+            InviteCreate,
+            InviteDelete,
+            WebhookCreate,
+            WebhookUpdate,
+            WebhookDelete,
+            EmojiCreate,
+            EmojiUpdate,
+            EmojiDelete,
+            ThreadCreate,
+            ThreadUpdate,
+            ThreadDelete,
         ]
     };
 
@@ -94,7 +116,11 @@ pub struct AuditChange {
 
 impl AuditChange {
     pub fn new(key: &str, old_value: Option<Value>, new_value: Option<Value>) -> Self {
-        Self { key: key.to_owned(), old_value, new_value }
+        Self {
+            key: key.to_owned(),
+            old_value,
+            new_value,
+        }
     }
 
     /// Only records the change when the value actually differs.

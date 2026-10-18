@@ -101,7 +101,8 @@ impl Member {
     }
 
     pub fn is_timed_out(&self, now: DateTime<Utc>) -> bool {
-        self.communication_disabled_until.is_some_and(|until| until > now)
+        self.communication_disabled_until
+            .is_some_and(|until| until > now)
     }
 }
 

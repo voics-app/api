@@ -14,6 +14,9 @@ pub async fn execute(
 ) -> AppResult<()> {
     get_command::execute(ports, actor, application_id, guild_id, command_id).await?;
     let mut writes = WriteSet::new();
-    writes.mutate(Mutation::DeleteCommand { application_id, command_id });
+    writes.mutate(Mutation::DeleteCommand {
+        application_id,
+        command_id,
+    });
     ports.unit_of_work.commit(writes).await
 }

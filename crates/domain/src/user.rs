@@ -30,7 +30,9 @@ pub struct Suspension {
 impl User {
     pub fn is_suspended(&self, now: DateTime<Utc>) -> bool {
         match &self.suspension {
-            Some(Suspension { until: Some(until), .. }) => *until > now,
+            Some(Suspension {
+                until: Some(until), ..
+            }) => *until > now,
             Some(Suspension { until: None, .. }) => true,
             None => false,
         }
@@ -168,9 +170,30 @@ mod tests {
         let now = Utc::now();
         let cases = [
             ("never suspended", None, false),
-            ("indefinite", Some(Suspension { reason: "spam".into(), until: None }), true),
-            ("future", Some(Suspension { reason: "spam".into(), until: Some(now + Duration::hours(1)) }), true),
-            ("expired", Some(Suspension { reason: "spam".into(), until: Some(now - Duration::hours(1)) }), false),
+            (
+                "indefinite",
+                Some(Suspension {
+                    reason: "spam".into(),
+                    until: None,
+                }),
+                true,
+            ),
+            (
+                "future",
+                Some(Suspension {
+                    reason: "spam".into(),
+                    until: Some(now + Duration::hours(1)),
+                }),
+                true,
+            ),
+            (
+                "expired",
+                Some(Suspension {
+                    reason: "spam".into(),
+                    until: Some(now - Duration::hours(1)),
+                }),
+                false,
+            ),
         ];
         for (name, suspension, expected) in cases {
             assert_eq!(user(suspension).is_suspended(now), expected, "{name}");

@@ -32,15 +32,27 @@ pub async fn execute(
     let ctx = access.guild()?;
     access.require(Permissions::CREATE_INSTANT_INVITE)?;
     if access.channel.kind.is_thread() {
-        return Err(AppError::invalid("channel_id", "CHANNEL_TYPE_INVALID", "Invites cannot target threads."));
+        return Err(AppError::invalid(
+            "channel_id",
+            "CHANNEL_TYPE_INVALID",
+            "Invites cannot target threads.",
+        ));
     }
     let max_age = input.max_age.unwrap_or(86_400);
     if max_age > MAX_INVITE_AGE_SECONDS {
-        return Err(AppError::invalid("max_age", "BASE_TYPE_BAD_INT", "Must be between 0 and 604800."));
+        return Err(AppError::invalid(
+            "max_age",
+            "BASE_TYPE_BAD_INT",
+            "Must be between 0 and 604800.",
+        ));
     }
     let max_uses = input.max_uses.unwrap_or(0);
     if max_uses > MAX_INVITE_USES {
-        return Err(AppError::invalid("max_uses", "BASE_TYPE_BAD_INT", "Must be between 0 and 100."));
+        return Err(AppError::invalid(
+            "max_uses",
+            "BASE_TYPE_BAD_INT",
+            "Must be between 0 and 100.",
+        ));
     }
     let invite = Invite {
         code: ports.secrets.invite_code(),
@@ -62,8 +74,17 @@ pub async fn execute(
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::InsertInvite(invite.clone()))
-        .emit(DomainEvent::InviteCreate { invite: invite.clone(), inviter: Some(inviter) })
-        .audit(audit.entry(ports, ctx.guild.id, AuditAction::InviteCreate, None, changes)?);
+        .emit(DomainEvent::InviteCreate {
+            invite: invite.clone(),
+            inviter: Some(inviter),
+        })
+        .audit(audit.entry(
+            ports,
+            ctx.guild.id,
+            AuditAction::InviteCreate,
+            None,
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await?;
     view(ports, invite).await
 }

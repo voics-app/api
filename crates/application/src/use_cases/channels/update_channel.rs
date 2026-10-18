@@ -46,12 +46,18 @@ pub async fn execute(
     let access = ChannelAccess::visible(ports, channel_id, actor.user_id).await?;
     match access.guild {
         None => update_group_dm(ports, access.channel, input).await,
-        Some(ref ctx) if access.channel.kind.is_thread() => update_thread(ports, actor, ctx, &access, input, audit).await,
+        Some(ref ctx) if access.channel.kind.is_thread() => {
+            update_thread(ports, actor, ctx, &access, input, audit).await
+        }
         Some(ref ctx) => update_guild_channel(ports, ctx, &access, input, audit).await,
     }
 }
 
-async fn update_group_dm(ports: &Ports, mut channel: Channel, input: UpdateChannelInput) -> AppResult<ChannelView> {
+async fn update_group_dm(
+    ports: &Ports,
+    mut channel: Channel,
+    input: UpdateChannelInput,
+) -> AppResult<ChannelView> {
     if channel.kind != ChannelType::GroupDm {
         return Err(AppError::missing_permissions());
     }
@@ -60,13 +66,17 @@ async fn update_group_dm(ports: &Ports, mut channel: Channel, input: UpdateChann
     }
     if let Some(icon) = input.icon {
         channel.icon = match icon {
-            Some(image) => Some(store_hashed(ports, &format!("channel-icons/{}", channel.id), image).await?),
+            Some(image) => {
+                Some(store_hashed(ports, &format!("channel-icons/{}", channel.id), image).await?)
+            }
             None => None,
         };
     }
     let view = private_view(ports, channel.clone()).await?;
     let mut writes = WriteSet::new();
-    writes.mutate(Mutation::UpdateChannel(channel)).emit(DomainEvent::PrivateChannelUpdate(view.clone()));
+    writes
+        .mutate(Mutation::UpdateChannel(channel))
+        .emit(DomainEvent::PrivateChannelUpdate(view.clone()));
     ports.unit_of_work.commit(writes).await?;
     Ok(ChannelView::Private(view))
 }
@@ -106,7 +116,11 @@ async fn update_thread(
         }
         if let Some(duration) = input.auto_archive_duration {
             if !AUTO_ARCHIVE_DURATIONS.contains(&duration) {
-                return Err(AppError::invalid("auto_archive_duration", "BASE_TYPE_CHOICES", "Invalid duration."));
+                return Err(AppError::invalid(
+                    "auto_archive_duration",
+                    "BASE_TYPE_CHOICES",
+                    "Invalid duration.",
+                ));
             }
             metadata.auto_archive_duration = duration;
         }
@@ -116,7 +130,13 @@ async fn update_thread(
     writes
         .mutate(Mutation::UpdateChannel(thread.clone()))
         .emit(DomainEvent::ThreadUpdate(thread.clone()))
-        .audit(audit.entry(ports, ctx.guild.id, AuditAction::ThreadUpdate, Some(thread.id), changes)?);
+        .audit(audit.entry(
+            ports,
+            ctx.guild.id,
+            AuditAction::ThreadUpdate,
+            Some(thread.id),
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await?;
     Ok(ChannelView::Guild(thread))
 }
@@ -163,7 +183,9 @@ async fn update_guild_channel(
         channel.overwrites = overwrites;
     }
     let mode = input.delivery_mode.unwrap_or(channel.delivery_mode);
-    if input.delivery_mode.is_some() || (mode == DeliveryMode::Ephemeral && channel.overwrites != before.overwrites) {
+    if input.delivery_mode.is_some()
+        || (mode == DeliveryMode::Ephemeral && channel.overwrites != before.overwrites)
+    {
         check_delivery_mode(ports, ctx, &channel, mode).await?;
     }
     channel.delivery_mode = mode;
@@ -172,23 +194,41 @@ async fn update_guild_channel(
     changes.extend(
         [
             AuditChange::if_changed("topic", json!(before.topic), json!(channel.topic)),
-            AuditChange::if_changed("delivery_mode", json!(before.delivery_mode.as_str()), json!(channel.delivery_mode.as_str())),
+            AuditChange::if_changed(
+                "delivery_mode",
+                json!(before.delivery_mode.as_str()),
+                json!(channel.delivery_mode.as_str()),
+            ),
             AuditChange::if_changed("nsfw", json!(before.nsfw), json!(channel.nsfw)),
-            AuditChange::if_changed("rate_limit_per_user", json!(before.rate_limit_per_user), json!(channel.rate_limit_per_user)),
+            AuditChange::if_changed(
+                "rate_limit_per_user",
+                json!(before.rate_limit_per_user),
+                json!(channel.rate_limit_per_user),
+            ),
             AuditChange::if_changed("bitrate", json!(before.bitrate), json!(channel.bitrate)),
         ]
         .into_iter()
         .flatten(),
     );
     let mut writes = WriteSet::new();
-    writes.mutate(Mutation::UpdateChannel(channel.clone())).emit(DomainEvent::ChannelUpdate(channel.clone()));
+    writes
+        .mutate(Mutation::UpdateChannel(channel.clone()))
+        .emit(DomainEvent::ChannelUpdate(channel.clone()));
     if !changes.is_empty() {
-        writes.audit(audit.entry(ports, ctx.guild.id, AuditAction::ChannelUpdate, Some(channel.id), changes)?);
+        writes.audit(audit.entry(
+            ports,
+            ctx.guild.id,
+            AuditAction::ChannelUpdate,
+            Some(channel.id),
+            changes,
+        )?);
     }
     ports.unit_of_work.commit(writes).await?;
     Ok(ChannelView::Guild(channel))
 }
 
 fn name_change(before: &Channel, after: &Channel) -> Vec<AuditChange> {
-    AuditChange::if_changed("name", json!(before.name), json!(after.name)).into_iter().collect()
+    AuditChange::if_changed("name", json!(before.name), json!(after.name))
+        .into_iter()
+        .collect()
 }

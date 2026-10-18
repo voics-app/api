@@ -90,7 +90,12 @@ pub struct StoredMessage {
 pub trait MessageService: Send + Sync {
     /// Creates a message on behalf of a bot, webhook or interaction.
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage>;
-    async fn edit(&self, channel_id: Snowflake, message_id: Snowflake, patch: Value) -> AppResult<StoredMessage>;
+    async fn edit(
+        &self,
+        channel_id: Snowflake,
+        message_id: Snowflake,
+        patch: Value,
+    ) -> AppResult<StoredMessage>;
     async fn delete(&self, channel_id: Snowflake, message_id: Snowflake) -> AppResult<()>;
 }
 

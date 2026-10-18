@@ -19,7 +19,12 @@ pub struct ChannelPosition {
 }
 
 /// `PATCH /guilds/{id}/channels`.
-pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake, moves: Vec<ChannelPosition>) -> AppResult<()> {
+pub async fn execute(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    moves: Vec<ChannelPosition>,
+) -> AppResult<()> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     ctx.require(Permissions::MANAGE_CHANNELS)?;
     let channels = ports.channels.list_for_guild(guild_id).await?;
@@ -41,7 +46,9 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake, moves: V
                 }
             }
         }
-        writes.mutate(Mutation::UpdateChannel(channel.clone())).emit(DomainEvent::ChannelUpdate(channel));
+        writes
+            .mutate(Mutation::UpdateChannel(channel.clone()))
+            .emit(DomainEvent::ChannelUpdate(channel));
     }
     if writes.is_empty() {
         return Ok(());

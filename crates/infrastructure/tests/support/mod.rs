@@ -4,6 +4,8 @@
 
 #![allow(dead_code)]
 
+pub mod http;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -117,14 +119,20 @@ impl MessageService for NoMessages {
     }
 }
 
-struct NoAssets;
+/// In-memory object store standing in for MinIO.
+#[derive(Default)]
+struct MemoryAssets {
+    objects: std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>,
+}
 
 #[async_trait]
-impl AssetStorage for NoAssets {
-    async fn put(&self, _: &str, _: Vec<u8>, _: &str) -> AppResult<()> {
-        Err(AppError::Unavailable(
-            "object storage not wired in this test".into(),
-        ))
+impl AssetStorage for MemoryAssets {
+    async fn put(&self, key: &str, bytes: Vec<u8>, _content_type: &str) -> AppResult<()> {
+        self.objects
+            .lock()
+            .expect("asset store lock")
+            .insert(key.to_owned(), bytes);
+        Ok(())
     }
 }
 
@@ -152,7 +160,7 @@ pub fn ports(pool: &PgPool, public_pem: &[u8], private_pem: &[u8]) -> Ports {
         ids: Arc::new(SnowflakeIds::new(1).expect("worker id")),
         secrets: Arc::new(OsSecrets),
         totp: Arc::new(Rfc6238),
-        assets: Arc::new(NoAssets),
+        assets: Arc::new(MemoryAssets::default()),
         messages: Arc::new(NoMessages),
         settings: Settings::default(),
     }

@@ -18,7 +18,11 @@ impl ImageUpload {
             "image/jpeg" => Ok("jpg"),
             "image/gif" => Ok("gif"),
             "image/webp" => Ok("webp"),
-            _ => Err(AppError::invalid("image", "IMAGE_INVALID", "Unsupported image type.")),
+            _ => Err(AppError::invalid(
+                "image",
+                "IMAGE_INVALID",
+                "Unsupported image type.",
+            )),
         }
     }
 
@@ -28,7 +32,11 @@ impl ImageUpload {
 
     fn ensure_size(&self, max: usize) -> AppResult<()> {
         if self.bytes.is_empty() || self.bytes.len() > max {
-            return Err(AppError::invalid("image", "BINARY_TYPE_MAX_SIZE", "Image is empty or too large."));
+            return Err(AppError::invalid(
+                "image",
+                "BINARY_TYPE_MAX_SIZE",
+                "Image is empty or too large.",
+            ));
         }
         Ok(())
     }
@@ -40,14 +48,25 @@ pub async fn store_hashed(ports: &Ports, prefix: &str, image: ImageUpload) -> Ap
     let extension = image.extension()?;
     let hash = ports.secrets.token(16);
     let key = format!("{prefix}/{hash}.{extension}");
-    ports.assets.put(&key, image.bytes, &image.content_type).await?;
+    ports
+        .assets
+        .put(&key, image.bytes, &image.content_type)
+        .await?;
     Ok(hash)
 }
 
 /// Stores an image at an exact key (custom emoji use their id).
-pub async fn store_at(ports: &Ports, key_without_extension: &str, image: ImageUpload, max: usize) -> AppResult<()> {
+pub async fn store_at(
+    ports: &Ports,
+    key_without_extension: &str,
+    image: ImageUpload,
+    max: usize,
+) -> AppResult<()> {
     image.ensure_size(max)?;
     let extension = image.extension()?;
     let key = format!("{key_without_extension}.{extension}");
-    ports.assets.put(&key, image.bytes, &image.content_type).await
+    ports
+        .assets
+        .put(&key, image.bytes, &image.content_type)
+        .await
 }

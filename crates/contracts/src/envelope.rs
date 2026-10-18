@@ -16,7 +16,13 @@ pub const TOPIC_AUDIT: &str = "discordy.audit.v1";
 pub const ENVELOPE_VERSION: u8 = 1;
 
 /// Topics api produces to; created by the compose init container and the cluster.
-pub const API_TOPICS: [&str; 5] = [TOPIC_GUILD, TOPIC_MESSAGE, TOPIC_USER, TOPIC_INTERACTION, TOPIC_AUDIT];
+pub const API_TOPICS: [&str; 5] = [
+    TOPIC_GUILD,
+    TOPIC_MESSAGE,
+    TOPIC_USER,
+    TOPIC_INTERACTION,
+    TOPIC_AUDIT,
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Envelope {

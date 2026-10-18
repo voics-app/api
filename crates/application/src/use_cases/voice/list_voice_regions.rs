@@ -6,6 +6,11 @@ pub fn execute(ports: &Ports) -> Vec<(VoiceRegion, bool)> {
         .settings
         .voice_regions
         .iter()
-        .map(|region| (region.clone(), region.id == ports.settings.default_voice_region))
+        .map(|region| {
+            (
+                region.clone(),
+                region.id == ports.settings.default_voice_region,
+            )
+        })
         .collect()
 }

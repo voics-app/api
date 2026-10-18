@@ -44,7 +44,10 @@ pub async fn execute(
         .ok_or_else(|| AppError::invalid("type", "BASE_TYPE_CHOICES", "Invalid channel type."))?;
     let existing = ports.channels.list_for_guild(guild_id).await?;
     if existing.len() >= MAX_CHANNELS_PER_GUILD {
-        return Err(AppError::BadRequest { code: 30013, message: "Maximum number of guild channels reached (500)".into() });
+        return Err(AppError::BadRequest {
+            code: 30013,
+            message: "Maximum number of guild channels reached (500)".into(),
+        });
     }
 
     let mut channel = Channel::new(ports.ids.next_id(), kind, Some(guild_id), ports.clock.now());
@@ -63,7 +66,12 @@ pub async fn execute(
     apply_parent(ports, &mut channel, input.parent_id).await?;
     channel.nsfw = input.nsfw.unwrap_or(false);
     channel.position = input.position.unwrap_or_else(|| {
-        existing.iter().filter(|c| c.parent_id == channel.parent_id).map(|c| c.position + 1).max().unwrap_or(0)
+        existing
+            .iter()
+            .filter(|c| c.parent_id == channel.parent_id)
+            .map(|c| c.position + 1)
+            .max()
+            .unwrap_or(0)
     });
     if !input.permission_overwrites.is_empty() {
         check_overwrites(&ctx, ctx.permissions(), &input.permission_overwrites)?;
@@ -83,7 +91,13 @@ pub async fn execute(
     writes
         .mutate(Mutation::InsertChannel(channel.clone()))
         .emit(DomainEvent::ChannelCreate(channel.clone()))
-        .audit(audit.entry(ports, guild_id, AuditAction::ChannelCreate, Some(channel.id), changes)?);
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::ChannelCreate,
+            Some(channel.id),
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await?;
     Ok(channel)
 }

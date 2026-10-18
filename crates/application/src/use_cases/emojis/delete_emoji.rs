@@ -20,7 +20,11 @@ pub async fn execute(
 ) -> AppResult<()> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     let mut emojis = ports.emojis.list(guild_id).await?;
-    let emoji = emojis.iter().find(|e| e.id == emoji_id).cloned().ok_or(AppError::NotFound(Resource::Emoji))?;
+    let emoji = emojis
+        .iter()
+        .find(|e| e.id == emoji_id)
+        .cloned()
+        .ok_or(AppError::NotFound(Resource::Emoji))?;
     require_editable(&ctx, &emoji)?;
     emojis.retain(|e| e.id != emoji_id);
     let changes = vec![AuditChange::new("name", Some(json!(emoji.name)), None)];
@@ -28,6 +32,12 @@ pub async fn execute(
     writes
         .mutate(Mutation::DeleteEmoji { guild_id, emoji_id })
         .emit(DomainEvent::EmojisUpdate { guild_id, emojis })
-        .audit(audit.entry(ports, guild_id, AuditAction::EmojiDelete, Some(emoji_id), changes)?);
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::EmojiDelete,
+            Some(emoji_id),
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await
 }

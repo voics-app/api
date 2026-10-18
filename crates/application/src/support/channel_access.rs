@@ -34,13 +34,26 @@ pub struct ChannelAccess {
 impl ChannelAccess {
     /// Resolves the caller's permissions without requiring VIEW_CHANNEL.
     /// Fails with 50001 when the caller is neither member nor recipient.
-    pub async fn resolve(ports: &Ports, channel_id: Snowflake, user_id: Snowflake) -> AppResult<Self> {
-        let channel = ports.channels.find(channel_id).await?.ok_or(AppError::NotFound(Resource::Channel))?;
+    pub async fn resolve(
+        ports: &Ports,
+        channel_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<Self> {
+        let channel = ports
+            .channels
+            .find(channel_id)
+            .await?
+            .ok_or(AppError::NotFound(Resource::Channel))?;
         let Some(guild_id) = channel.guild_id else {
             if !channel.is_recipient(user_id) {
                 return Err(AppError::missing_access());
             }
-            return Ok(Self { channel, guild: None, parent: None, permissions: PRIVATE_CHANNEL_PERMISSIONS });
+            return Ok(Self {
+                channel,
+                guild: None,
+                parent: None,
+                permissions: PRIVATE_CHANNEL_PERMISSIONS,
+            });
         };
         let guild = GuildContext::load(ports, guild_id, user_id).await?;
         let parent = match (channel.kind.is_thread(), channel.parent_id) {
@@ -48,11 +61,20 @@ impl ChannelAccess {
             _ => None,
         };
         let permissions = guild.channel_permissions(&channel, parent.as_ref());
-        Ok(Self { channel, guild: Some(guild), parent, permissions })
+        Ok(Self {
+            channel,
+            guild: Some(guild),
+            parent,
+            permissions,
+        })
     }
 
     /// Like [`Self::resolve`] but also requires VIEW_CHANNEL.
-    pub async fn visible(ports: &Ports, channel_id: Snowflake, user_id: Snowflake) -> AppResult<Self> {
+    pub async fn visible(
+        ports: &Ports,
+        channel_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<Self> {
         let access = Self::resolve(ports, channel_id, user_id).await?;
         if !access.permissions.contains(Permissions::VIEW_CHANNEL) {
             return Err(AppError::missing_access());

@@ -32,7 +32,8 @@ pub mod application_flags {
     pub const GATEWAY_GUILD_MEMBERS_LIMITED: u64 = 1 << 15;
     pub const GATEWAY_MESSAGE_CONTENT: u64 = 1 << 18;
     pub const GATEWAY_MESSAGE_CONTENT_LIMITED: u64 = 1 << 19;
-    pub const USER_EDITABLE: u64 = GATEWAY_PRESENCE_LIMITED | GATEWAY_GUILD_MEMBERS_LIMITED | GATEWAY_MESSAGE_CONTENT_LIMITED;
+    pub const USER_EDITABLE: u64 =
+        GATEWAY_PRESENCE_LIMITED | GATEWAY_GUILD_MEMBERS_LIMITED | GATEWAY_MESSAGE_CONTENT_LIMITED;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -82,7 +83,11 @@ pub struct ApplicationCommand {
 /// Discord's naming rules: chat-input names are lowercase `[-_\p{L}\p{N}]{1,32}`
 /// with a 1–100 character description; context-menu commands have 1–32
 /// character names and an empty description.
-pub fn validate_command(kind: CommandKind, name: &str, description: &str) -> Result<(), FieldError> {
+pub fn validate_command(
+    kind: CommandKind,
+    name: &str,
+    description: &str,
+) -> Result<(), FieldError> {
     let name_len = name.chars().count();
     let bad = |field: &str, message: &str| FieldError {
         field: field.to_owned(),
@@ -90,7 +95,10 @@ pub fn validate_command(kind: CommandKind, name: &str, description: &str) -> Res
         message: message.to_owned(),
     };
     if !(1..=32).contains(&name_len) {
-        return Err(bad("name", "Command names must be between 1 and 32 characters."));
+        return Err(bad(
+            "name",
+            "Command names must be between 1 and 32 characters.",
+        ));
     }
     match kind {
         CommandKind::ChatInput => {
@@ -98,15 +106,24 @@ pub fn validate_command(kind: CommandKind, name: &str, description: &str) -> Res
                 .chars()
                 .all(|c| c == '-' || c == '_' || (c.is_alphanumeric() && !c.is_uppercase()));
             if !valid_chars {
-                return Err(bad("name", "Chat input command names must be lowercase letters, numbers, - or _."));
+                return Err(bad(
+                    "name",
+                    "Chat input command names must be lowercase letters, numbers, - or _.",
+                ));
             }
             if !(1..=100).contains(&description.chars().count()) {
-                return Err(bad("description", "Description must be between 1 and 100 characters."));
+                return Err(bad(
+                    "description",
+                    "Description must be between 1 and 100 characters.",
+                ));
             }
         }
         CommandKind::User | CommandKind::Message => {
             if !description.is_empty() {
-                return Err(bad("description", "Context menu commands cannot have a description."));
+                return Err(bad(
+                    "description",
+                    "Context menu commands cannot have a description.",
+                ));
             }
         }
     }
@@ -202,9 +219,8 @@ impl CallbackKind {
     /// State the interaction moves to after this callback.
     pub const fn resulting_state(self) -> InteractionState {
         match self {
-            CallbackKind::DeferredChannelMessageWithSource | CallbackKind::DeferredUpdateMessage => {
-                InteractionState::Deferred
-            }
+            CallbackKind::DeferredChannelMessageWithSource
+            | CallbackKind::DeferredUpdateMessage => InteractionState::Deferred,
             _ => InteractionState::Responded,
         }
     }
@@ -252,7 +268,11 @@ impl Interaction {
     }
 
     /// Checks whether `callback` may be the initial response.
-    pub fn accept_callback(&self, callback: CallbackKind, now: DateTime<Utc>) -> Result<InteractionState, InteractionError> {
+    pub fn accept_callback(
+        &self,
+        callback: CallbackKind,
+        now: DateTime<Utc>,
+    ) -> Result<InteractionState, InteractionError> {
         if self.is_expired(now) {
             return Err(InteractionError::Expired);
         }
@@ -264,9 +284,14 @@ impl Interaction {
         let allowed = match callback {
             Pong => self.kind == Ping,
             ChannelMessageWithSource | DeferredChannelMessageWithSource => {
-                matches!(self.kind, ApplicationCommand | MessageComponent | ModalSubmit)
+                matches!(
+                    self.kind,
+                    ApplicationCommand | MessageComponent | ModalSubmit
+                )
             }
-            DeferredUpdateMessage | UpdateMessage => matches!(self.kind, MessageComponent | ModalSubmit),
+            DeferredUpdateMessage | UpdateMessage => {
+                matches!(self.kind, MessageComponent | ModalSubmit)
+            }
             AutocompleteResult => self.kind == Autocomplete,
             Modal => matches!(self.kind, ApplicationCommand | MessageComponent),
         };
@@ -342,11 +367,19 @@ mod tests {
             (CommandKind::Message, "Bookmark", "has description", false),
         ];
         for (kind, name, description, valid) in cases {
-            assert_eq!(validate_command(kind, name, description).is_ok(), valid, "{kind:?} {name:?}");
+            assert_eq!(
+                validate_command(kind, name, description).is_ok(),
+                valid,
+                "{kind:?} {name:?}"
+            );
         }
     }
 
-    fn interaction(kind: InteractionKind, state: InteractionState, age_minutes: i64) -> Interaction {
+    fn interaction(
+        kind: InteractionKind,
+        state: InteractionState,
+        age_minutes: i64,
+    ) -> Interaction {
         Interaction {
             id: Snowflake::new(1),
             application_id: Snowflake::new(2),
@@ -371,35 +404,135 @@ mod tests {
         use InteractionState as S;
         let now = Utc::now();
         let cases = [
-            (K::ApplicationCommand, S::Pending, 0, C::ChannelMessageWithSource, Ok(S::Responded)),
-            (K::ApplicationCommand, S::Pending, 0, C::DeferredChannelMessageWithSource, Ok(S::Deferred)),
-            (K::ApplicationCommand, S::Pending, 0, C::Modal, Ok(S::Responded)),
-            (K::ApplicationCommand, S::Pending, 0, C::UpdateMessage, Err(Err_::InvalidCallback)),
-            (K::ApplicationCommand, S::Pending, 0, C::Pong, Err(Err_::InvalidCallback)),
-            (K::MessageComponent, S::Pending, 0, C::UpdateMessage, Ok(S::Responded)),
-            (K::MessageComponent, S::Pending, 0, C::DeferredUpdateMessage, Ok(S::Deferred)),
-            (K::Autocomplete, S::Pending, 0, C::AutocompleteResult, Ok(S::Responded)),
-            (K::Autocomplete, S::Pending, 0, C::ChannelMessageWithSource, Err(Err_::InvalidCallback)),
-            (K::ModalSubmit, S::Pending, 0, C::Modal, Err(Err_::InvalidCallback)),
+            (
+                K::ApplicationCommand,
+                S::Pending,
+                0,
+                C::ChannelMessageWithSource,
+                Ok(S::Responded),
+            ),
+            (
+                K::ApplicationCommand,
+                S::Pending,
+                0,
+                C::DeferredChannelMessageWithSource,
+                Ok(S::Deferred),
+            ),
+            (
+                K::ApplicationCommand,
+                S::Pending,
+                0,
+                C::Modal,
+                Ok(S::Responded),
+            ),
+            (
+                K::ApplicationCommand,
+                S::Pending,
+                0,
+                C::UpdateMessage,
+                Err(Err_::InvalidCallback),
+            ),
+            (
+                K::ApplicationCommand,
+                S::Pending,
+                0,
+                C::Pong,
+                Err(Err_::InvalidCallback),
+            ),
+            (
+                K::MessageComponent,
+                S::Pending,
+                0,
+                C::UpdateMessage,
+                Ok(S::Responded),
+            ),
+            (
+                K::MessageComponent,
+                S::Pending,
+                0,
+                C::DeferredUpdateMessage,
+                Ok(S::Deferred),
+            ),
+            (
+                K::Autocomplete,
+                S::Pending,
+                0,
+                C::AutocompleteResult,
+                Ok(S::Responded),
+            ),
+            (
+                K::Autocomplete,
+                S::Pending,
+                0,
+                C::ChannelMessageWithSource,
+                Err(Err_::InvalidCallback),
+            ),
+            (
+                K::ModalSubmit,
+                S::Pending,
+                0,
+                C::Modal,
+                Err(Err_::InvalidCallback),
+            ),
             (K::Ping, S::Pending, 0, C::Pong, Ok(S::Responded)),
-            (K::ApplicationCommand, S::Responded, 0, C::ChannelMessageWithSource, Err(Err_::AlreadyAcknowledged)),
-            (K::ApplicationCommand, S::Deferred, 0, C::ChannelMessageWithSource, Err(Err_::AlreadyAcknowledged)),
-            (K::ApplicationCommand, S::Pending, 16, C::ChannelMessageWithSource, Err(Err_::Expired)),
+            (
+                K::ApplicationCommand,
+                S::Responded,
+                0,
+                C::ChannelMessageWithSource,
+                Err(Err_::AlreadyAcknowledged),
+            ),
+            (
+                K::ApplicationCommand,
+                S::Deferred,
+                0,
+                C::ChannelMessageWithSource,
+                Err(Err_::AlreadyAcknowledged),
+            ),
+            (
+                K::ApplicationCommand,
+                S::Pending,
+                16,
+                C::ChannelMessageWithSource,
+                Err(Err_::Expired),
+            ),
         ];
         for (kind, state, age, callback, expected) in cases {
             let i = interaction(kind, state, age);
-            assert_eq!(i.accept_callback(callback, now), expected, "{kind:?}/{state:?}/{callback:?}");
+            assert_eq!(
+                i.accept_callback(callback, now),
+                expected,
+                "{kind:?}/{state:?}/{callback:?}"
+            );
         }
     }
 
     #[test]
     fn followup_rules() {
         let now = Utc::now();
-        let pending = interaction(InteractionKind::ApplicationCommand, InteractionState::Pending, 0);
-        assert_eq!(pending.ensure_followup_allowed(now), Err(InteractionError::NotAcknowledged));
-        let deferred = interaction(InteractionKind::ApplicationCommand, InteractionState::Deferred, 1);
+        let pending = interaction(
+            InteractionKind::ApplicationCommand,
+            InteractionState::Pending,
+            0,
+        );
+        assert_eq!(
+            pending.ensure_followup_allowed(now),
+            Err(InteractionError::NotAcknowledged)
+        );
+        let deferred = interaction(
+            InteractionKind::ApplicationCommand,
+            InteractionState::Deferred,
+            1,
+        );
         assert!(deferred.ensure_followup_allowed(now).is_ok());
-        let old = interaction(InteractionKind::ApplicationCommand, InteractionState::Responded, 20);
-        assert_eq!(old.ensure_followup_allowed(now), Err(InteractionError::Expired));
+        let old = interaction(
+            InteractionKind::ApplicationCommand,
+            InteractionState::Responded,
+            20,
+        );
+        assert_eq!(
+            old.ensure_followup_allowed(now),
+            Err(InteractionError::Expired)
+        );
     }
 }

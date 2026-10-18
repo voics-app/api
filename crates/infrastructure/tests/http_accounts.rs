@@ -17,7 +17,12 @@ const INTERNAL_TOKEN: &str = "test-internal-token";
 async fn send(app: &axum::Router, request: Request<Body>) -> (StatusCode, Value) {
     let response = app.clone().oneshot(request).await.expect("router responds");
     let status = response.status();
-    let bytes = response.into_body().collect().await.expect("body").to_bytes();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
     let body = if bytes.is_empty() {
         Value::Null
     } else {
@@ -97,19 +102,33 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
     let (status, me) = send(&app, get("/api/v1/users/@me", Some(&alice_token))).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(me["username"], "alice");
-    assert_eq!(me["email"], "alice@example.com", "self view includes the email");
+    assert_eq!(
+        me["email"], "alice@example.com",
+        "self view includes the email"
+    );
 
     let (status, updated) = send(
         &app,
-        patch("/api/v1/users/@me", &alice_token, json!({"global_name": "Alice A."})),
+        patch(
+            "/api/v1/users/@me",
+            &alice_token,
+            json!({"global_name": "Alice A."}),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["global_name"], "Alice A.");
 
-    let (status, public_view) = send(&app, get(&format!("/api/v1/users/{bob_id}"), Some(&alice_token))).await;
+    let (status, public_view) = send(
+        &app,
+        get(&format!("/api/v1/users/{bob_id}"), Some(&alice_token)),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(public_view.get("email").is_none(), "other users see no email");
+    assert!(
+        public_view.get("email").is_none(),
+        "other users see no email"
+    );
 
     let (status, body) = send(
         &app,
@@ -132,7 +151,11 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "identity key must be exactly 32 bytes");
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "identity key must be exactly 32 bytes"
+    );
     assert_eq!(device["code"], 50035);
 
     let identity_key = base64_of_32_bytes();
@@ -149,7 +172,14 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
     assert!(device["device_id"].is_string());
     let device_id = device["device_id"].as_str().expect("device id").to_owned();
 
-    let (status, devices) = send(&app, get(&format!("/api/v1/users/{alice_id}/devices"), Some(&alice_token))).await;
+    let (status, devices) = send(
+        &app,
+        get(
+            &format!("/api/v1/users/{alice_id}/devices"),
+            Some(&alice_token),
+        ),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(devices.as_array().map(Vec::len), Some(1));
 
@@ -175,7 +205,11 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
             .expect("request"),
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "internal calls need the shared token");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "internal calls need the shared token"
+    );
     assert_eq!(introspected["code"], 40001);
 
     let (status, introspected) = send(
@@ -207,7 +241,11 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
     assert_eq!(ready["user"]["id"], alice_id);
     assert_eq!(ready["private_channels"].as_array().map(Vec::len), Some(1));
 
-    let (status, _) = send(&app, get(&format!("/api/v1/devices/{device_id}"), Some(&alice_token))).await;
+    let (status, _) = send(
+        &app,
+        get(&format!("/api/v1/devices/{device_id}"), Some(&alice_token)),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "no such route");
 }
 

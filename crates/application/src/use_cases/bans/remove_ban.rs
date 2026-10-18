@@ -18,11 +18,24 @@ pub async fn execute(
 ) -> AppResult<()> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     ctx.require(Permissions::BAN_MEMBERS)?;
-    let ban = ports.guilds.ban(guild_id, user_id).await?.ok_or(AppError::NotFound(Resource::Ban))?;
+    let ban = ports
+        .guilds
+        .ban(guild_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Ban))?;
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::DeleteBan { guild_id, user_id })
-        .emit(DomainEvent::BanRemove { guild_id, user: ban.user })
-        .audit(audit.entry(ports, guild_id, AuditAction::MemberBanRemove, Some(user_id), vec![])?);
+        .emit(DomainEvent::BanRemove {
+            guild_id,
+            user: ban.user,
+        })
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::MemberBanRemove,
+            Some(user_id),
+            vec![],
+        )?);
     ports.unit_of_work.commit(writes).await
 }

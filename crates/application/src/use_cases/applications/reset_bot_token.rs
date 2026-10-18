@@ -9,7 +9,11 @@ use crate::write_set::{Mutation, WriteSet};
 /// Issues a new bot token (the old one stops working). Returned once only.
 pub async fn execute(ports: &Ports, actor: &Actor, application_id: Snowflake) -> AppResult<String> {
     let application = require_owner(ports, actor, application_id).await?;
-    let token = format!("{}.{}", encode_bot_token_prefix(application.bot_user_id), ports.secrets.token(32));
+    let token = format!(
+        "{}.{}",
+        encode_bot_token_prefix(application.bot_user_id),
+        ports.secrets.token(32)
+    );
     let mut writes = WriteSet::new();
     writes.mutate(Mutation::SetBotToken {
         application_id,

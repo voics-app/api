@@ -59,7 +59,12 @@ impl ChannelType {
     }
 
     pub const fn is_thread(self) -> bool {
-        matches!(self, ChannelType::AnnouncementThread | ChannelType::PublicThread | ChannelType::PrivateThread)
+        matches!(
+            self,
+            ChannelType::AnnouncementThread
+                | ChannelType::PublicThread
+                | ChannelType::PrivateThread
+        )
     }
 
     pub const fn is_voice(self) -> bool {
@@ -81,12 +86,18 @@ impl ChannelType {
 
     /// Names are lowercased and dashed for these types.
     pub const fn has_text_style_name(self) -> bool {
-        matches!(self, ChannelType::GuildText | ChannelType::GuildAnnouncement | ChannelType::GuildForum)
+        matches!(
+            self,
+            ChannelType::GuildText | ChannelType::GuildAnnouncement | ChannelType::GuildForum
+        )
     }
 
     /// Channels that can host threads.
     pub const fn supports_threads(self) -> bool {
-        matches!(self, ChannelType::GuildText | ChannelType::GuildAnnouncement | ChannelType::GuildForum)
+        matches!(
+            self,
+            ChannelType::GuildText | ChannelType::GuildAnnouncement | ChannelType::GuildForum
+        )
     }
 }
 
@@ -129,7 +140,12 @@ pub struct Channel {
 
 impl Channel {
     /// A blank channel of the given type; callers fill in the rest.
-    pub fn new(id: Snowflake, kind: ChannelType, guild_id: Option<Snowflake>, created_at: DateTime<Utc>) -> Self {
+    pub fn new(
+        id: Snowflake,
+        kind: ChannelType,
+        guild_id: Option<Snowflake>,
+        created_at: DateTime<Utc>,
+    ) -> Self {
         Self {
             id,
             kind,
@@ -188,15 +204,29 @@ mod tests {
             assert_eq!(kind.is_private(), private, "{kind:?} private");
             assert_eq!(kind.is_thread(), thread, "{kind:?} thread");
             assert_eq!(kind.is_voice(), voice, "{kind:?} voice");
-            assert_eq!(kind.is_creatable_in_guild(), creatable, "{kind:?} creatable");
+            assert_eq!(
+                kind.is_creatable_in_guild(),
+                creatable,
+                "{kind:?} creatable"
+            );
         }
     }
 
     #[test]
     fn voice_channels_get_default_bitrate() {
-        let voice = Channel::new(Snowflake::new(1), ChannelType::GuildVoice, Some(Snowflake::new(2)), Utc::now());
+        let voice = Channel::new(
+            Snowflake::new(1),
+            ChannelType::GuildVoice,
+            Some(Snowflake::new(2)),
+            Utc::now(),
+        );
         assert_eq!(voice.bitrate, Some(64_000));
-        let text = Channel::new(Snowflake::new(1), ChannelType::GuildText, Some(Snowflake::new(2)), Utc::now());
+        let text = Channel::new(
+            Snowflake::new(1),
+            ChannelType::GuildText,
+            Some(Snowflake::new(2)),
+            Utc::now(),
+        );
         assert_eq!(text.bitrate, None);
     }
 }

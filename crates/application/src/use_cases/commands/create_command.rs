@@ -3,7 +3,9 @@ use domain::Snowflake;
 
 use crate::context::{Actor, Ports};
 use crate::error::AppResult;
-use crate::use_cases::commands::command_rules::{build, ensure_capacity, require_scope, CommandInput};
+use crate::use_cases::commands::command_rules::{
+    build, ensure_capacity, require_scope, CommandInput,
+};
 use crate::write_set::{Mutation, WriteSet};
 
 /// Creating a command whose name and type already exist overwrites it.
@@ -16,9 +18,14 @@ pub async fn execute(
     input: CommandInput,
 ) -> AppResult<(ApplicationCommand, bool)> {
     require_scope(ports, actor, application_id, guild_id).await?;
-    let existing = ports.applications.commands(application_id, guild_id).await?;
+    let existing = ports
+        .applications
+        .commands(application_id, guild_id)
+        .await?;
     let draft = build(ports, application_id, guild_id, None, input.clone())?;
-    let previous = existing.iter().find(|c| c.name == draft.name && c.kind == draft.kind);
+    let previous = existing
+        .iter()
+        .find(|c| c.name == draft.name && c.kind == draft.kind);
     let command = match previous {
         Some(previous) => build(ports, application_id, guild_id, Some(previous), input)?,
         None => {

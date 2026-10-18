@@ -1,6 +1,8 @@
 use serde_json::Value;
 
-use domain::application::{validate_command, Application, ApplicationCommand, CommandKind, MAX_COMMANDS_PER_SCOPE};
+use domain::application::{
+    validate_command, Application, ApplicationCommand, CommandKind, MAX_COMMANDS_PER_SCOPE,
+};
 use domain::permissions::Permissions;
 use domain::Snowflake;
 
@@ -31,7 +33,12 @@ pub async fn require_scope(
 ) -> AppResult<Application> {
     let application = require_manager(ports, actor, application_id).await?;
     if let Some(guild_id) = guild_id {
-        if ports.guilds.member(guild_id, application.bot_user_id).await?.is_none() {
+        if ports
+            .guilds
+            .member(guild_id, application.bot_user_id)
+            .await?
+            .is_none()
+        {
             return Err(AppError::missing_access());
         }
     }
@@ -47,21 +54,37 @@ pub fn build(
     input: CommandInput,
 ) -> AppResult<ApplicationCommand> {
     let kind = match (input.kind, base) {
-        (Some(code), _) => CommandKind::from_code(code)
-            .ok_or_else(|| AppError::invalid("type", "BASE_TYPE_CHOICES", "Type must be 1, 2 or 3."))?,
+        (Some(code), _) => CommandKind::from_code(code).ok_or_else(|| {
+            AppError::invalid("type", "BASE_TYPE_CHOICES", "Type must be 1, 2 or 3.")
+        })?,
         (None, Some(base)) => base.kind,
         (None, None) => CommandKind::ChatInput,
     };
-    let name = input.name.or_else(|| base.map(|b| b.name.clone())).unwrap_or_default();
-    let description = input.description.or_else(|| base.map(|b| b.description.clone())).unwrap_or_default();
+    let name = input
+        .name
+        .or_else(|| base.map(|b| b.name.clone()))
+        .unwrap_or_default();
+    let description = input
+        .description
+        .or_else(|| base.map(|b| b.description.clone()))
+        .unwrap_or_default();
     validate_command(kind, &name, &description)?;
-    let options = input.options.or_else(|| base.map(|b| b.options.clone())).unwrap_or(Value::Array(vec![]));
+    let options = input
+        .options
+        .or_else(|| base.map(|b| b.options.clone()))
+        .unwrap_or(Value::Array(vec![]));
     let valid_options = match &options {
-        Value::Array(items) => items.len() <= MAX_OPTIONS && (kind == CommandKind::ChatInput || items.is_empty()),
+        Value::Array(items) => {
+            items.len() <= MAX_OPTIONS && (kind == CommandKind::ChatInput || items.is_empty())
+        }
         _ => false,
     };
     if !valid_options {
-        return Err(AppError::invalid("options", "APPLICATION_COMMAND_OPTIONS_INVALID", "Invalid options."));
+        return Err(AppError::invalid(
+            "options",
+            "APPLICATION_COMMAND_OPTIONS_INVALID",
+            "Invalid options.",
+        ));
     }
     Ok(ApplicationCommand {
         id: base.map(|b| b.id).unwrap_or_else(|| ports.ids.next_id()),
@@ -74,7 +97,10 @@ pub fn build(
         default_member_permissions: input
             .default_member_permissions
             .unwrap_or_else(|| base.and_then(|b| b.default_member_permissions)),
-        dm_permission: input.dm_permission.or(base.map(|b| b.dm_permission)).unwrap_or(true),
+        dm_permission: input
+            .dm_permission
+            .or(base.map(|b| b.dm_permission))
+            .unwrap_or(true),
         nsfw: input.nsfw.or(base.map(|b| b.nsfw)).unwrap_or(false),
         version: ports.ids.next_id(),
     })
@@ -82,7 +108,10 @@ pub fn build(
 
 pub fn ensure_capacity(existing: &[ApplicationCommand], kind: CommandKind) -> AppResult<()> {
     if existing.iter().filter(|c| c.kind == kind).count() >= MAX_COMMANDS_PER_SCOPE {
-        return Err(AppError::BadRequest { code: 30032, message: "Maximum number of application commands reached".into() });
+        return Err(AppError::BadRequest {
+            code: 30032,
+            message: "Maximum number of application commands reached".into(),
+        });
     }
     Ok(())
 }

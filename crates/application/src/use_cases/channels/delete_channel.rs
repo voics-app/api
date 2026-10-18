@@ -36,9 +36,15 @@ pub async fn execute(
         return Err(AppError::missing_permissions());
     }
     let (event, action) = if is_thread {
-        (DomainEvent::ThreadDelete(channel.clone()), AuditAction::ThreadDelete)
+        (
+            DomainEvent::ThreadDelete(channel.clone()),
+            AuditAction::ThreadDelete,
+        )
     } else {
-        (DomainEvent::ChannelDelete(channel.clone()), AuditAction::ChannelDelete)
+        (
+            DomainEvent::ChannelDelete(channel.clone()),
+            AuditAction::ChannelDelete,
+        )
     };
     let changes = vec![AuditChange::new("name", Some(json!(channel.name)), None)];
     let mut writes = WriteSet::new();
@@ -50,7 +56,11 @@ pub async fn execute(
     Ok(ChannelView::Guild(channel))
 }
 
-async fn leave_private(ports: &Ports, actor: &Actor, mut channel: Channel) -> AppResult<ChannelView> {
+async fn leave_private(
+    ports: &Ports,
+    actor: &Actor,
+    mut channel: Channel,
+) -> AppResult<ChannelView> {
     if channel.kind != ChannelType::GroupDm {
         return Ok(ChannelView::Private(private_view(ports, channel).await?));
     }
@@ -60,17 +70,26 @@ async fn leave_private(ports: &Ports, actor: &Actor, mut channel: Channel) -> Ap
         channel.owner_id = channel.recipient_ids.first().copied();
     }
     let mut writes = WriteSet::new();
-    writes.emit(DomainEvent::PrivateChannelDelete { channel: channel.clone(), user_id: actor.user_id });
+    writes.emit(DomainEvent::PrivateChannelDelete {
+        channel: channel.clone(),
+        user_id: actor.user_id,
+    });
     if channel.recipient_ids.is_empty() {
         writes.mutate(Mutation::DeleteChannel(channel.id));
     } else {
-        writes.mutate(Mutation::UpdateChannel(channel.clone())).emit(DomainEvent::RecipientRemove {
-            channel_id: channel.id,
-            user: leaver,
-            notify: channel.recipient_ids.clone(),
-        });
+        writes
+            .mutate(Mutation::UpdateChannel(channel.clone()))
+            .emit(DomainEvent::RecipientRemove {
+                channel_id: channel.id,
+                user: leaver,
+                notify: channel.recipient_ids.clone(),
+            });
     }
-    writes.mutate(Mutation::SetDeliveryOverride { user_id: actor.user_id, channel_id: channel.id, mode: None });
+    writes.mutate(Mutation::SetDeliveryOverride {
+        user_id: actor.user_id,
+        channel_id: channel.id,
+        mode: None,
+    });
     ports.unit_of_work.commit(writes).await?;
     Ok(ChannelView::Private(private_view(ports, channel).await?))
 }

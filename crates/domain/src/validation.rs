@@ -25,7 +25,11 @@ impl ValidationErrors {
     }
 
     pub fn add(&mut self, field: &str, code: &'static str, message: impl Into<String>) {
-        self.0.push(FieldError { field: field.to_owned(), code, message: message.into() });
+        self.0.push(FieldError {
+            field: field.to_owned(),
+            code,
+            message: message.into(),
+        });
     }
 
     /// Records the error of a check, if any.
@@ -68,7 +72,11 @@ impl fmt::Display for ValidationErrors {
 impl std::error::Error for ValidationErrors {}
 
 fn error(field: &str, code: &'static str, message: impl Into<String>) -> FieldError {
-    FieldError { field: field.to_owned(), code, message: message.into() }
+    FieldError {
+        field: field.to_owned(),
+        code,
+        message: message.into(),
+    }
 }
 
 fn length_between(field: &str, value: &str, min: usize, max: usize) -> Result<(), FieldError> {
@@ -86,7 +94,9 @@ fn length_between(field: &str, value: &str, min: usize, max: usize) -> Result<()
 /// Lowercase letters, digits, `_` and `.`; 2–32 characters; no `..`.
 pub fn username(value: &str) -> Result<(), FieldError> {
     length_between("username", value, 2, 32)?;
-    let allowed = value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.');
+    let allowed = value
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.');
     if !allowed || value.contains("..") {
         return Err(error(
             "username",
@@ -104,11 +114,18 @@ pub fn global_name(value: &str) -> Result<(), FieldError> {
 pub fn email(value: &str) -> Result<(), FieldError> {
     let valid = value.len() <= 254
         && value.split_once('@').is_some_and(|(local, domain)| {
-            !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
+            !local.is_empty()
+                && domain.contains('.')
+                && !domain.starts_with('.')
+                && !domain.ends_with('.')
         })
         && !value.contains(char::is_whitespace);
     if !valid {
-        return Err(error("email", "EMAIL_TYPE_INVALID_EMAIL", "Not a well formed email address."));
+        return Err(error(
+            "email",
+            "EMAIL_TYPE_INVALID_EMAIL",
+            "Not a well formed email address.",
+        ));
     }
     Ok(())
 }
@@ -116,7 +133,11 @@ pub fn email(value: &str) -> Result<(), FieldError> {
 pub fn password(value: &str) -> Result<(), FieldError> {
     let length = value.chars().count();
     if !(8..=128).contains(&length) {
-        return Err(error("password", "PASSWORD_BAD_LENGTH", "Must be between 8 and 128 in length."));
+        return Err(error(
+            "password",
+            "PASSWORD_BAD_LENGTH",
+            "Must be between 8 and 128 in length.",
+        ));
     }
     Ok(())
 }
@@ -157,14 +178,23 @@ pub fn audit_reason(value: &str) -> Result<(), FieldError> {
 pub fn emoji_name(value: &str) -> Result<(), FieldError> {
     length_between("name", value, 2, 32)?;
     if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(error("name", "EMOJI_NAME_INVALID", "Emoji names may only contain letters, numbers and _."));
+        return Err(error(
+            "name",
+            "EMOJI_NAME_INVALID",
+            "Emoji names may only contain letters, numbers and _.",
+        ));
     }
     Ok(())
 }
 
 /// Text-like channel names are lowercase with dashes instead of spaces.
 pub fn normalize_text_channel_name(value: &str) -> String {
-    value.trim().to_lowercase().split_whitespace().collect::<Vec<_>>().join("-")
+    value
+        .trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 #[cfg(test)]
@@ -214,7 +244,12 @@ mod tests {
 
     #[test]
     fn emoji_name_table() {
-        for (value, valid) in [("party_parrot", true), ("x", false), ("bad-name", false), ("ok2", true)] {
+        for (value, valid) in [
+            ("party_parrot", true),
+            ("x", false),
+            ("bad-name", false),
+            ("ok2", true),
+        ] {
             assert_eq!(emoji_name(value).is_ok(), valid, "{value}");
         }
     }
@@ -230,7 +265,10 @@ mod tests {
 
     #[test]
     fn normalizes_text_channel_names() {
-        assert_eq!(normalize_text_channel_name("  General   Chat "), "general-chat");
+        assert_eq!(
+            normalize_text_channel_name("  General   Chat "),
+            "general-chat"
+        );
     }
 
     #[test]

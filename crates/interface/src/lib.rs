@@ -16,7 +16,12 @@ pub fn router(state: AppState) -> Router {
     let public = Router::new()
         .merge(routes::auth::routes())
         .merge(routes::users::routes())
-        .merge(routes::devices::routes());
+        .merge(routes::devices::routes())
+        .merge(routes::guilds::routes())
+        .merge(routes::channels::routes())
+        .merge(routes::members::routes())
+        .merge(routes::invites::routes())
+        .merge(routes::emojis::routes());
     Router::new()
         .merge(routes::health::routes())
         .merge(routes::internal::routes())

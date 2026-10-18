@@ -20,9 +20,17 @@ fn bot_username_base(name: &str) -> String {
     let cleaned: String = name
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '.' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
-    let trimmed = cleaned.trim_matches(|c| c == '_' || c == '.').replace("..", ".");
+    let trimmed = cleaned
+        .trim_matches(|c| c == '_' || c == '.')
+        .replace("..", ".");
     let base: String = trimmed.chars().take(24).collect();
     if base.chars().count() < 2 {
         "bot".to_owned()
@@ -32,15 +40,32 @@ fn bot_username_base(name: &str) -> String {
 }
 
 /// Creates an application together with its bot user.
-pub async fn execute(ports: &Ports, actor: &Actor, input: CreateApplicationInput) -> AppResult<ApplicationView> {
+pub async fn execute(
+    ports: &Ports,
+    actor: &Actor,
+    input: CreateApplicationInput,
+) -> AppResult<ApplicationView> {
     actor.require_user()?;
     validation::application_name(&input.name)?;
     let description = input.description.unwrap_or_default();
     if description.chars().count() > 400 {
-        return Err(AppError::invalid("description", "BASE_TYPE_BAD_LENGTH", "Must be at most 400 characters."));
+        return Err(AppError::invalid(
+            "description",
+            "BASE_TYPE_BAD_LENGTH",
+            "Must be at most 400 characters.",
+        ));
     }
-    if ports.applications.list_for_owner(actor.user_id).await?.len() >= MAX_APPLICATIONS_PER_OWNER {
-        return Err(AppError::BadRequest { code: 30000, message: "Maximum number of applications reached.".into() });
+    if ports
+        .applications
+        .list_for_owner(actor.user_id)
+        .await?
+        .len()
+        >= MAX_APPLICATIONS_PER_OWNER
+    {
+        return Err(AppError::BadRequest {
+            code: 30000,
+            message: "Maximum number of applications reached.".into(),
+        });
     }
     let now = ports.clock.now();
     let application_id = ports.ids.next_id();
@@ -83,7 +108,11 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: CreateApplicationInput
     };
     let mut writes = WriteSet::new();
     writes
-        .mutate(Mutation::InsertUser { user: bot.clone(), credentials: None, settings: UserSettings::defaults_for(bot_id) })
+        .mutate(Mutation::InsertUser {
+            user: bot.clone(),
+            credentials: None,
+            settings: UserSettings::defaults_for(bot_id),
+        })
         .mutate(Mutation::InsertApplication(application.clone()));
     ports.unit_of_work.commit(writes).await?;
     view(ports, application).await

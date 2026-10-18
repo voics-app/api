@@ -16,8 +16,16 @@ pub struct InteractionResponse {
 }
 
 /// Loads an interaction by id and proves possession of its token.
-pub async fn authenticate(ports: &Ports, interaction_id: Snowflake, token: &str) -> AppResult<Interaction> {
-    let interaction = ports.interactions.find(interaction_id).await?.ok_or(AppError::NotFound(Resource::Interaction))?;
+pub async fn authenticate(
+    ports: &Ports,
+    interaction_id: Snowflake,
+    token: &str,
+) -> AppResult<Interaction> {
+    let interaction = ports
+        .interactions
+        .find(interaction_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Interaction))?;
     if interaction.token_hash != ports.secrets.hash(token) {
         return Err(AppError::NotFound(Resource::Interaction));
     }
@@ -35,8 +43,11 @@ pub async fn execute(
     let callback = CallbackKind::from_code(response.kind)
         .ok_or_else(|| AppError::invalid("type", "BASE_TYPE_CHOICES", "Unknown callback type."))?;
     let state = interaction.accept_callback(callback, ports.clock.now())?;
-    let application =
-        ports.applications.find(interaction.application_id).await?.ok_or(AppError::NotFound(Resource::Application))?;
+    let application = ports
+        .applications
+        .find(interaction.application_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Application))?;
 
     let origin = MessageOrigin {
         author_id: Some(application.bot_user_id),
@@ -49,13 +60,24 @@ pub async fn execute(
     match callback {
         CallbackKind::ChannelMessageWithSource => {
             let body = compose(response.data, origin, true)?;
-            original_message_id = Some(ports.messages.create(interaction.channel_id, body).await?.id);
+            original_message_id = Some(
+                ports
+                    .messages
+                    .create(interaction.channel_id, body)
+                    .await?
+                    .id,
+            );
         }
         CallbackKind::UpdateMessage | CallbackKind::DeferredUpdateMessage => {
-            let source = interaction.source_message_id.ok_or(InteractionError::InvalidCallback)?;
+            let source = interaction
+                .source_message_id
+                .ok_or(InteractionError::InvalidCallback)?;
             if callback == CallbackKind::UpdateMessage {
                 let patch = edit_patch(response.data)?;
-                ports.messages.edit(interaction.channel_id, source, patch).await?;
+                ports
+                    .messages
+                    .edit(interaction.channel_id, source, patch)
+                    .await?;
             }
             original_message_id = Some(source);
         }
@@ -78,6 +100,10 @@ pub async fn execute(
         }
         CallbackKind::Pong | CallbackKind::DeferredChannelMessageWithSource => {}
     }
-    writes.mutate(Mutation::UpdateInteraction { id: interaction.id, state, original_message_id });
+    writes.mutate(Mutation::UpdateInteraction {
+        id: interaction.id,
+        state,
+        original_message_id,
+    });
     ports.unit_of_work.commit(writes).await
 }

@@ -17,19 +17,37 @@ pub struct InviteView {
 }
 
 pub async fn view(ports: &Ports, invite: Invite) -> AppResult<InviteView> {
-    let guild = ports.guilds.find(invite.guild_id).await?.ok_or(AppError::NotFound(Resource::Invite))?;
-    let channel = ports.channels.find(invite.channel_id).await?.ok_or(AppError::NotFound(Resource::Invite))?;
+    let guild = ports
+        .guilds
+        .find(invite.guild_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Invite))?;
+    let channel = ports
+        .channels
+        .find(invite.channel_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Invite))?;
     let inviter = match invite.inviter_id {
         Some(id) => ports.users.find(id).await?,
         None => None,
     };
     let member_count = ports.guilds.member_count(guild.id).await?;
-    Ok(InviteView { invite, guild, channel, inviter, member_count })
+    Ok(InviteView {
+        invite,
+        guild,
+        channel,
+        inviter,
+        member_count,
+    })
 }
 
 /// Public: anyone holding the code may look it up.
 pub async fn execute(ports: &Ports, code: &str) -> AppResult<InviteView> {
-    let invite = ports.invites.find(code).await?.ok_or(AppError::NotFound(Resource::Invite))?;
+    let invite = ports
+        .invites
+        .find(code)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Invite))?;
     if !invite.is_usable(ports.clock.now()) {
         return Err(AppError::NotFound(Resource::Invite));
     }

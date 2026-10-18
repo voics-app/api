@@ -113,7 +113,10 @@ impl From<RelationshipError> for AppError {
     fn from(error: RelationshipError) -> Self {
         match error {
             RelationshipError::BlockedByTarget => AppError::Forbidden(Denial::CannotMessageUser),
-            other => AppError::BadRequest { code: 80004, message: other.to_string() },
+            other => AppError::BadRequest {
+                code: 80004,
+                message: other.to_string(),
+            },
         }
     }
 }
@@ -121,10 +124,16 @@ impl From<RelationshipError> for AppError {
 impl From<InteractionError> for AppError {
     fn from(error: InteractionError) -> Self {
         match error {
-            InteractionError::AlreadyAcknowledged => AppError::BadRequest { code: 40060, message: error.to_string() },
+            InteractionError::AlreadyAcknowledged => AppError::BadRequest {
+                code: 40060,
+                message: error.to_string(),
+            },
             InteractionError::Expired => AppError::NotFound(Resource::Interaction),
             InteractionError::InvalidCallback | InteractionError::NotAcknowledged => {
-                AppError::BadRequest { code: 50035, message: error.to_string() }
+                AppError::BadRequest {
+                    code: 50035,
+                    message: error.to_string(),
+                }
             }
         }
     }

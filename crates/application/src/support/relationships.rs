@@ -11,8 +11,16 @@ pub async fn current_pair(
     me: &User,
     them: &User,
 ) -> crate::error::AppResult<(Option<RelationshipType>, Option<RelationshipType>)> {
-    let mine = ports.relationships.get(me.id, them.id).await?.map(|r| r.kind);
-    let theirs = ports.relationships.get(them.id, me.id).await?.map(|r| r.kind);
+    let mine = ports
+        .relationships
+        .get(me.id, them.id)
+        .await?
+        .map(|r| r.kind);
+    let theirs = ports
+        .relationships
+        .get(them.id, me.id)
+        .await?
+        .map(|r| r.kind);
     Ok((mine, theirs))
 }
 
@@ -41,14 +49,28 @@ fn apply_side(
     if before == after {
         return;
     }
-    writes.mutate(Mutation::SetRelationship { user_id: owner.id, target_id: target.id, kind: after, since });
+    writes.mutate(Mutation::SetRelationship {
+        user_id: owner.id,
+        target_id: target.id,
+        kind: after,
+        since,
+    });
     match after {
         Some(kind) => {
-            writes.emit(DomainEvent::RelationshipAdd { user_id: owner.id, kind, target: target.clone(), since });
+            writes.emit(DomainEvent::RelationshipAdd {
+                user_id: owner.id,
+                kind,
+                target: target.clone(),
+                since,
+            });
         }
         None => {
             if let Some(kind) = before {
-                writes.emit(DomainEvent::RelationshipRemove { user_id: owner.id, target_id: target.id, kind });
+                writes.emit(DomainEvent::RelationshipRemove {
+                    user_id: owner.id,
+                    target_id: target.id,
+                    kind,
+                });
             }
         }
     }

@@ -95,7 +95,10 @@ impl Permissions {
 
     /// Permissions that depend on SEND_MESSAGES (Discord implicit rule).
     pub const REQUIRES_SEND_MESSAGES: Permissions = Permissions(
-        Self::SEND_TTS_MESSAGES.0 | Self::MENTION_EVERYONE.0 | Self::ATTACH_FILES.0 | Self::EMBED_LINKS.0,
+        Self::SEND_TTS_MESSAGES.0
+            | Self::MENTION_EVERYONE.0
+            | Self::ATTACH_FILES.0
+            | Self::EMBED_LINKS.0,
     );
 
     /// What a timed-out member keeps.
@@ -356,14 +359,26 @@ mod tests {
 
     fn roles() -> Vec<RolePermissions> {
         vec![
-            RolePermissions { role_id: GUILD, permissions: everyone_base() },
+            RolePermissions {
+                role_id: GUILD,
+                permissions: everyone_base(),
+            },
             RolePermissions {
                 role_id: MOD_ROLE,
                 permissions: Permissions::KICK_MEMBERS | Permissions::MANAGE_MESSAGES,
             },
-            RolePermissions { role_id: MUTED_ROLE, permissions: N },
-            RolePermissions { role_id: ADMIN_ROLE, permissions: Permissions::ADMINISTRATOR },
-            RolePermissions { role_id: OTHER_ROLE, permissions: Permissions::MANAGE_ROLES },
+            RolePermissions {
+                role_id: MUTED_ROLE,
+                permissions: N,
+            },
+            RolePermissions {
+                role_id: ADMIN_ROLE,
+                permissions: Permissions::ADMINISTRATOR,
+            },
+            RolePermissions {
+                role_id: OTHER_ROLE,
+                permissions: Permissions::MANAGE_ROLES,
+            },
         ]
     }
 
@@ -376,11 +391,21 @@ mod tests {
     }
 
     fn role_ow(id: Snowflake, allow: Permissions, deny: Permissions) -> PermissionOverwrite {
-        PermissionOverwrite { id, kind: OverwriteKind::Role, allow, deny }
+        PermissionOverwrite {
+            id,
+            kind: OverwriteKind::Role,
+            allow,
+            deny,
+        }
     }
 
     fn member_ow(id: Snowflake, allow: Permissions, deny: Permissions) -> PermissionOverwrite {
-        PermissionOverwrite { id, kind: OverwriteKind::Member, allow, deny }
+        PermissionOverwrite {
+            id,
+            kind: OverwriteKind::Member,
+            allow,
+            deny,
+        }
     }
 
     struct Case {
@@ -401,7 +426,15 @@ mod tests {
         has: Permissions,
         lacks: Permissions,
     ) -> Case {
-        Case { name, user, roles, timed_out: false, overwrites, has, lacks }
+        Case {
+            name,
+            user,
+            roles,
+            timed_out: false,
+            overwrites,
+            has,
+            lacks,
+        }
     }
 
     fn cases() -> Vec<Case> {
@@ -414,12 +447,25 @@ mod tests {
                 Permissions::ALL,
                 N,
             ),
-            Case { timed_out: true, ..case("owner ignores timeout", OWNER, vec![], vec![], Permissions::ALL, N) },
+            Case {
+                timed_out: true,
+                ..case(
+                    "owner ignores timeout",
+                    OWNER,
+                    vec![],
+                    vec![],
+                    Permissions::ALL,
+                    N,
+                )
+            },
             case(
                 "administrator role grants all and bypasses overwrites",
                 ALICE,
                 vec![ADMIN_ROLE],
-                vec![role_ow(GUILD, N, Permissions::VIEW_CHANNEL), member_ow(ALICE, N, Permissions::SEND_MESSAGES)],
+                vec![
+                    role_ow(GUILD, N, Permissions::VIEW_CHANNEL),
+                    member_ow(ALICE, N, Permissions::SEND_MESSAGES),
+                ],
                 Permissions::ALL,
                 N,
             ),
@@ -459,7 +505,10 @@ mod tests {
                 "role overwrite allow beats everyone overwrite deny",
                 ALICE,
                 vec![MOD_ROLE],
-                vec![role_ow(GUILD, N, Permissions::SEND_MESSAGES), role_ow(MOD_ROLE, Permissions::SEND_MESSAGES, N)],
+                vec![
+                    role_ow(GUILD, N, Permissions::SEND_MESSAGES),
+                    role_ow(MOD_ROLE, Permissions::SEND_MESSAGES, N),
+                ],
                 Permissions::SEND_MESSAGES,
                 N,
             ),
@@ -467,7 +516,10 @@ mod tests {
                 "role overwrites apply all denies before all allows",
                 ALICE,
                 vec![MOD_ROLE, MUTED_ROLE],
-                vec![role_ow(MUTED_ROLE, N, Permissions::SEND_MESSAGES), role_ow(MOD_ROLE, Permissions::SEND_MESSAGES, N)],
+                vec![
+                    role_ow(MUTED_ROLE, N, Permissions::SEND_MESSAGES),
+                    role_ow(MOD_ROLE, Permissions::SEND_MESSAGES, N),
+                ],
                 Permissions::SEND_MESSAGES,
                 N,
             ),
@@ -475,7 +527,10 @@ mod tests {
                 "role overwrite order in the list does not matter",
                 ALICE,
                 vec![MOD_ROLE, MUTED_ROLE],
-                vec![role_ow(MOD_ROLE, Permissions::SEND_MESSAGES, N), role_ow(MUTED_ROLE, N, Permissions::SEND_MESSAGES)],
+                vec![
+                    role_ow(MOD_ROLE, Permissions::SEND_MESSAGES, N),
+                    role_ow(MUTED_ROLE, N, Permissions::SEND_MESSAGES),
+                ],
                 Permissions::SEND_MESSAGES,
                 N,
             ),
@@ -491,7 +546,10 @@ mod tests {
                 "member overwrite deny beats role overwrite allow",
                 ALICE,
                 vec![MOD_ROLE],
-                vec![role_ow(MOD_ROLE, Permissions::ATTACH_FILES, N), member_ow(ALICE, N, Permissions::ATTACH_FILES)],
+                vec![
+                    role_ow(MOD_ROLE, Permissions::ATTACH_FILES, N),
+                    member_ow(ALICE, N, Permissions::ATTACH_FILES),
+                ],
                 Permissions::VIEW_CHANNEL,
                 Permissions::ATTACH_FILES,
             ),
@@ -511,7 +569,11 @@ mod tests {
                 "overwrite for a role the member lacks is ignored",
                 ALICE,
                 vec![],
-                vec![role_ow(MOD_ROLE, Permissions::MANAGE_MESSAGES, Permissions::SEND_MESSAGES)],
+                vec![role_ow(
+                    MOD_ROLE,
+                    Permissions::MANAGE_MESSAGES,
+                    Permissions::SEND_MESSAGES,
+                )],
                 Permissions::SEND_MESSAGES,
                 Permissions::MANAGE_MESSAGES,
             ),
@@ -537,13 +599,18 @@ mod tests {
                 vec![MOD_ROLE],
                 vec![role_ow(GUILD, N, Permissions::VIEW_CHANNEL)],
                 Permissions::KICK_MEMBERS | Permissions::CHANGE_NICKNAME,
-                Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES | Permissions::MANAGE_MESSAGES,
+                Permissions::VIEW_CHANNEL
+                    | Permissions::SEND_MESSAGES
+                    | Permissions::MANAGE_MESSAGES,
             ),
             case(
                 "VIEW_CHANNEL regained through a role overwrite",
                 ALICE,
                 vec![MOD_ROLE],
-                vec![role_ow(GUILD, N, Permissions::VIEW_CHANNEL), role_ow(MOD_ROLE, Permissions::VIEW_CHANNEL, N)],
+                vec![
+                    role_ow(GUILD, N, Permissions::VIEW_CHANNEL),
+                    role_ow(MOD_ROLE, Permissions::VIEW_CHANNEL, N),
+                ],
                 Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES,
                 N,
             ),
@@ -551,7 +618,10 @@ mod tests {
                 "member overwrite deny of VIEW_CHANNEL hides the channel",
                 ALICE,
                 vec![MOD_ROLE],
-                vec![role_ow(MOD_ROLE, Permissions::VIEW_CHANNEL, N), member_ow(ALICE, N, Permissions::VIEW_CHANNEL)],
+                vec![
+                    role_ow(MOD_ROLE, Permissions::VIEW_CHANNEL, N),
+                    member_ow(ALICE, N, Permissions::VIEW_CHANNEL),
+                ],
                 Permissions::KICK_MEMBERS,
                 Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY,
             ),
@@ -559,7 +629,11 @@ mod tests {
                 "missing SEND_MESSAGES strips embed, attach, tts and mention everyone",
                 ALICE,
                 vec![],
-                vec![role_ow(GUILD, Permissions::ATTACH_FILES | Permissions::MENTION_EVERYONE, Permissions::SEND_MESSAGES)],
+                vec![role_ow(
+                    GUILD,
+                    Permissions::ATTACH_FILES | Permissions::MENTION_EVERYONE,
+                    Permissions::SEND_MESSAGES,
+                )],
                 Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY,
                 Permissions::REQUIRES_SEND_MESSAGES,
             ),
@@ -576,13 +650,24 @@ mod tests {
             },
             Case {
                 timed_out: true,
-                ..case("timed-out administrator is unaffected", ALICE, vec![ADMIN_ROLE], vec![], Permissions::ALL, N)
+                ..case(
+                    "timed-out administrator is unaffected",
+                    ALICE,
+                    vec![ADMIN_ROLE],
+                    vec![],
+                    Permissions::ALL,
+                    N,
+                )
             },
             case(
                 "role overwrite can deny a permission granted by another role",
                 ALICE,
                 vec![OTHER_ROLE],
-                vec![role_ow(OTHER_ROLE, Permissions::MANAGE_CHANNELS, Permissions::MANAGE_ROLES)],
+                vec![role_ow(
+                    OTHER_ROLE,
+                    Permissions::MANAGE_CHANNELS,
+                    Permissions::MANAGE_ROLES,
+                )],
                 Permissions::MANAGE_CHANNELS,
                 Permissions::MANAGE_ROLES,
             ),
@@ -592,10 +677,17 @@ mod tests {
     #[test]
     fn channel_permission_table() {
         let roles = roles();
-        let guild = GuildPermissionContext { guild_id: GUILD, owner_id: OWNER, roles: &roles };
+        let guild = GuildPermissionContext {
+            guild_id: GUILD,
+            owner_id: OWNER,
+            roles: &roles,
+        };
         for case in cases() {
-            let member =
-                MemberPermissionContext { user_id: case.user, role_ids: &case.roles, timed_out: case.timed_out };
+            let member = MemberPermissionContext {
+                user_id: case.user,
+                role_ids: &case.roles,
+                timed_out: case.timed_out,
+            };
             let computed = guild.channel_permissions(&member, &case.overwrites);
             assert!(
                 computed.contains(case.has),
@@ -615,7 +707,11 @@ mod tests {
     #[test]
     fn base_permission_table() {
         let roles = roles();
-        let guild = GuildPermissionContext { guild_id: GUILD, owner_id: OWNER, roles: &roles };
+        let guild = GuildPermissionContext {
+            guild_id: GUILD,
+            owner_id: OWNER,
+            roles: &roles,
+        };
         let table: Vec<(&str, Snowflake, Vec<Snowflake>, bool, Permissions)> = vec![
             ("owner", OWNER, vec![], false, Permissions::ALL),
             ("everyone only", ALICE, vec![], false, everyone_base()),
@@ -627,11 +723,27 @@ mod tests {
                 everyone_base() | Permissions::KICK_MEMBERS | Permissions::MANAGE_MESSAGES,
             ),
             ("admin", ALICE, vec![ADMIN_ROLE], false, Permissions::ALL),
-            ("unknown role ignored", ALICE, vec![Snowflake::new(999)], false, everyone_base()),
-            ("timed out", ALICE, vec![MOD_ROLE], true, Permissions::TIMED_OUT_ALLOWED),
+            (
+                "unknown role ignored",
+                ALICE,
+                vec![Snowflake::new(999)],
+                false,
+                everyone_base(),
+            ),
+            (
+                "timed out",
+                ALICE,
+                vec![MOD_ROLE],
+                true,
+                Permissions::TIMED_OUT_ALLOWED,
+            ),
         ];
         for (name, user, role_ids, timed_out, expected) in table {
-            let member = MemberPermissionContext { user_id: user, role_ids: &role_ids, timed_out };
+            let member = MemberPermissionContext {
+                user_id: user,
+                role_ids: &role_ids,
+                timed_out,
+            };
             assert_eq!(guild.base_permissions(&member), expected, "{name}");
         }
     }
@@ -639,10 +751,24 @@ mod tests {
     #[test]
     fn exact_result_for_member_overwrite() {
         let roles = roles();
-        let guild = GuildPermissionContext { guild_id: GUILD, owner_id: OWNER, roles: &roles };
-        let member = MemberPermissionContext { user_id: BOB, role_ids: &[], timed_out: false };
-        let computed =
-            guild.channel_permissions(&member, &[member_ow(BOB, Permissions::CONNECT, Permissions::EMBED_LINKS)]);
+        let guild = GuildPermissionContext {
+            guild_id: GUILD,
+            owner_id: OWNER,
+            roles: &roles,
+        };
+        let member = MemberPermissionContext {
+            user_id: BOB,
+            role_ids: &[],
+            timed_out: false,
+        };
+        let computed = guild.channel_permissions(
+            &member,
+            &[member_ow(
+                BOB,
+                Permissions::CONNECT,
+                Permissions::EMBED_LINKS,
+            )],
+        );
         assert_eq!(
             computed,
             Permissions::VIEW_CHANNEL
@@ -671,7 +797,10 @@ mod tests {
 
     #[test]
     fn channel_scoped_and_guild_only_partition_all() {
-        assert_eq!(Permissions::CHANNEL_SCOPED | Permissions::GUILD_ONLY, Permissions::ALL);
+        assert_eq!(
+            Permissions::CHANNEL_SCOPED | Permissions::GUILD_ONLY,
+            Permissions::ALL
+        );
         assert!(!Permissions::CHANNEL_SCOPED.intersects(Permissions::GUILD_ONLY));
     }
 }

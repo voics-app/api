@@ -26,10 +26,17 @@ pub async fn execute(
     let before = ctx.role(role_id)?.clone();
     ctx.require_manageable_role(&before)?;
     if before.managed && (input.name.is_some() || input.permissions.is_some()) {
-        return Err(AppError::BadRequest { code: 50028, message: "Managed roles cannot be renamed or re-permissioned.".into() });
+        return Err(AppError::BadRequest {
+            code: 50028,
+            message: "Managed roles cannot be renamed or re-permissioned.".into(),
+        });
     }
     if before.is_everyone() && input.name.is_some() {
-        return Err(AppError::invalid("name", "ROLE_EVERYONE_NAME", "The @everyone role cannot be renamed."));
+        return Err(AppError::invalid(
+            "name",
+            "ROLE_EVERYONE_NAME",
+            "The @everyone role cannot be renamed.",
+        ));
     }
     let mut role = before.clone();
     apply_role_input(&ctx, &mut role, input)?;
@@ -42,15 +49,27 @@ pub async fn execute(
         ),
         AuditChange::if_changed("color", json!(before.color), json!(role.color)),
         AuditChange::if_changed("hoist", json!(before.hoist), json!(role.hoist)),
-        AuditChange::if_changed("mentionable", json!(before.mentionable), json!(role.mentionable)),
+        AuditChange::if_changed(
+            "mentionable",
+            json!(before.mentionable),
+            json!(role.mentionable),
+        ),
     ]
     .into_iter()
     .flatten()
     .collect();
     let mut writes = WriteSet::new();
-    writes.mutate(Mutation::UpdateRole(role.clone())).emit(DomainEvent::RoleUpdate(role.clone()));
+    writes
+        .mutate(Mutation::UpdateRole(role.clone()))
+        .emit(DomainEvent::RoleUpdate(role.clone()));
     if !changes.is_empty() {
-        writes.audit(audit.entry(ports, guild_id, AuditAction::RoleUpdate, Some(role.id), changes)?);
+        writes.audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::RoleUpdate,
+            Some(role.id),
+            changes,
+        )?);
     }
     ports.unit_of_work.commit(writes).await?;
     Ok(role)

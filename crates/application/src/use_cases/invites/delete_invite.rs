@@ -12,8 +12,17 @@ use crate::use_cases::invites::get_invite::{view, InviteView};
 use crate::write_set::{Mutation, WriteSet};
 
 /// Allowed for the inviter, MANAGE_CHANNELS on the channel or MANAGE_GUILD.
-pub async fn execute(ports: &Ports, actor: &Actor, code: &str, audit: AuditContext<'_>) -> AppResult<InviteView> {
-    let invite = ports.invites.find(code).await?.ok_or(AppError::NotFound(Resource::Invite))?;
+pub async fn execute(
+    ports: &Ports,
+    actor: &Actor,
+    code: &str,
+    audit: AuditContext<'_>,
+) -> AppResult<InviteView> {
+    let invite = ports
+        .invites
+        .find(code)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Invite))?;
     let access = ChannelAccess::resolve(ports, invite.channel_id, actor.user_id).await?;
     let ctx = access.guild()?;
     let allowed = invite.inviter_id == Some(actor.user_id)
@@ -27,8 +36,18 @@ pub async fn execute(ports: &Ports, actor: &Actor, code: &str, audit: AuditConte
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::DeleteInvite(invite.code.clone()))
-        .emit(DomainEvent::InviteDelete { guild_id: invite.guild_id, channel_id: invite.channel_id, code: invite.code })
-        .audit(audit.entry(ports, invite.guild_id, AuditAction::InviteDelete, None, changes)?);
+        .emit(DomainEvent::InviteDelete {
+            guild_id: invite.guild_id,
+            channel_id: invite.channel_id,
+            code: invite.code,
+        })
+        .audit(audit.entry(
+            ports,
+            invite.guild_id,
+            AuditAction::InviteDelete,
+            None,
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await?;
     Ok(result)
 }

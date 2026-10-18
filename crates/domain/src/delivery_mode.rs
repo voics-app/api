@@ -88,7 +88,9 @@ pub enum ChannelDelivery<'a> {
     /// Guild channel: the mode chosen by members holding MANAGE_CHANNELS.
     Guild { configured: DeliveryMode },
     /// DM or group DM: every participant's preference.
-    Private { participants: &'a [ParticipantPreference] },
+    Private {
+        participants: &'a [ParticipantPreference],
+    },
 }
 
 /// `effective(channel)` from P11.
@@ -111,7 +113,10 @@ pub fn resolve(channel: ChannelDelivery<'_>) -> DeliveryMode {
 }
 
 /// Validates a mode chosen for a guild channel (400 on violation).
-pub fn validate_guild_channel_mode(mode: DeliveryMode, viewer_count: usize) -> Result<(), DeliveryModeError> {
+pub fn validate_guild_channel_mode(
+    mode: DeliveryMode,
+    viewer_count: usize,
+) -> Result<(), DeliveryModeError> {
     match mode {
         DeliveryMode::Standard => Ok(()),
         DeliveryMode::P2p => Err(DeliveryModeError::P2pInGuild),
@@ -123,7 +128,10 @@ pub fn validate_guild_channel_mode(mode: DeliveryMode, viewer_count: usize) -> R
 }
 
 /// Validates a per-chat override in a DM or group DM (400 on violation).
-pub fn validate_private_override(mode: DeliveryMode, participant_count: usize) -> Result<(), DeliveryModeError> {
+pub fn validate_private_override(
+    mode: DeliveryMode,
+    participant_count: usize,
+) -> Result<(), DeliveryModeError> {
     if mode == DeliveryMode::P2p && participant_count > P2P_MAX_PARTICIPANTS {
         return Err(DeliveryModeError::P2pAudienceTooLarge);
     }
@@ -135,8 +143,14 @@ mod tests {
     use super::*;
     use DeliveryMode::{Ephemeral as E, P2p as P, Standard as S};
 
-    fn pref(chat_override: Option<DeliveryMode>, account_default: DeliveryMode) -> ParticipantPreference {
-        ParticipantPreference { chat_override, account_default }
+    fn pref(
+        chat_override: Option<DeliveryMode>,
+        account_default: DeliveryMode,
+    ) -> ParticipantPreference {
+        ParticipantPreference {
+            chat_override,
+            account_default,
+        }
     }
 
     #[test]
@@ -155,30 +169,82 @@ mod tests {
     #[test]
     fn private_channel_resolution_table() {
         let table: Vec<(&str, Vec<ParticipantPreference>, DeliveryMode)> = vec![
-            ("both standard defaults", vec![pref(None, S), pref(None, S)], S),
-            ("one ephemeral default wins", vec![pref(None, S), pref(None, E)], E),
-            ("one p2p default wins", vec![pref(None, E), pref(None, P)], P),
-            ("override beats own default (downgrade)", vec![pref(Some(S), P), pref(None, S)], S),
-            ("override beats own default (upgrade)", vec![pref(Some(E), S), pref(None, S)], E),
-            ("strictest override wins", vec![pref(Some(P), S), pref(Some(E), S)], P),
-            ("other's default still counts", vec![pref(Some(S), S), pref(None, E)], E),
-            ("all overrides standard", vec![pref(Some(S), P), pref(Some(S), E)], S),
+            (
+                "both standard defaults",
+                vec![pref(None, S), pref(None, S)],
+                S,
+            ),
+            (
+                "one ephemeral default wins",
+                vec![pref(None, S), pref(None, E)],
+                E,
+            ),
+            (
+                "one p2p default wins",
+                vec![pref(None, E), pref(None, P)],
+                P,
+            ),
+            (
+                "override beats own default (downgrade)",
+                vec![pref(Some(S), P), pref(None, S)],
+                S,
+            ),
+            (
+                "override beats own default (upgrade)",
+                vec![pref(Some(E), S), pref(None, S)],
+                E,
+            ),
+            (
+                "strictest override wins",
+                vec![pref(Some(P), S), pref(Some(E), S)],
+                P,
+            ),
+            (
+                "other's default still counts",
+                vec![pref(Some(S), S), pref(None, E)],
+                E,
+            ),
+            (
+                "all overrides standard",
+                vec![pref(Some(S), P), pref(Some(S), E)],
+                S,
+            ),
             ("no participants defaults to standard", vec![], S),
-            ("ten participants keep p2p", (0..10).map(|i| pref(None, if i == 0 { P } else { S })).collect(), P),
+            (
+                "ten participants keep p2p",
+                (0..10)
+                    .map(|i| pref(None, if i == 0 { P } else { S }))
+                    .collect(),
+                P,
+            ),
             (
                 "eleven participants: p2p falls back to ephemeral",
-                (0..11).map(|i| pref(None, if i == 0 { P } else { S })).collect(),
+                (0..11)
+                    .map(|i| pref(None, if i == 0 { P } else { S }))
+                    .collect(),
                 E,
             ),
             (
                 "eleven participants: p2p override falls back to ephemeral",
-                (0..11).map(|i| pref(if i == 3 { Some(P) } else { None }, S)).collect(),
+                (0..11)
+                    .map(|i| pref(if i == 3 { Some(P) } else { None }, S))
+                    .collect(),
                 E,
             ),
-            ("group of three, mixed", vec![pref(None, S), pref(Some(E), P), pref(None, S)], E),
+            (
+                "group of three, mixed",
+                vec![pref(None, S), pref(Some(E), P), pref(None, S)],
+                E,
+            ),
         ];
         for (name, participants, expected) in table {
-            assert_eq!(resolve(ChannelDelivery::Private { participants: &participants }), expected, "{name}");
+            assert_eq!(
+                resolve(ChannelDelivery::Private {
+                    participants: &participants
+                }),
+                expected,
+                "{name}"
+            );
         }
     }
 
@@ -193,7 +259,11 @@ mod tests {
             (P, 500, Err(DeliveryModeError::P2pInGuild)),
         ];
         for (mode, viewers, expected) in table {
-            assert_eq!(validate_guild_channel_mode(mode, viewers), expected, "{mode} with {viewers} viewers");
+            assert_eq!(
+                validate_guild_channel_mode(mode, viewers),
+                expected,
+                "{mode} with {viewers} viewers"
+            );
         }
     }
 
@@ -207,7 +277,11 @@ mod tests {
             (P, 11, Err(DeliveryModeError::P2pAudienceTooLarge)),
         ];
         for (mode, participants, expected) in table {
-            assert_eq!(validate_private_override(mode, participants), expected, "{mode} with {participants}");
+            assert_eq!(
+                validate_private_override(mode, participants),
+                expected,
+                "{mode} with {participants}"
+            );
         }
     }
 
@@ -216,6 +290,9 @@ mod tests {
         for mode in [S, E, P] {
             assert_eq!(mode.as_str().parse::<DeliveryMode>().unwrap(), mode);
         }
-        assert_eq!("secret".parse::<DeliveryMode>(), Err(DeliveryModeError::Unknown));
+        assert_eq!(
+            "secret".parse::<DeliveryMode>(),
+            Err(DeliveryModeError::Unknown)
+        );
     }
 }

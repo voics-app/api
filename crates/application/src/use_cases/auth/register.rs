@@ -25,10 +25,18 @@ pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthToken
 
     let mut taken = ValidationErrors::new();
     if ports.users.find_by_email(&email).await?.is_some() {
-        taken.add("email", "EMAIL_ALREADY_REGISTERED", "Email is already registered.");
+        taken.add(
+            "email",
+            "EMAIL_ALREADY_REGISTERED",
+            "Email is already registered.",
+        );
     }
     if ports.users.find_by_username(&username).await?.is_some() {
-        taken.add("username", "USERNAME_ALREADY_TAKEN", "Username is unavailable. Try adding numbers or characters.");
+        taken.add(
+            "username",
+            "USERNAME_ALREADY_TAKEN",
+            "Username is unavailable. Try adding numbers or characters.",
+        );
     }
     taken.into_result()?;
 

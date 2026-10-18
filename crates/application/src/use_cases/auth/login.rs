@@ -19,9 +19,21 @@ fn invalid_login() -> AppError {
 
 pub async fn execute(ports: &Ports, input: LoginInput) -> AppResult<AuthTokens> {
     let email = input.email.trim().to_lowercase();
-    let user = ports.users.find_by_email(&email).await?.ok_or_else(invalid_login)?;
-    let credentials = ports.users.credentials(user.id).await?.ok_or_else(invalid_login)?;
-    if !ports.passwords.verify(&input.password, &credentials.password_hash).await? {
+    let user = ports
+        .users
+        .find_by_email(&email)
+        .await?
+        .ok_or_else(invalid_login)?;
+    let credentials = ports
+        .users
+        .credentials(user.id)
+        .await?
+        .ok_or_else(invalid_login)?;
+    if !ports
+        .passwords
+        .verify(&input.password, &credentials.password_hash)
+        .await?
+    {
         return Err(invalid_login());
     }
     if user.is_suspended(ports.clock.now()) {
@@ -30,13 +42,25 @@ pub async fn execute(ports: &Ports, input: LoginInput) -> AppResult<AuthTokens> 
     if let Some(secret) = &credentials.totp_secret {
         let code = input.totp.as_deref().ok_or(AppError::MfaRequired)?;
         if !ports.totp.verify(secret, code, ports.clock.now()) {
-            return Err(AppError::invalid("totp", "INVALID_TOTP", "Invalid two-factor code."));
+            return Err(AppError::invalid(
+                "totp",
+                "INVALID_TOTP",
+                "Invalid two-factor code.",
+            ));
         }
     }
     if let Some(device_id) = input.device_id {
-        let owned = ports.devices.find(device_id).await?.is_some_and(|d| d.user_id == user.id);
+        let owned = ports
+            .devices
+            .find(device_id)
+            .await?
+            .is_some_and(|d| d.user_id == user.id);
         if !owned {
-            return Err(AppError::invalid("device_id", "UNKNOWN_DEVICE", "Unknown device."));
+            return Err(AppError::invalid(
+                "device_id",
+                "UNKNOWN_DEVICE",
+                "Unknown device.",
+            ));
         }
     }
     start_session(ports, user, input.device_id).await

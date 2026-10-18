@@ -72,7 +72,9 @@ impl FromStr for Snowflake {
     type Err = SnowflakeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<u64>().map(Snowflake).map_err(|_| SnowflakeError::Malformed)
+        s.parse::<u64>()
+            .map(Snowflake)
+            .map_err(|_| SnowflakeError::Malformed)
     }
 }
 
@@ -100,7 +102,11 @@ impl SnowflakeGenerator {
         if worker_id > MAX_WORKER_ID {
             return Err(SnowflakeError::WorkerOutOfRange);
         }
-        Ok(Self { worker_id, last_epoch_ms: 0, sequence: 0 })
+        Ok(Self {
+            worker_id,
+            last_epoch_ms: 0,
+            sequence: 0,
+        })
     }
 
     pub fn next(&mut self, now_unix_ms: u64) -> Snowflake {
@@ -180,15 +186,27 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_worker() {
-        assert_eq!(SnowflakeGenerator::new(1024).unwrap_err(), SnowflakeError::WorkerOutOfRange);
+        assert_eq!(
+            SnowflakeGenerator::new(1024).unwrap_err(),
+            SnowflakeError::WorkerOutOfRange
+        );
         assert!(SnowflakeGenerator::new(1023).is_ok());
     }
 
     #[test]
     fn computes_ten_day_buckets() {
-        let cases = [(0u64, 0u64), (BUCKET_WIDTH_MS - 1, 0), (BUCKET_WIDTH_MS, 1), (BUCKET_WIDTH_MS * 7 + 5, 7)];
+        let cases = [
+            (0u64, 0u64),
+            (BUCKET_WIDTH_MS - 1, 0),
+            (BUCKET_WIDTH_MS, 1),
+            (BUCKET_WIDTH_MS * 7 + 5, 7),
+        ];
         for (epoch_ms, bucket) in cases {
-            assert_eq!(Snowflake::new(epoch_ms << 22).bucket(), bucket, "epoch_ms={epoch_ms}");
+            assert_eq!(
+                Snowflake::new(epoch_ms << 22).bucket(),
+                bucket,
+                "epoch_ms={epoch_ms}"
+            );
         }
     }
 
@@ -197,7 +215,10 @@ mod tests {
         let id = Snowflake::new(1_234_567_890_123_456_789);
         assert_eq!(id.to_string(), "1234567890123456789");
         assert_eq!("1234567890123456789".parse::<Snowflake>().unwrap(), id);
-        assert_eq!("abc".parse::<Snowflake>().unwrap_err(), SnowflakeError::Malformed);
+        assert_eq!(
+            "abc".parse::<Snowflake>().unwrap_err(),
+            SnowflakeError::Malformed
+        );
     }
 
     #[test]

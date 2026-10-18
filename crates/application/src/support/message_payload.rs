@@ -14,10 +14,26 @@ pub const MAX_EMBEDS: usize = 10;
 const MESSAGE_TYPE_CHAT_INPUT_COMMAND: u8 = 20;
 
 /// Fields a webhook or bot may set on a message it creates.
-const CREATE_FIELDS: [&str; 9] =
-    ["content", "embeds", "components", "attachments", "tts", "allowed_mentions", "flags", "username", "avatar_url"];
+const CREATE_FIELDS: [&str; 9] = [
+    "content",
+    "embeds",
+    "components",
+    "attachments",
+    "tts",
+    "allowed_mentions",
+    "flags",
+    "username",
+    "avatar_url",
+];
 /// Fields that may change on an edit.
-const EDIT_FIELDS: [&str; 6] = ["content", "embeds", "components", "attachments", "allowed_mentions", "flags"];
+const EDIT_FIELDS: [&str; 6] = [
+    "content",
+    "embeds",
+    "components",
+    "attachments",
+    "allowed_mentions",
+    "flags",
+];
 
 /// Who a created message is attributed to.
 #[derive(Debug, Clone, Copy, Default)]
@@ -32,24 +48,42 @@ fn object(data: Option<Value>) -> AppResult<Map<String, Value>> {
     match data {
         None | Some(Value::Null) => Ok(Map::new()),
         Some(Value::Object(map)) => Ok(map),
-        Some(_) => Err(AppError::invalid("data", "BASE_TYPE_OBJECT", "Expected an object.")),
+        Some(_) => Err(AppError::invalid(
+            "data",
+            "BASE_TYPE_OBJECT",
+            "Expected an object.",
+        )),
     }
 }
 
 fn validate(fields: &Map<String, Value>) -> AppResult<()> {
     if let Some(content) = fields.get("content").and_then(Value::as_str) {
         if content.chars().count() > MAX_CONTENT_CHARS {
-            return Err(AppError::invalid("content", "BASE_TYPE_MAX_LENGTH", "Must be 2000 or fewer in length."));
+            return Err(AppError::invalid(
+                "content",
+                "BASE_TYPE_MAX_LENGTH",
+                "Must be 2000 or fewer in length.",
+            ));
         }
     }
-    if fields.get("embeds").and_then(Value::as_array).is_some_and(|e| e.len() > MAX_EMBEDS) {
-        return Err(AppError::invalid("embeds", "BASE_TYPE_MAX_LENGTH", "Must be 10 or fewer in length."));
+    if fields
+        .get("embeds")
+        .and_then(Value::as_array)
+        .is_some_and(|e| e.len() > MAX_EMBEDS)
+    {
+        return Err(AppError::invalid(
+            "embeds",
+            "BASE_TYPE_MAX_LENGTH",
+            "Must be 10 or fewer in length.",
+        ));
     }
     Ok(())
 }
 
 fn keep_only(map: Map<String, Value>, allowed: &[&str]) -> Map<String, Value> {
-    map.into_iter().filter(|(key, _)| allowed.contains(&key.as_str())).collect()
+    map.into_iter()
+        .filter(|(key, _)| allowed.contains(&key.as_str()))
+        .collect()
 }
 
 fn require_body(fields: &Map<String, Value>) -> AppResult<()> {
@@ -64,7 +98,10 @@ fn require_body(fields: &Map<String, Value>) -> AppResult<()> {
     if has("content") || has("embeds") || has("components") || has("attachments") {
         Ok(())
     } else {
-        Err(AppError::BadRequest { code: 50006, message: "Cannot send an empty message".into() })
+        Err(AppError::BadRequest {
+            code: 50006,
+            message: "Cannot send an empty message".into(),
+        })
     }
 }
 
@@ -86,7 +123,10 @@ pub fn compose(data: Option<Value>, origin: MessageOrigin, needs_body: bool) -> 
     put("webhook_id", origin.webhook_id);
     put("interaction_id", origin.interaction_id);
     if origin.interaction_id.is_some() {
-        fields.insert("type".to_owned(), Value::from(MESSAGE_TYPE_CHAT_INPUT_COMMAND));
+        fields.insert(
+            "type".to_owned(),
+            Value::from(MESSAGE_TYPE_CHAT_INPUT_COMMAND),
+        );
     }
     Ok(Value::Object(fields))
 }
@@ -111,7 +151,12 @@ mod tests {
             interaction_id: Some(Snowflake::new(3)),
             ..Default::default()
         };
-        let message = compose(Some(json!({"content": "hi", "id": "forged", "pinned": true})), origin, true).unwrap();
+        let message = compose(
+            Some(json!({"content": "hi", "id": "forged", "pinned": true})),
+            origin,
+            true,
+        )
+        .unwrap();
         assert_eq!(
             message,
             json!({"content": "hi", "author_id": "1", "application_id": "2", "interaction_id": "3", "type": 20})

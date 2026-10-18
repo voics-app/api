@@ -67,7 +67,11 @@ mod tests {
     fn usability_table() {
         let now = Utc::now();
         let cases = [
-            ("never expires, unlimited", invite(0, 0, 500, 1_000_000), true),
+            (
+                "never expires, unlimited",
+                invite(0, 0, 500, 1_000_000),
+                true,
+            ),
             ("within max age", invite(3600, 0, 0, 10), true),
             ("past max age", invite(3600, 0, 0, 3601), false),
             ("uses remaining", invite(0, 5, 4, 0), true),

@@ -34,6 +34,12 @@ pub async fn execute(
     writes
         .mutate(Mutation::UpdateChannel(channel.clone()))
         .emit(DomainEvent::ChannelUpdate(channel.clone()))
-        .audit(audit.entry(ports, ctx.guild.id, AuditAction::ChannelOverwriteDelete, Some(channel.id), vec![])?);
+        .audit(audit.entry(
+            ports,
+            ctx.guild.id,
+            AuditAction::ChannelOverwriteDelete,
+            Some(channel.id),
+            vec![],
+        )?);
     ports.unit_of_work.commit(writes).await
 }

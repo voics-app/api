@@ -30,7 +30,10 @@ impl Default for Settings {
         Self {
             access_token_ttl: Duration::minutes(15),
             refresh_token_ttl: Duration::days(30),
-            voice_regions: vec![VoiceRegion { id: "nl-home".into(), name: "Netherlands (Home)".into() }],
+            voice_regions: vec![VoiceRegion {
+                id: "nl-home".into(),
+                name: "Netherlands (Home)".into(),
+            }],
             default_voice_region: "nl-home".into(),
         }
     }
@@ -65,8 +68,13 @@ pub struct Ports {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActorKind {
-    User { session_id: Uuid, device_id: Option<Snowflake> },
-    Bot { application_id: Snowflake },
+    User {
+        session_id: Uuid,
+        device_id: Option<Snowflake>,
+    },
+    Bot {
+        application_id: Snowflake,
+    },
 }
 
 /// The authenticated caller.

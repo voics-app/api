@@ -22,7 +22,10 @@ pub async fn execute(
     ctx.require(Permissions::MANAGE_ROLES)?;
     let role = ctx.role(role_id)?.clone();
     if role.is_everyone() || role.managed {
-        return Err(AppError::BadRequest { code: 50028, message: "This role cannot be deleted.".into() });
+        return Err(AppError::BadRequest {
+            code: 50028,
+            message: "This role cannot be deleted.".into(),
+        });
     }
     ctx.require_manageable_role(&role)?;
     let changes = vec![AuditChange::new("name", Some(json!(role.name)), None)];
@@ -30,6 +33,12 @@ pub async fn execute(
     writes
         .mutate(Mutation::DeleteRole { guild_id, role_id })
         .emit(DomainEvent::RoleDelete { guild_id, role_id })
-        .audit(audit.entry(ports, guild_id, AuditAction::RoleDelete, Some(role_id), changes)?);
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::RoleDelete,
+            Some(role_id),
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await
 }

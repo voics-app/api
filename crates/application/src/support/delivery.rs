@@ -22,9 +22,16 @@ pub async fn effective_mode_with(
     pending: Option<(Snowflake, Option<DeliveryMode>)>,
 ) -> AppResult<DeliveryMode> {
     if channel.guild_id.is_some() {
-        return Ok(resolve(ChannelDelivery::Guild { configured: channel.delivery_mode }));
+        return Ok(resolve(ChannelDelivery::Guild {
+            configured: channel.delivery_mode,
+        }));
     }
-    let mut overrides: HashMap<_, _> = ports.channels.delivery_overrides(channel.id).await?.into_iter().collect();
+    let mut overrides: HashMap<_, _> = ports
+        .channels
+        .delivery_overrides(channel.id)
+        .await?
+        .into_iter()
+        .collect();
     if let Some((user_id, mode)) = pending {
         match mode {
             Some(mode) => overrides.insert(user_id, mode),
@@ -44,7 +51,9 @@ pub async fn effective_mode_with(
                 .unwrap_or_default(),
         })
         .collect();
-    Ok(resolve(ChannelDelivery::Private { participants: &participants }))
+    Ok(resolve(ChannelDelivery::Private {
+        participants: &participants,
+    }))
 }
 
 /// How many guild members can view `channel` (for the ephemeral audience limit).
@@ -59,6 +68,10 @@ pub async fn viewer_count(
     let access = GuildAccess::new(guild, roles, ports.clock.now());
     Ok(members
         .iter()
-        .filter(|m| access.in_channel(m, channel, parent).contains(Permissions::VIEW_CHANNEL))
+        .filter(|m| {
+            access
+                .in_channel(m, channel, parent)
+                .contains(Permissions::VIEW_CHANNEL)
+        })
         .count())
 }

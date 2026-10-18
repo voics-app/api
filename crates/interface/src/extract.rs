@@ -76,3 +76,39 @@ impl FromRequestParts<AppState> for Internal {
         }
     }
 }
+
+/// The `X-Audit-Log-Reason` header, applied to audit entries written by a mutation.
+pub struct AuditReason(pub Option<String>);
+
+impl<S: Send + Sync> FromRequestParts<S> for AuditReason {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let reason = parts
+            .headers
+            .get("x-audit-log-reason")
+            .and_then(|value| value.to_str().ok())
+            .map(|value| percent_decode(value.trim()))
+            .filter(|value| !value.is_empty());
+        Ok(AuditReason(reason))
+    }
+}
+
+fn percent_decode(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            let digits = std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or_default();
+            if let Ok(byte) = u8::from_str_radix(digits, 16) {
+                out.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}

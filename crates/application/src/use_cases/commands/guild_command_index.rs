@@ -27,12 +27,18 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
                     .commands(application.id, scope)
                     .await?
                     .into_iter()
-                    .filter(|c| c.default_member_permissions.is_none_or(|p| permissions.contains(p))),
+                    .filter(|c| {
+                        c.default_member_permissions
+                            .is_none_or(|p| permissions.contains(p))
+                    }),
             );
         }
     }
     if !permissions.contains(Permissions::USE_APPLICATION_COMMANDS) {
         commands.clear();
     }
-    Ok(CommandIndex { applications, commands })
+    Ok(CommandIndex {
+        applications,
+        commands,
+    })
 }

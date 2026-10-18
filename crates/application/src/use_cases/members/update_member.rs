@@ -32,7 +32,11 @@ pub async fn execute(
     audit: AuditContext<'_>,
 ) -> AppResult<MemberProfile> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
-    let before = ports.guilds.member(guild_id, user_id).await?.ok_or(AppError::NotFound(Resource::Member))?;
+    let before = ports
+        .guilds
+        .member(guild_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Member))?;
     let is_self = user_id == actor.user_id;
     let mut member = before.clone();
 
@@ -53,12 +57,17 @@ pub async fn execute(
         roles.sort();
         roles.dedup();
         roles.retain(|r| *r != guild_id);
-        for changed in roles.iter().filter(|r| !before.role_ids.contains(r)).chain(
-            before.role_ids.iter().filter(|r| !roles.contains(r)),
-        ) {
+        for changed in roles
+            .iter()
+            .filter(|r| !before.role_ids.contains(r))
+            .chain(before.role_ids.iter().filter(|r| !roles.contains(r)))
+        {
             let role = ctx.role(*changed)?;
             if role.managed {
-                return Err(AppError::BadRequest { code: 50028, message: "Managed roles cannot be assigned.".into() });
+                return Err(AppError::BadRequest {
+                    code: 50028,
+                    message: "Managed roles cannot be assigned.".into(),
+                });
             }
             ctx.require_manageable_role(role)?;
         }

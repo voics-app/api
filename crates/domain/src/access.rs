@@ -5,7 +5,9 @@ use chrono::{DateTime, Utc};
 
 use crate::channel::{Channel, ChannelType};
 use crate::guild::{Guild, Member, Role};
-use crate::permissions::{GuildPermissionContext, MemberPermissionContext, Permissions, RolePermissions};
+use crate::permissions::{
+    GuildPermissionContext, MemberPermissionContext, Permissions, RolePermissions,
+};
 use crate::snowflake::Snowflake;
 
 pub struct GuildAccess<'a> {
@@ -17,13 +19,27 @@ pub struct GuildAccess<'a> {
 
 impl<'a> GuildAccess<'a> {
     pub fn new(guild: &'a Guild, roles: &'a [Role], now: DateTime<Utc>) -> Self {
-        let role_permissions =
-            roles.iter().map(|r| RolePermissions { role_id: r.id, permissions: r.permissions }).collect();
-        Self { guild, roles, role_permissions, now }
+        let role_permissions = roles
+            .iter()
+            .map(|r| RolePermissions {
+                role_id: r.id,
+                permissions: r.permissions,
+            })
+            .collect();
+        Self {
+            guild,
+            roles,
+            role_permissions,
+            now,
+        }
     }
 
     fn context(&self) -> GuildPermissionContext<'_> {
-        GuildPermissionContext { guild_id: self.guild.id, owner_id: self.guild.owner_id, roles: &self.role_permissions }
+        GuildPermissionContext {
+            guild_id: self.guild.id,
+            owner_id: self.guild.owner_id,
+            roles: &self.role_permissions,
+        }
     }
 
     fn member_context<'m>(&self, member: &'m Member) -> MemberPermissionContext<'m> {
@@ -40,16 +56,24 @@ impl<'a> GuildAccess<'a> {
 
     /// Guild-wide permissions.
     pub fn base(&self, member: &Member) -> Permissions {
-        self.context().base_permissions(&self.member_context(member))
+        self.context()
+            .base_permissions(&self.member_context(member))
     }
 
     /// Permissions inside `channel`. Threads inherit `parent`'s overwrites.
-    pub fn in_channel(&self, member: &Member, channel: &Channel, parent: Option<&Channel>) -> Permissions {
+    pub fn in_channel(
+        &self,
+        member: &Member,
+        channel: &Channel,
+        parent: Option<&Channel>,
+    ) -> Permissions {
         let overwrites = match (channel.kind.is_thread(), parent) {
             (true, Some(parent)) => &parent.overwrites,
             _ => &channel.overwrites,
         };
-        let permissions = self.context().channel_permissions(&self.member_context(member), overwrites);
+        let permissions = self
+            .context()
+            .channel_permissions(&self.member_context(member), overwrites);
         if !channel.kind.is_thread() || permissions == Permissions::ALL {
             return permissions;
         }
@@ -58,7 +82,12 @@ impl<'a> GuildAccess<'a> {
 
     /// In threads SEND_MESSAGES_IN_THREADS replaces SEND_MESSAGES, and private
     /// threads are visible only to their creator and thread managers.
-    fn thread_permissions(&self, member: &Member, thread: &Channel, permissions: Permissions) -> Permissions {
+    fn thread_permissions(
+        &self,
+        member: &Member,
+        thread: &Channel,
+        permissions: Permissions,
+    ) -> Permissions {
         let private_hidden = thread.kind == ChannelType::PrivateThread
             && thread.owner_id != Some(member.user_id)
             && !permissions.contains(Permissions::MANAGE_THREADS);
@@ -127,12 +156,20 @@ mod tests {
     }
 
     fn role(id: u64, position: i32, permissions: Permissions) -> Role {
-        Role { id: Snowflake::new(id), position, permissions, ..Role::everyone(GUILD, permissions) }
+        Role {
+            id: Snowflake::new(id),
+            position,
+            permissions,
+            ..Role::everyone(GUILD, permissions)
+        }
     }
 
     fn roles() -> Vec<Role> {
         vec![
-            Role::everyone(GUILD, Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES_IN_THREADS),
+            Role::everyone(
+                GUILD,
+                Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES_IN_THREADS,
+            ),
             role(20, 1, Permissions::KICK_MEMBERS),
             role(21, 2, Permissions::MANAGE_ROLES),
             role(22, 3, Permissions::MANAGE_THREADS),
@@ -191,7 +228,9 @@ mod tests {
         let perms = access.in_channel(&alice, &thread, Some(&parent));
         assert!(perms.contains(Permissions::READ_MESSAGE_HISTORY));
         assert!(perms.contains(Permissions::SEND_MESSAGES));
-        assert!(!access.in_channel(&alice, &parent, None).contains(Permissions::SEND_MESSAGES));
+        assert!(!access
+            .in_channel(&alice, &parent, None)
+            .contains(Permissions::SEND_MESSAGES));
     }
 
     #[test]
@@ -201,10 +240,20 @@ mod tests {
         let parent = channel(100, ChannelType::GuildText);
         let mut thread = channel(101, ChannelType::PrivateThread);
         thread.owner_id = Some(Snowflake::new(2));
-        let cases = [(member(2, &[]), true), (member(3, &[]), false), (member(4, &[22]), true), (member(1, &[]), true)];
+        let cases = [
+            (member(2, &[]), true),
+            (member(3, &[]), false),
+            (member(4, &[22]), true),
+            (member(1, &[]), true),
+        ];
         for (m, visible) in cases {
             let perms = access.in_channel(&m, &thread, Some(&parent));
-            assert_eq!(perms.contains(Permissions::VIEW_CHANNEL), visible, "user {}", m.user_id);
+            assert_eq!(
+                perms.contains(Permissions::VIEW_CHANNEL),
+                visible,
+                "user {}",
+                m.user_id
+            );
         }
     }
 

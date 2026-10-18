@@ -12,6 +12,12 @@ pub async fn execute(ports: &Ports, actor: &Actor) -> AppResult<Vec<(Relationshi
     let users = ports.users.find_many(&ids).await?;
     Ok(relationships
         .into_iter()
-        .filter_map(|r| users.iter().find(|u| u.id == r.target_id).cloned().map(|u| (r, u)))
+        .filter_map(|r| {
+            users
+                .iter()
+                .find(|u| u.id == r.target_id)
+                .cloned()
+                .map(|u| (r, u))
+        })
         .collect())
 }

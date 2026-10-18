@@ -24,19 +24,30 @@ pub fn ensure_known_region(ports: &Ports, region: &str) -> AppResult<()> {
     if ports.settings.voice_regions.iter().any(|r| r.id == region) {
         Ok(())
     } else {
-        Err(AppError::invalid("voice_region", "BASE_TYPE_CHOICES", "Unknown voice region."))
+        Err(AppError::invalid(
+            "voice_region",
+            "BASE_TYPE_CHOICES",
+            "Unknown voice region.",
+        ))
     }
 }
 
 /// Creates a guild with @everyone, two categories and a text and voice channel.
-pub async fn execute(ports: &Ports, actor: &Actor, input: CreateGuildInput) -> AppResult<GuildSnapshot> {
+pub async fn execute(
+    ports: &Ports,
+    actor: &Actor,
+    input: CreateGuildInput,
+) -> AppResult<GuildSnapshot> {
     actor.require_user()?;
     validation::guild_name(&input.name)?;
     if let Some(region) = &input.voice_region {
         ensure_known_region(ports, region)?;
     }
     if ports.guilds.list_for_user(actor.user_id).await?.len() >= MAX_GUILDS_PER_USER {
-        return Err(AppError::BadRequest { code: 30001, message: "Maximum number of guilds reached (200)".into() });
+        return Err(AppError::BadRequest {
+            code: 30001,
+            message: "Maximum number of guilds reached (200)".into(),
+        });
     }
     let owner = require_user(ports, actor.user_id).await?;
     let now = ports.clock.now();
@@ -81,19 +92,26 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: CreateGuildInput) -> A
         guild: guild.clone(),
         roles: vec![everyone.clone()],
         channels: channels.clone(),
-        members: vec![MemberProfile { member: member.clone(), user: owner }],
+        members: vec![MemberProfile {
+            member: member.clone(),
+            user: owner,
+        }],
         emojis: vec![],
         member_count: 1,
     };
     let mut writes = WriteSet::new();
-    writes.mutate(Mutation::InsertGuild(guild)).mutate(Mutation::InsertRole(everyone));
+    writes
+        .mutate(Mutation::InsertGuild(guild))
+        .mutate(Mutation::InsertRole(everyone));
     for c in channels {
         writes.mutate(Mutation::InsertChannel(c));
     }
-    writes.mutate(Mutation::UpsertMember(member)).emit(DomainEvent::GuildCreate {
-        snapshot: Box::new(snapshot.clone()),
-        recipients: vec![actor.user_id],
-    });
+    writes
+        .mutate(Mutation::UpsertMember(member))
+        .emit(DomainEvent::GuildCreate {
+            snapshot: Box::new(snapshot.clone()),
+            recipients: vec![actor.user_id],
+        });
     ports.unit_of_work.commit(writes).await?;
     Ok(snapshot)
 }

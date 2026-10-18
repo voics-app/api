@@ -13,6 +13,9 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
     Ok(channels
         .into_iter()
         .filter(|c| !c.kind.is_thread())
-        .filter(|c| ctx.channel_permissions(c, None).contains(Permissions::VIEW_CHANNEL))
+        .filter(|c| {
+            ctx.channel_permissions(c, None)
+                .contains(Permissions::VIEW_CHANNEL)
+        })
         .collect())
 }

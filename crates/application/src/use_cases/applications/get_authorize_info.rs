@@ -18,9 +18,17 @@ pub struct AuthorizeInfo {
 }
 
 /// `GET /oauth2/authorize?client_id=...` — what the bot-invite screen shows.
-pub async fn execute(ports: &Ports, actor: &Actor, client_id: Snowflake) -> AppResult<AuthorizeInfo> {
+pub async fn execute(
+    ports: &Ports,
+    actor: &Actor,
+    client_id: Snowflake,
+) -> AppResult<AuthorizeInfo> {
     actor.require_user()?;
-    let application = ports.applications.find(client_id).await?.ok_or(AppError::NotFound(Resource::Application))?;
+    let application = ports
+        .applications
+        .find(client_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Application))?;
     if !application.bot_public && application.owner_id != actor.user_id {
         return Err(AppError::NotFound(Resource::Application));
     }

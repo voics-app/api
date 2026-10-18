@@ -38,7 +38,11 @@ pub fn apply_role_input(ctx: &GuildContext, role: &mut Role, input: RoleInput) -
     }
     if let Some(color) = input.color {
         if color > 0xFF_FFFF {
-            return Err(AppError::invalid("color", "BASE_TYPE_BAD_INT", "Color must be a 24-bit RGB value."));
+            return Err(AppError::invalid(
+                "color",
+                "BASE_TYPE_BAD_INT",
+                "Color must be a 24-bit RGB value.",
+            ));
         }
         role.color = color;
     }
@@ -64,7 +68,10 @@ pub async fn execute(
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     ctx.require(Permissions::MANAGE_ROLES)?;
     if ctx.roles.len() >= MAX_ROLES_PER_GUILD {
-        return Err(AppError::BadRequest { code: 30005, message: "Maximum number of guild roles reached (250)".into() });
+        return Err(AppError::BadRequest {
+            code: 30005,
+            message: "Maximum number of guild roles reached (250)".into(),
+        });
     }
     let mut role = Role {
         id: ports.ids.next_id(),
@@ -72,21 +79,40 @@ pub async fn execute(
         position: 1,
         ..Role::everyone(guild_id, Permissions::NONE)
     };
-    apply_role_input(&ctx, &mut role, RoleInput { name: input.name.clone().or(Some("new role".into())), ..input })?;
+    apply_role_input(
+        &ctx,
+        &mut role,
+        RoleInput {
+            name: input.name.clone().or(Some("new role".into())),
+            ..input
+        },
+    )?;
 
     let mut writes = WriteSet::new();
     for mut other in ctx.roles.iter().filter(|r| !r.is_everyone()).cloned() {
         other.position += 1;
-        writes.mutate(Mutation::UpdateRole(other.clone())).emit(DomainEvent::RoleUpdate(other));
+        writes
+            .mutate(Mutation::UpdateRole(other.clone()))
+            .emit(DomainEvent::RoleUpdate(other));
     }
     let changes = vec![
         AuditChange::new("name", None, Some(json!(role.name))),
-        AuditChange::new("permissions", None, Some(json!(role.permissions.bits().to_string()))),
+        AuditChange::new(
+            "permissions",
+            None,
+            Some(json!(role.permissions.bits().to_string())),
+        ),
     ];
     writes
         .mutate(Mutation::InsertRole(role.clone()))
         .emit(DomainEvent::RoleCreate(role.clone()))
-        .audit(audit.entry(ports, guild_id, AuditAction::RoleCreate, Some(role.id), changes)?);
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::RoleCreate,
+            Some(role.id),
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await?;
     Ok(role)
 }

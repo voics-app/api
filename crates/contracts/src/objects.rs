@@ -157,7 +157,10 @@ pub struct DeviceDto {
 
 impl From<&Device> for DeviceDto {
     fn from(device: &Device) -> Self {
-        Self { device_id: Id(device.id), identity_key_b64: base64(&device.identity_key) }
+        Self {
+            device_id: Id(device.id),
+            identity_key_b64: base64(&device.identity_key),
+        }
     }
 }
 
@@ -237,13 +240,21 @@ pub struct ChannelDto {
 }
 
 impl ChannelDto {
-    fn build(channel: &Channel, delivery_mode: DeliveryMode, recipients: Option<Vec<UserDto>>) -> Self {
+    fn build(
+        channel: &Channel,
+        delivery_mode: DeliveryMode,
+        recipients: Option<Vec<UserDto>>,
+    ) -> Self {
         Self {
             id: Id(channel.id),
             kind: channel.kind.code(),
             guild_id: channel.guild_id.map(Id),
             position: channel.position,
-            permission_overwrites: channel.overwrites.iter().map(PermissionOverwriteDto::from).collect(),
+            permission_overwrites: channel
+                .overwrites
+                .iter()
+                .map(PermissionOverwriteDto::from)
+                .collect(),
             name: channel.name.clone(),
             topic: channel.topic.clone(),
             nsfw: channel.nsfw,
@@ -255,7 +266,10 @@ impl ChannelDto {
             owner_id: channel.owner_id.map(Id),
             parent_id: channel.parent_id.map(Id),
             rtc_region: channel.voice_region.clone(),
-            thread_metadata: channel.thread_metadata.as_ref().map(ThreadMetadataDto::from),
+            thread_metadata: channel
+                .thread_metadata
+                .as_ref()
+                .map(ThreadMetadataDto::from),
             delivery_mode: delivery_mode.as_str(),
             voice_region: channel.voice_region.clone(),
         }
@@ -266,8 +280,17 @@ impl ChannelDto {
     }
 
     /// A DM or group DM as seen by `viewer`, who is left out of `recipients`.
-    pub fn private(channel: &Channel, recipients: &[User], delivery_mode: DeliveryMode, viewer: Option<Snowflake>) -> Self {
-        let others = recipients.iter().filter(|u| Some(u.id) != viewer).map(UserDto::public).collect();
+    pub fn private(
+        channel: &Channel,
+        recipients: &[User],
+        delivery_mode: DeliveryMode,
+        viewer: Option<Snowflake>,
+    ) -> Self {
+        let others = recipients
+            .iter()
+            .filter(|u| Some(u.id) != viewer)
+            .map(UserDto::public)
+            .collect();
         Self::build(channel, delivery_mode, Some(others))
     }
 }
@@ -305,7 +328,9 @@ impl From<&Role> for RoleDto {
             managed: role.managed,
             mentionable: role.mentionable,
             flags: 0,
-            tags: role.bot_id.map(|bot_id| json!({ "bot_id": bot_id.to_string() })),
+            tags: role
+                .bot_id
+                .map(|bot_id| json!({ "bot_id": bot_id.to_string() })),
         }
     }
 }
@@ -397,7 +422,10 @@ impl GuildDto {
             preferred_locale: "en-US",
             nsfw_level: 0,
             approximate_member_count: None,
-            voice_region: guild.voice_region.clone().unwrap_or_else(|| default_region.to_owned()),
+            voice_region: guild
+                .voice_region
+                .clone()
+                .unwrap_or_else(|| default_region.to_owned()),
         }
     }
 
@@ -466,7 +494,12 @@ impl GuildFullDto {
         let (threads, channels): (Vec<&Channel>, Vec<&Channel>) =
             snapshot.channels.iter().partition(|c| c.kind.is_thread());
         Self {
-            guild: GuildDto::new(&snapshot.guild, &snapshot.roles, &snapshot.emojis, default_region),
+            guild: GuildDto::new(
+                &snapshot.guild,
+                &snapshot.roles,
+                &snapshot.emojis,
+                default_region,
+            ),
             large: snapshot.member_count > 250,
             member_count: snapshot.member_count,
             members: snapshot.members.iter().map(MemberDto::from).collect(),
@@ -485,7 +518,10 @@ pub struct BanDto {
 
 impl From<&Ban> for BanDto {
     fn from(ban: &Ban) -> Self {
-        Self { reason: ban.reason.clone(), user: UserDto::public(&ban.user) }
+        Self {
+            reason: ban.reason.clone(),
+            user: UserDto::public(&ban.user),
+        }
     }
 }
 
@@ -525,7 +561,13 @@ pub struct InviteDto {
 }
 
 impl InviteDto {
-    pub fn new(invite: &Invite, guild: &Guild, channel: &Channel, inviter: Option<&User>, member_count: u64) -> Self {
+    pub fn new(
+        invite: &Invite,
+        guild: &Guild,
+        channel: &Channel,
+        inviter: Option<&User>,
+        member_count: u64,
+    ) -> Self {
         Self {
             kind: 0,
             code: invite.code.clone(),
@@ -536,7 +578,11 @@ impl InviteDto {
                 description: guild.description.clone(),
                 verification_level: guild.verification_level,
             },
-            channel: PartialChannelDto { id: Id(channel.id), name: channel.name.clone(), kind: channel.kind.code() },
+            channel: PartialChannelDto {
+                id: Id(channel.id),
+                name: channel.name.clone(),
+                kind: channel.kind.code(),
+            },
             inviter: inviter.map(UserDto::public),
             expires_at: invite.expires_at().map(timestamp),
             uses: invite.uses,
@@ -709,7 +755,8 @@ impl WebhookDto {
             avatar: webhook.avatar.clone(),
             application_id: webhook.application_id.map(Id),
             token: secret.map(|(_, token)| token.to_owned()),
-            url: secret.map(|(base, token)| format!("{base}/api/v1/webhooks/{}/{token}", webhook.id)),
+            url: secret
+                .map(|(base, token)| format!("{base}/api/v1/webhooks/{}/{token}", webhook.id)),
         }
     }
 }
@@ -809,7 +856,12 @@ mod tests {
         other.id = Snowflake::new(11);
         let mut channel = Channel::new(Snowflake::new(1), ChannelType::Dm, None, Utc::now());
         channel.recipient_ids = vec![Snowflake::new(10), Snowflake::new(11)];
-        let dto = ChannelDto::private(&channel, &[user(), other], DeliveryMode::Ephemeral, Some(Snowflake::new(10)));
+        let dto = ChannelDto::private(
+            &channel,
+            &[user(), other],
+            DeliveryMode::Ephemeral,
+            Some(Snowflake::new(10)),
+        );
         let json = serde_json::to_value(dto).unwrap();
         assert_eq!(json["type"], 1);
         assert_eq!(json["delivery_mode"], "ephemeral");
@@ -833,7 +885,9 @@ mod tests {
         };
         let hidden = serde_json::to_value(WebhookDto::new(&webhook, None)).unwrap();
         assert!(hidden.get("token").is_none());
-        let shown = serde_json::to_value(WebhookDto::new(&webhook, Some(("https://api.test", "tok")))).unwrap();
+        let shown =
+            serde_json::to_value(WebhookDto::new(&webhook, Some(("https://api.test", "tok"))))
+                .unwrap();
         assert_eq!(shown["url"], "https://api.test/api/v1/webhooks/5/tok");
     }
 }

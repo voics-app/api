@@ -29,7 +29,10 @@ pub fn validate_key_packages(packages: &[Vec<u8>]) -> Result<(), KeyPackageError
     if packages.is_empty() || packages.len() > MAX_KEY_PACKAGES_PER_UPLOAD {
         return Err(KeyPackageError::BadCount);
     }
-    if packages.iter().any(|p| p.is_empty() || p.len() > MAX_KEY_PACKAGE_BYTES) {
+    if packages
+        .iter()
+        .any(|p| p.is_empty() || p.len() > MAX_KEY_PACKAGE_BYTES)
+    {
         return Err(KeyPackageError::BadSize);
     }
     Ok(())
@@ -46,10 +49,18 @@ mod tests {
             (vec![vec![1u8; 10]], Ok(())),
             (vec![vec![1u8; 10]; 101], Err(KeyPackageError::BadCount)),
             (vec![vec![]], Err(KeyPackageError::BadSize)),
-            (vec![vec![0u8; MAX_KEY_PACKAGE_BYTES + 1]], Err(KeyPackageError::BadSize)),
+            (
+                vec![vec![0u8; MAX_KEY_PACKAGE_BYTES + 1]],
+                Err(KeyPackageError::BadSize),
+            ),
         ];
         for (packages, expected) in cases {
-            assert_eq!(validate_key_packages(&packages), expected, "{} packages", packages.len());
+            assert_eq!(
+                validate_key_packages(&packages),
+                expected,
+                "{} packages",
+                packages.len()
+            );
         }
     }
 }

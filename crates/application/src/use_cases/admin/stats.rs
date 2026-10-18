@@ -14,7 +14,10 @@ pub struct ApiStats {
 
 /// `GET /internal/v1/admin/stats`. Counts only.
 pub async fn execute(ports: &Ports) -> AppResult<ApiStats> {
-    let users = ports.users.stats(ports.clock.now() - Duration::hours(24)).await?;
+    let users = ports
+        .users
+        .stats(ports.clock.now() - Duration::hours(24))
+        .await?;
     Ok(ApiStats {
         users_total: users.users_total,
         guilds_total: ports.guilds.count().await?,

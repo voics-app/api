@@ -32,17 +32,31 @@ pub async fn execute(
     if let Some(name) = input.name {
         validation::webhook_name(&name)?;
         webhook.name = name.trim().to_owned();
-        changes.extend(AuditChange::if_changed("name", json!(before.name), json!(webhook.name)));
+        changes.extend(AuditChange::if_changed(
+            "name",
+            json!(before.name),
+            json!(webhook.name),
+        ));
     }
     if let Some(avatar) = input.avatar {
         webhook.avatar = match avatar {
-            Some(image) => Some(store_hashed(ports, &format!("avatars/{webhook_id}"), image).await?),
+            Some(image) => {
+                Some(store_hashed(ports, &format!("avatars/{webhook_id}"), image).await?)
+            }
             None => None,
         };
-        changes.extend(AuditChange::if_changed("avatar_hash", json!(before.avatar), json!(webhook.avatar)));
+        changes.extend(AuditChange::if_changed(
+            "avatar_hash",
+            json!(before.avatar),
+            json!(webhook.avatar),
+        ));
     }
     if let Some(channel_id) = input.channel_id {
-        let channel = ports.channels.find(channel_id).await?.ok_or(AppError::NotFound(Resource::Channel))?;
+        let channel = ports
+            .channels
+            .find(channel_id)
+            .await?
+            .ok_or(AppError::NotFound(Resource::Channel))?;
         if channel.guild_id != Some(before.guild_id) {
             return Err(AppError::NotFound(Resource::Channel));
         }
@@ -57,7 +71,13 @@ pub async fn execute(
     let mut writes = WriteSet::new();
     writes.mutate(Mutation::UpdateWebhook(webhook.clone()));
     if !changes.is_empty() {
-        writes.audit(audit.entry(ports, webhook.guild_id, AuditAction::WebhookUpdate, Some(webhook_id), changes)?);
+        writes.audit(audit.entry(
+            ports,
+            webhook.guild_id,
+            AuditAction::WebhookUpdate,
+            Some(webhook_id),
+            changes,
+        )?);
     }
     ports.unit_of_work.commit(writes).await?;
     Ok(webhook)

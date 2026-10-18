@@ -19,7 +19,11 @@ pub struct ChannelAccessInfo {
 
 /// `GET /internal/v1/channels/{id}/access/{user}`: 403 unless the user is a
 /// member of the guild or a recipient of the DM.
-pub async fn execute(ports: &Ports, channel_id: Snowflake, user_id: Snowflake) -> AppResult<ChannelAccessInfo> {
+pub async fn execute(
+    ports: &Ports,
+    channel_id: Snowflake,
+    user_id: Snowflake,
+) -> AppResult<ChannelAccessInfo> {
     let access = ChannelAccess::resolve(ports, channel_id, user_id).await?;
     let delivery_mode = effective_mode(ports, &access.channel).await?;
     Ok(ChannelAccessInfo {

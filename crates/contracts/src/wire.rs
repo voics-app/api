@@ -40,7 +40,9 @@ impl Visitor<'_> for IdVisitor {
     }
 
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Id, E> {
-        v.parse::<Snowflake>().map(Id).map_err(|_| E::custom("invalid snowflake"))
+        v.parse::<Snowflake>()
+            .map(Id)
+            .map_err(|_| E::custom("invalid snowflake"))
     }
 
     fn visit_u64<E: de::Error>(self, v: u64) -> Result<Id, E> {
@@ -80,7 +82,9 @@ impl Visitor<'_> for PermVisitor {
     }
 
     fn visit_str<E: de::Error>(self, v: &str) -> Result<Perm, E> {
-        v.parse::<u64>().map(|bits| Perm(Permissions::from_bits_truncate(bits))).map_err(|_| E::custom("invalid permissions"))
+        v.parse::<u64>()
+            .map(|bits| Perm(Permissions::from_bits_truncate(bits)))
+            .map_err(|_| E::custom("invalid permissions"))
     }
 
     fn visit_u64<E: de::Error>(self, v: u64) -> Result<Perm, E> {
@@ -123,7 +127,10 @@ mod tests {
         assert_eq!(body.parent, Some(Some(Id(Snowflake::new(456)))));
         assert_eq!(body.perms, Some(Perm(Permissions::ADMINISTRATOR)));
         assert_eq!(serde_json::to_string(&body.id).unwrap(), "\"123\"");
-        assert_eq!(serde_json::to_string(&Perm(Permissions::VIEW_CHANNEL)).unwrap(), "\"1024\"");
+        assert_eq!(
+            serde_json::to_string(&Perm(Permissions::VIEW_CHANNEL)).unwrap(),
+            "\"1024\""
+        );
     }
 
     #[test]
@@ -142,7 +149,9 @@ mod tests {
 
     #[test]
     fn timestamps_use_milliseconds_and_z() {
-        let at = DateTime::parse_from_rfc3339("2026-10-17T12:00:00.123456Z").unwrap().with_timezone(&Utc);
+        let at = DateTime::parse_from_rfc3339("2026-10-17T12:00:00.123456Z")
+            .unwrap()
+            .with_timezone(&Utc);
         assert_eq!(timestamp(at), "2026-10-17T12:00:00.123Z");
     }
 }

@@ -24,11 +24,22 @@ pub struct AuthorizeBotInput {
 pub async fn execute(ports: &Ports, actor: &Actor, input: AuthorizeBotInput) -> AppResult<()> {
     actor.require_user()?;
     let scopes: Vec<&str> = input.scope.split_whitespace().collect();
-    if !scopes.contains(&"bot") || scopes.iter().any(|s| !matches!(*s, "bot" | "applications.commands")) {
-        return Err(AppError::invalid("scope", "OAUTH2_SCOPE_INVALID", "Scope must include bot."));
+    if !scopes.contains(&"bot")
+        || scopes
+            .iter()
+            .any(|s| !matches!(*s, "bot" | "applications.commands"))
+    {
+        return Err(AppError::invalid(
+            "scope",
+            "OAUTH2_SCOPE_INVALID",
+            "Scope must include bot.",
+        ));
     }
-    let application =
-        ports.applications.find(input.client_id).await?.ok_or(AppError::NotFound(Resource::Application))?;
+    let application = ports
+        .applications
+        .find(input.client_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Application))?;
     if !application.bot_public && application.owner_id != actor.user_id {
         return Err(AppError::NotFound(Resource::Application));
     }
@@ -60,20 +71,33 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: AuthorizeBotInput) -> 
         };
         for mut other in ctx.roles.iter().filter(|r| !r.is_everyone()).cloned() {
             other.position += 1;
-            writes.mutate(Mutation::UpdateRole(other.clone())).emit(DomainEvent::RoleUpdate(other));
+            writes
+                .mutate(Mutation::UpdateRole(other.clone()))
+                .emit(DomainEvent::RoleUpdate(other));
         }
         member.role_ids.push(role.id);
-        writes.mutate(Mutation::InsertRole(role.clone())).emit(DomainEvent::RoleCreate(role));
+        writes
+            .mutate(Mutation::InsertRole(role.clone()))
+            .emit(DomainEvent::RoleCreate(role));
     }
-    let profile = MemberProfile { member: member.clone(), user: bot };
+    let profile = MemberProfile {
+        member: member.clone(),
+        user: bot,
+    };
     let mut snapshot = guild_snapshot(ports, guild_id).await?;
     snapshot.members.push(profile.clone());
     snapshot.member_count += 1;
-    let audit = AuditContext { actor_id: actor.user_id, reason: None };
+    let audit = AuditContext {
+        actor_id: actor.user_id,
+        reason: None,
+    };
     writes
         .mutate(Mutation::UpsertMember(member))
         .emit(DomainEvent::MemberAdd(profile))
-        .emit(DomainEvent::GuildCreate { snapshot: Box::new(snapshot), recipients: vec![bot_id] })
+        .emit(DomainEvent::GuildCreate {
+            snapshot: Box::new(snapshot),
+            recipients: vec![bot_id],
+        })
         .audit(audit.entry(ports, guild_id, AuditAction::BotAdd, Some(bot_id), vec![])?);
     ports.unit_of_work.commit(writes).await
 }

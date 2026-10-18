@@ -17,11 +17,19 @@ pub struct ApplicationView {
 pub async fn view(ports: &Ports, application: Application) -> AppResult<ApplicationView> {
     let bot = require_user(ports, application.bot_user_id).await?;
     let owner = require_user(ports, application.owner_id).await?;
-    Ok(ApplicationView { application, bot, owner })
+    Ok(ApplicationView {
+        application,
+        bot,
+        owner,
+    })
 }
 
 /// The owner (user token) or the application's own bot may manage it.
-pub async fn require_manager(ports: &Ports, actor: &Actor, application_id: Snowflake) -> AppResult<Application> {
+pub async fn require_manager(
+    ports: &Ports,
+    actor: &Actor,
+    application_id: Snowflake,
+) -> AppResult<Application> {
     let application = ports
         .applications
         .find(application_id)
@@ -38,7 +46,11 @@ pub async fn require_manager(ports: &Ports, actor: &Actor, application_id: Snowf
 }
 
 /// Only the human owner (not the bot) may perform this.
-pub async fn require_owner(ports: &Ports, actor: &Actor, application_id: Snowflake) -> AppResult<Application> {
+pub async fn require_owner(
+    ports: &Ports,
+    actor: &Actor,
+    application_id: Snowflake,
+) -> AppResult<Application> {
     actor.require_user()?;
     require_manager(ports, actor, application_id).await
 }

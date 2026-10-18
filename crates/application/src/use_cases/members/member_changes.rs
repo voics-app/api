@@ -25,16 +25,30 @@ pub async fn commit_member_update(
         .mutate(Mutation::UpsertMember(member.clone()))
         .emit(DomainEvent::MemberUpdate(profile.clone()));
 
-    let added: Vec<String> =
-        member.role_ids.iter().filter(|r| !before.role_ids.contains(r)).map(ToString::to_string).collect();
-    let removed: Vec<String> =
-        before.role_ids.iter().filter(|r| !member.role_ids.contains(r)).map(ToString::to_string).collect();
+    let added: Vec<String> = member
+        .role_ids
+        .iter()
+        .filter(|r| !before.role_ids.contains(r))
+        .map(ToString::to_string)
+        .collect();
+    let removed: Vec<String> = before
+        .role_ids
+        .iter()
+        .filter(|r| !member.role_ids.contains(r))
+        .map(ToString::to_string)
+        .collect();
     if !added.is_empty() || !removed.is_empty() {
         let changes = vec![
             AuditChange::new("$add", None, Some(json!(added))),
             AuditChange::new("$remove", None, Some(json!(removed))),
         ];
-        writes.audit(audit.entry(ports, member.guild_id, AuditAction::MemberRoleUpdate, Some(member.user_id), changes)?);
+        writes.audit(audit.entry(
+            ports,
+            member.guild_id,
+            AuditAction::MemberRoleUpdate,
+            Some(member.user_id),
+            changes,
+        )?);
     }
     let changes: Vec<AuditChange> = [
         AuditChange::if_changed("nick", json!(before.nick), json!(member.nick)),
@@ -50,7 +64,13 @@ pub async fn commit_member_update(
     .flatten()
     .collect();
     if !changes.is_empty() {
-        writes.audit(audit.entry(ports, member.guild_id, AuditAction::MemberUpdate, Some(member.user_id), changes)?);
+        writes.audit(audit.entry(
+            ports,
+            member.guild_id,
+            AuditAction::MemberUpdate,
+            Some(member.user_id),
+            changes,
+        )?);
     }
     ports.unit_of_work.commit(writes).await?;
     Ok(profile)

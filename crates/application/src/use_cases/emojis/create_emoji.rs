@@ -31,14 +31,19 @@ pub async fn execute(
 ) -> AppResult<Emoji> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     let permissions = ctx.permissions();
-    if !permissions.intersects(Permissions::CREATE_GUILD_EXPRESSIONS | Permissions::MANAGE_GUILD_EXPRESSIONS) {
+    if !permissions
+        .intersects(Permissions::CREATE_GUILD_EXPRESSIONS | Permissions::MANAGE_GUILD_EXPRESSIONS)
+    {
         return Err(AppError::missing_permissions());
     }
     validation::emoji_name(&input.name)?;
     validate_roles(&ctx, &input.roles)?;
     let mut emojis = ports.emojis.list(guild_id).await?;
     if emojis.len() >= MAX_EMOJIS_PER_GUILD {
-        return Err(AppError::BadRequest { code: 30008, message: "Maximum number of emojis reached".into() });
+        return Err(AppError::BadRequest {
+            code: 30008,
+            message: "Maximum number of emojis reached".into(),
+        });
     }
     let emoji = Emoji {
         id: ports.ids.next_id(),
@@ -51,14 +56,26 @@ pub async fn execute(
         require_colons: true,
         managed: false,
     };
-    store_at(ports, &format!("emojis/{}", emoji.id), input.image, MAX_EMOJI_BYTES).await?;
+    store_at(
+        ports,
+        &format!("emojis/{}", emoji.id),
+        input.image,
+        MAX_EMOJI_BYTES,
+    )
+    .await?;
     emojis.push(emoji.clone());
     let changes = vec![AuditChange::new("name", None, Some(json!(emoji.name)))];
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::InsertEmoji(emoji.clone()))
         .emit(DomainEvent::EmojisUpdate { guild_id, emojis })
-        .audit(audit.entry(ports, guild_id, AuditAction::EmojiCreate, Some(emoji.id), changes)?);
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::EmojiCreate,
+            Some(emoji.id),
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await?;
     Ok(emoji)
 }

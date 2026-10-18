@@ -34,13 +34,20 @@ pub async fn execute(ports: &Ports, credential: Credential<'_>) -> AppResult<Act
 
 async fn authenticate_user(ports: &Ports, jwt: &str) -> AppResult<Actor> {
     let claims = ports.tokens.verify(jwt)?;
-    let session = ports.sessions.find(claims.session_id).await?.ok_or(AppError::Unauthorized)?;
+    let session = ports
+        .sessions
+        .find(claims.session_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
     if session.revoked_at.is_some() || session.user_id != claims.user_id {
         return Err(AppError::Unauthorized);
     }
     Ok(Actor {
         user_id: claims.user_id,
-        kind: ActorKind::User { session_id: claims.session_id, device_id: session.device_id.or(claims.device_id) },
+        kind: ActorKind::User {
+            session_id: claims.session_id,
+            device_id: session.device_id.or(claims.device_id),
+        },
     })
 }
 
@@ -54,16 +61,28 @@ async fn authenticate_bot(ports: &Ports, token: &str) -> AppResult<Actor> {
     if bot_user_id_prefix(token) != Some(identity.user_id) {
         return Err(AppError::Unauthorized);
     }
-    let bot = ports.users.find(identity.user_id).await?.ok_or(AppError::Unauthorized)?;
+    let bot = ports
+        .users
+        .find(identity.user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
     if bot.is_suspended(ports.clock.now()) {
         return Err(AppError::Unauthorized);
     }
-    Ok(Actor { user_id: identity.user_id, kind: ActorKind::Bot { application_id: identity.application_id } })
+    Ok(Actor {
+        user_id: identity.user_id,
+        kind: ActorKind::Bot {
+            application_id: identity.application_id,
+        },
+    })
 }
 
 fn bot_user_id_prefix(token: &str) -> Option<Snowflake> {
     let (prefix, _) = token.split_once('.')?;
-    decode_base64url(prefix).and_then(|bytes| String::from_utf8(bytes).ok())?.parse().ok()
+    decode_base64url(prefix)
+        .and_then(|bytes| String::from_utf8(bytes).ok())?
+        .parse()
+        .ok()
 }
 
 /// Minimal base64url decoder for the token prefix (no padding).
@@ -98,7 +117,10 @@ pub fn encode_bot_token_prefix(bot_user_id: Snowflake) -> String {
     let bytes = bot_user_id.to_string().into_bytes();
     let mut out = String::new();
     for chunk in bytes.chunks(3) {
-        let n = chunk.iter().enumerate().fold(0u32, |acc, (i, b)| acc | (*b as u32) << (16 - 8 * i));
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |acc, (i, b)| acc | (*b as u32) << (16 - 8 * i));
         let symbols = chunk.len() + 1;
         for i in 0..symbols {
             out.push(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize] as char);
@@ -114,7 +136,10 @@ mod tests {
     #[test]
     fn parses_authorization_headers() {
         assert_eq!(Credential::parse("Bot abc.def"), Credential::Bot("abc.def"));
-        assert_eq!(Credential::parse("Bearer x.y.z"), Credential::Bearer("x.y.z"));
+        assert_eq!(
+            Credential::parse("Bearer x.y.z"),
+            Credential::Bearer("x.y.z")
+        );
         assert_eq!(Credential::parse("x.y.z"), Credential::Bearer("x.y.z"));
     }
 

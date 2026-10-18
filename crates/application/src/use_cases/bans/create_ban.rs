@@ -35,12 +35,28 @@ pub async fn execute(
     if member.is_some() {
         writes
             .mutate(Mutation::DeleteMember { guild_id, user_id })
-            .emit(DomainEvent::MemberRemove { guild_id, user: user.clone() })
-            .emit(DomainEvent::GuildDelete { guild_id, recipients: Some(vec![user_id]) });
+            .emit(DomainEvent::MemberRemove {
+                guild_id,
+                user: user.clone(),
+            })
+            .emit(DomainEvent::GuildDelete {
+                guild_id,
+                recipients: Some(vec![user_id]),
+            });
     }
     writes
-        .mutate(Mutation::InsertBan { guild_id, user_id, reason: audit.reason.map(str::to_owned) })
+        .mutate(Mutation::InsertBan {
+            guild_id,
+            user_id,
+            reason: audit.reason.map(str::to_owned),
+        })
         .emit(DomainEvent::BanAdd { guild_id, user })
-        .audit(audit.entry(ports, guild_id, AuditAction::MemberBanAdd, Some(user_id), vec![])?);
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::MemberBanAdd,
+            Some(user_id),
+            vec![],
+        )?);
     ports.unit_of_work.commit(writes).await
 }

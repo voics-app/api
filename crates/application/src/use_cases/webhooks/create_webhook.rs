@@ -58,10 +58,23 @@ pub async fn execute(
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::InsertWebhook(webhook.clone()))
-        .audit(audit.entry(ports, guild_id, AuditAction::WebhookCreate, Some(id), changes)?);
-    ports.unit_of_work.commit(writes).await.map_err(|e| match e {
-        AppError::Conflict { .. } => AppError::BadRequest { code: 30007, message: "Maximum number of webhooks reached".into() },
-        other => other,
-    })?;
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::WebhookCreate,
+            Some(id),
+            changes,
+        )?);
+    ports
+        .unit_of_work
+        .commit(writes)
+        .await
+        .map_err(|e| match e {
+            AppError::Conflict { .. } => AppError::BadRequest {
+                code: 30007,
+                message: "Maximum number of webhooks reached".into(),
+            },
+            other => other,
+        })?;
     Ok((webhook, token))
 }

@@ -14,21 +14,46 @@ pub struct EnableTotpInput {
 
 pub async fn execute(ports: &Ports, actor: &Actor, input: EnableTotpInput) -> AppResult<()> {
     actor.require_user()?;
-    let credentials = ports.users.credentials(actor.user_id).await?.ok_or(AppError::Unauthorized)?;
-    if !ports.passwords.verify(&input.password, &credentials.password_hash).await? {
-        return Err(AppError::invalid("password", "PASSWORD_DOES_NOT_MATCH", "Password does not match."));
+    let credentials = ports
+        .users
+        .credentials(actor.user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    if !ports
+        .passwords
+        .verify(&input.password, &credentials.password_hash)
+        .await?
+    {
+        return Err(AppError::invalid(
+            "password",
+            "PASSWORD_DOES_NOT_MATCH",
+            "Password does not match.",
+        ));
     }
     if credentials.totp_secret.is_some() {
-        return Err(AppError::BadRequest { code: 60001, message: "Two-factor is already enabled.".into() });
+        return Err(AppError::BadRequest {
+            code: 60001,
+            message: "Two-factor is already enabled.".into(),
+        });
     }
-    if !ports.totp.verify(&input.secret, &input.code, ports.clock.now()) {
-        return Err(AppError::invalid("code", "INVALID_TOTP", "Invalid two-factor code."));
+    if !ports
+        .totp
+        .verify(&input.secret, &input.code, ports.clock.now())
+    {
+        return Err(AppError::invalid(
+            "code",
+            "INVALID_TOTP",
+            "Invalid two-factor code.",
+        ));
     }
     let mut user = require_user(ports, actor.user_id).await?;
     user.mfa_enabled = true;
     let mut writes = WriteSet::new();
     writes
-        .mutate(Mutation::SetTotpSecret { user_id: actor.user_id, secret: Some(input.secret) })
+        .mutate(Mutation::SetTotpSecret {
+            user_id: actor.user_id,
+            secret: Some(input.secret),
+        })
         .mutate(Mutation::UpdateUser(user.clone()))
         .emit(DomainEvent::UserUpdate(user));
     ports.unit_of_work.commit(writes).await

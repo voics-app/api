@@ -24,10 +24,20 @@ pub async fn execute(
     let access = ChannelAccess::visible(ports, channel_id, actor.user_id).await?;
     let ctx = access.guild()?;
     if access.channel.kind.is_thread() {
-        return Err(AppError::invalid("channel_id", "CHANNEL_TYPE_INVALID", "Threads inherit overwrites."));
+        return Err(AppError::invalid(
+            "channel_id",
+            "CHANNEL_TYPE_INVALID",
+            "Threads inherit overwrites.",
+        ));
     }
     check_overwrites(ctx, access.permissions, std::slice::from_ref(&overwrite))?;
-    if overwrite.kind == OverwriteKind::Member && ports.guilds.member(ctx.guild.id, overwrite.id).await?.is_none() {
+    if overwrite.kind == OverwriteKind::Member
+        && ports
+            .guilds
+            .member(ctx.guild.id, overwrite.id)
+            .await?
+            .is_none()
+    {
         return Err(AppError::NotFound(Resource::Member));
     }
     let mut channel = access.channel.clone();
@@ -37,9 +47,17 @@ pub async fn execute(
     if channel.delivery_mode == DeliveryMode::Ephemeral {
         check_delivery_mode(ports, ctx, &channel, DeliveryMode::Ephemeral).await?;
     }
-    let action = if existed { AuditAction::ChannelOverwriteUpdate } else { AuditAction::ChannelOverwriteCreate };
+    let action = if existed {
+        AuditAction::ChannelOverwriteUpdate
+    } else {
+        AuditAction::ChannelOverwriteCreate
+    };
     let changes = vec![
-        AuditChange::new("allow", None, Some(json!(overwrite.allow.bits().to_string()))),
+        AuditChange::new(
+            "allow",
+            None,
+            Some(json!(overwrite.allow.bits().to_string())),
+        ),
         AuditChange::new("deny", None, Some(json!(overwrite.deny.bits().to_string()))),
     ];
     let mut writes = WriteSet::new();

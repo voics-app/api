@@ -14,7 +14,10 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
     }
     let mut writes = WriteSet::new();
     writes
-        .emit(DomainEvent::GuildDelete { guild_id, recipients: None })
+        .emit(DomainEvent::GuildDelete {
+            guild_id,
+            recipients: None,
+        })
         .mutate(Mutation::DeleteGuild(guild_id));
     ports.unit_of_work.commit(writes).await
 }

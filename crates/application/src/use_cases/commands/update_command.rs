@@ -15,11 +15,33 @@ pub async fn execute(
     input: CommandInput,
 ) -> AppResult<ApplicationCommand> {
     require_scope(ports, actor, application_id, guild_id).await?;
-    let existing = ports.applications.commands(application_id, guild_id).await?;
-    let base = existing.iter().find(|c| c.id == command_id).ok_or(AppError::NotFound(Resource::Command))?;
-    let command = build(ports, application_id, guild_id, Some(base), CommandInput { kind: None, ..input })?;
-    if existing.iter().any(|c| c.id != command.id && c.name == command.name && c.kind == command.kind) {
-        return Err(AppError::invalid("name", "APPLICATION_COMMAND_DUPLICATE", "A command with this name exists."));
+    let existing = ports
+        .applications
+        .commands(application_id, guild_id)
+        .await?;
+    let base = existing
+        .iter()
+        .find(|c| c.id == command_id)
+        .ok_or(AppError::NotFound(Resource::Command))?;
+    let command = build(
+        ports,
+        application_id,
+        guild_id,
+        Some(base),
+        CommandInput {
+            kind: None,
+            ..input
+        },
+    )?;
+    if existing
+        .iter()
+        .any(|c| c.id != command.id && c.name == command.name && c.kind == command.kind)
+    {
+        return Err(AppError::invalid(
+            "name",
+            "APPLICATION_COMMAND_DUPLICATE",
+            "A command with this name exists.",
+        ));
     }
     let mut writes = WriteSet::new();
     writes.mutate(Mutation::UpsertCommand(command.clone()));

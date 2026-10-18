@@ -34,13 +34,23 @@ pub async fn execute(
     let ctx = access.guild()?;
     let parent = &access.channel;
     if !parent.kind.supports_threads() {
-        return Err(AppError::invalid("channel_id", "CHANNEL_TYPE_INVALID", "This channel cannot have threads."));
+        return Err(AppError::invalid(
+            "channel_id",
+            "CHANNEL_TYPE_INVALID",
+            "This channel cannot have threads.",
+        ));
     }
     let kind = match (parent.kind, input.kind.unwrap_or(11)) {
         (ChannelType::GuildAnnouncement, _) => ChannelType::AnnouncementThread,
         (_, 11) => ChannelType::PublicThread,
         (_, 12) => ChannelType::PrivateThread,
-        _ => return Err(AppError::invalid("type", "BASE_TYPE_CHOICES", "Thread type must be 11 or 12.")),
+        _ => {
+            return Err(AppError::invalid(
+                "type",
+                "BASE_TYPE_CHOICES",
+                "Thread type must be 11 or 12.",
+            ))
+        }
     };
     let required = if kind == ChannelType::PrivateThread {
         Permissions::CREATE_PRIVATE_THREADS
@@ -50,7 +60,11 @@ pub async fn execute(
     access.require(required)?;
     let duration = input.auto_archive_duration.unwrap_or(1440);
     if !AUTO_ARCHIVE_DURATIONS.contains(&duration) {
-        return Err(AppError::invalid("auto_archive_duration", "BASE_TYPE_CHOICES", "Invalid duration."));
+        return Err(AppError::invalid(
+            "auto_archive_duration",
+            "BASE_TYPE_CHOICES",
+            "Invalid duration.",
+        ));
     }
     let now = ports.clock.now();
     let mut thread = Channel::new(ports.ids.next_id(), kind, parent.guild_id, now);
@@ -74,7 +88,13 @@ pub async fn execute(
     writes
         .mutate(Mutation::InsertChannel(thread.clone()))
         .emit(DomainEvent::ThreadCreate(thread.clone()))
-        .audit(audit.entry(ports, ctx.guild.id, AuditAction::ThreadCreate, Some(thread.id), changes)?);
+        .audit(audit.entry(
+            ports,
+            ctx.guild.id,
+            AuditAction::ThreadCreate,
+            Some(thread.id),
+            changes,
+        )?);
     ports.unit_of_work.commit(writes).await?;
     Ok(thread)
 }

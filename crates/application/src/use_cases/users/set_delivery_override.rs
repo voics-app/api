@@ -16,7 +16,11 @@ pub async fn execute(
     mode: Option<DeliveryMode>,
 ) -> AppResult<PrivateChannelView> {
     actor.require_user()?;
-    let channel = ports.channels.find(channel_id).await?.ok_or(AppError::NotFound(Resource::Channel))?;
+    let channel = ports
+        .channels
+        .find(channel_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Channel))?;
     if channel.guild_id.is_some() {
         return Err(AppError::invalid(
             "channel_id",
@@ -32,10 +36,18 @@ pub async fn execute(
     }
     let delivery_mode = effective_mode_with(ports, &channel, Some((actor.user_id, mode))).await?;
     let recipients = ports.users.find_many(&channel.recipient_ids).await?;
-    let view = PrivateChannelView { channel, recipients, delivery_mode };
+    let view = PrivateChannelView {
+        channel,
+        recipients,
+        delivery_mode,
+    };
     let mut writes = WriteSet::new();
     writes
-        .mutate(Mutation::SetDeliveryOverride { user_id: actor.user_id, channel_id, mode })
+        .mutate(Mutation::SetDeliveryOverride {
+            user_id: actor.user_id,
+            channel_id,
+            mode,
+        })
         .emit(DomainEvent::PrivateChannelUpdate(view.clone()));
     ports.unit_of_work.commit(writes).await?;
     Ok(view)

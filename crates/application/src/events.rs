@@ -28,24 +28,52 @@ pub struct PrivateChannelView {
 pub enum DomainEvent {
     // discordy.guild.v1
     /// Sent to `recipients` only (a creator or a joining member).
-    GuildCreate { snapshot: Box<GuildSnapshot>, recipients: Vec<Snowflake> },
+    GuildCreate {
+        snapshot: Box<GuildSnapshot>,
+        recipients: Vec<Snowflake>,
+    },
     GuildUpdate(Guild),
     /// `recipients: None` fans out to the whole guild.
-    GuildDelete { guild_id: Snowflake, recipients: Option<Vec<Snowflake>> },
+    GuildDelete {
+        guild_id: Snowflake,
+        recipients: Option<Vec<Snowflake>>,
+    },
     ChannelCreate(Channel),
     ChannelUpdate(Channel),
     ChannelDelete(Channel),
     RoleCreate(Role),
     RoleUpdate(Role),
-    RoleDelete { guild_id: Snowflake, role_id: Snowflake },
+    RoleDelete {
+        guild_id: Snowflake,
+        role_id: Snowflake,
+    },
     MemberAdd(MemberProfile),
     MemberUpdate(MemberProfile),
-    MemberRemove { guild_id: Snowflake, user: User },
-    BanAdd { guild_id: Snowflake, user: User },
-    BanRemove { guild_id: Snowflake, user: User },
-    EmojisUpdate { guild_id: Snowflake, emojis: Vec<Emoji> },
-    InviteCreate { invite: Invite, inviter: Option<User> },
-    InviteDelete { guild_id: Snowflake, channel_id: Snowflake, code: String },
+    MemberRemove {
+        guild_id: Snowflake,
+        user: User,
+    },
+    BanAdd {
+        guild_id: Snowflake,
+        user: User,
+    },
+    BanRemove {
+        guild_id: Snowflake,
+        user: User,
+    },
+    EmojisUpdate {
+        guild_id: Snowflake,
+        emojis: Vec<Emoji>,
+    },
+    InviteCreate {
+        invite: Invite,
+        inviter: Option<User>,
+    },
+    InviteDelete {
+        guild_id: Snowflake,
+        channel_id: Snowflake,
+        code: String,
+    },
     ThreadCreate(Channel),
     ThreadUpdate(Channel),
     ThreadDelete(Channel),
@@ -53,15 +81,35 @@ pub enum DomainEvent {
     // discordy.user.v1
     UserUpdate(User),
     UserSettingsUpdate(UserSettings),
-    RelationshipAdd { user_id: Snowflake, kind: RelationshipType, target: User, since: DateTime<Utc> },
-    RelationshipRemove { user_id: Snowflake, target_id: Snowflake, kind: RelationshipType },
+    RelationshipAdd {
+        user_id: Snowflake,
+        kind: RelationshipType,
+        target: User,
+        since: DateTime<Utc>,
+    },
+    RelationshipRemove {
+        user_id: Snowflake,
+        target_id: Snowflake,
+        kind: RelationshipType,
+    },
     /// One envelope per recipient, each excluding that recipient from `recipients`.
     PrivateChannelCreate(PrivateChannelView),
     PrivateChannelUpdate(PrivateChannelView),
     /// Sent to `user_id` when they leave a group DM.
-    PrivateChannelDelete { channel: Channel, user_id: Snowflake },
-    RecipientAdd { channel_id: Snowflake, user: User, notify: Vec<Snowflake> },
-    RecipientRemove { channel_id: Snowflake, user: User, notify: Vec<Snowflake> },
+    PrivateChannelDelete {
+        channel: Channel,
+        user_id: Snowflake,
+    },
+    RecipientAdd {
+        channel_id: Snowflake,
+        user: User,
+        notify: Vec<Snowflake>,
+    },
+    RecipientRemove {
+        channel_id: Snowflake,
+        user: User,
+        notify: Vec<Snowflake>,
+    },
 
     // discordy.message.v1
     TypingStart {

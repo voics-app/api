@@ -14,11 +14,25 @@ pub async fn execute(
     role_id: Snowflake,
     audit: AuditContext<'_>,
 ) -> AppResult<()> {
-    let member = ports.guilds.member(guild_id, user_id).await?.ok_or(AppError::NotFound(Resource::Member))?;
+    let member = ports
+        .guilds
+        .member(guild_id, user_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Member))?;
     if !member.role_ids.contains(&role_id) {
         return Ok(());
     }
-    let roles = member.role_ids.iter().copied().filter(|r| *r != role_id).collect();
-    let input = UpdateMemberInput { roles: Some(roles), ..Default::default() };
-    update_member::execute(ports, actor, guild_id, user_id, input, audit).await.map(|_| ())
+    let roles = member
+        .role_ids
+        .iter()
+        .copied()
+        .filter(|r| *r != role_id)
+        .collect();
+    let input = UpdateMemberInput {
+        roles: Some(roles),
+        ..Default::default()
+    };
+    update_member::execute(ports, actor, guild_id, user_id, input, audit)
+        .await
+        .map(|_| ())
 }

@@ -66,11 +66,18 @@ pub fn send_friend_request(
         return Err(RelationshipError::BlockedByTarget);
     }
     Ok(match mine {
-        Some(Friend) => RelationshipChange { mine: Some(Friend), theirs: Some(Friend) },
-        Some(IncomingRequest) => RelationshipChange { mine: Some(Friend), theirs: Some(Friend) },
-        Some(OutgoingRequest) | Some(Blocked) | None => {
-            RelationshipChange { mine: Some(OutgoingRequest), theirs: Some(IncomingRequest) }
-        }
+        Some(Friend) => RelationshipChange {
+            mine: Some(Friend),
+            theirs: Some(Friend),
+        },
+        Some(IncomingRequest) => RelationshipChange {
+            mine: Some(Friend),
+            theirs: Some(Friend),
+        },
+        Some(OutgoingRequest) | Some(Blocked) | None => RelationshipChange {
+            mine: Some(OutgoingRequest),
+            theirs: Some(IncomingRequest),
+        },
     })
 }
 
@@ -81,11 +88,17 @@ pub fn block(theirs: Option<RelationshipType>) -> RelationshipChange {
         Some(RelationshipType::Blocked) => Some(RelationshipType::Blocked),
         _ => None,
     };
-    RelationshipChange { mine: Some(RelationshipType::Blocked), theirs }
+    RelationshipChange {
+        mine: Some(RelationshipType::Blocked),
+        theirs,
+    }
 }
 
 /// Removing a friend, cancelling/declining a request or unblocking.
-pub fn remove(mine: Option<RelationshipType>, theirs: Option<RelationshipType>) -> RelationshipChange {
+pub fn remove(
+    mine: Option<RelationshipType>,
+    theirs: Option<RelationshipType>,
+) -> RelationshipChange {
     let theirs = match (mine, theirs) {
         (_, Some(RelationshipType::Blocked)) => Some(RelationshipType::Blocked),
         (Some(RelationshipType::Blocked), other) => other,
@@ -99,19 +112,52 @@ mod tests {
     use super::*;
     use RelationshipType::*;
 
-    fn change(mine: Option<RelationshipType>, theirs: Option<RelationshipType>) -> RelationshipChange {
+    fn change(
+        mine: Option<RelationshipType>,
+        theirs: Option<RelationshipType>,
+    ) -> RelationshipChange {
         RelationshipChange { mine, theirs }
     }
 
     #[test]
     fn friend_request_table() {
         let cases = [
-            ("fresh request", None, None, Ok(change(Some(OutgoingRequest), Some(IncomingRequest)))),
-            ("accepting their request", Some(IncomingRequest), Some(OutgoingRequest), Ok(change(Some(Friend), Some(Friend)))),
-            ("repeat request is idempotent", Some(OutgoingRequest), Some(IncomingRequest), Ok(change(Some(OutgoingRequest), Some(IncomingRequest)))),
-            ("already friends", Some(Friend), Some(Friend), Ok(change(Some(Friend), Some(Friend)))),
-            ("request after I blocked them unblocks", Some(Blocked), None, Ok(change(Some(OutgoingRequest), Some(IncomingRequest)))),
-            ("they blocked me", None, Some(Blocked), Err(RelationshipError::BlockedByTarget)),
+            (
+                "fresh request",
+                None,
+                None,
+                Ok(change(Some(OutgoingRequest), Some(IncomingRequest))),
+            ),
+            (
+                "accepting their request",
+                Some(IncomingRequest),
+                Some(OutgoingRequest),
+                Ok(change(Some(Friend), Some(Friend))),
+            ),
+            (
+                "repeat request is idempotent",
+                Some(OutgoingRequest),
+                Some(IncomingRequest),
+                Ok(change(Some(OutgoingRequest), Some(IncomingRequest))),
+            ),
+            (
+                "already friends",
+                Some(Friend),
+                Some(Friend),
+                Ok(change(Some(Friend), Some(Friend))),
+            ),
+            (
+                "request after I blocked them unblocks",
+                Some(Blocked),
+                None,
+                Ok(change(Some(OutgoingRequest), Some(IncomingRequest))),
+            ),
+            (
+                "they blocked me",
+                None,
+                Some(Blocked),
+                Err(RelationshipError::BlockedByTarget),
+            ),
         ];
         for (name, mine, theirs, expected) in cases {
             assert_eq!(send_friend_request(mine, theirs), expected, "{name}");
@@ -129,9 +175,18 @@ mod tests {
     #[test]
     fn remove_table() {
         assert_eq!(remove(Some(Friend), Some(Friend)), change(None, None));
-        assert_eq!(remove(Some(OutgoingRequest), Some(IncomingRequest)), change(None, None));
-        assert_eq!(remove(Some(Blocked), Some(Blocked)), change(None, Some(Blocked)));
-        assert_eq!(remove(Some(Friend), Some(Blocked)), change(None, Some(Blocked)));
+        assert_eq!(
+            remove(Some(OutgoingRequest), Some(IncomingRequest)),
+            change(None, None)
+        );
+        assert_eq!(
+            remove(Some(Blocked), Some(Blocked)),
+            change(None, Some(Blocked))
+        );
+        assert_eq!(
+            remove(Some(Friend), Some(Blocked)),
+            change(None, Some(Blocked))
+        );
         assert_eq!(remove(Some(Blocked), None), change(None, None));
     }
 

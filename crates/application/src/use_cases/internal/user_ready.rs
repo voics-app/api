@@ -33,8 +33,20 @@ pub async fn execute(ports: &Ports, user_id: Snowflake) -> AppResult<UserReady> 
     let users = ports.users.find_many(&ids).await?;
     let relationships = relationships
         .into_iter()
-        .filter_map(|r| users.iter().find(|u| u.id == r.target_id).cloned().map(|u| (r, u)))
+        .filter_map(|r| {
+            users
+                .iter()
+                .find(|u| u.id == r.target_id)
+                .cloned()
+                .map(|u| (r, u))
+        })
         .collect();
     let settings = ports.users.settings(user_id).await?;
-    Ok(UserReady { user, guilds, private_channels, relationships, settings })
+    Ok(UserReady {
+        user,
+        guilds,
+        private_channels,
+        relationships,
+        settings,
+    })
 }
