@@ -18,6 +18,11 @@ pub struct IntrospectResponse {
     pub session_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UsersLookupRequest {
+    pub ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct UserReadyDto {
     pub user: UserDto,

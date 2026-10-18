@@ -3,3 +3,4 @@ pub mod channel_routing;
 pub mod guild_state;
 pub mod introspect;
 pub mod user_ready;
+pub mod users_lookup;

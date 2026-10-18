@@ -8,12 +8,13 @@ use serde::Deserialize;
 
 use application::use_cases::admin::{list_guilds, list_users, stats, suspend_user};
 use application::use_cases::internal::{
-    channel_access, channel_routing, guild_state, introspect, user_ready,
+    channel_access, channel_routing, guild_state, introspect, user_ready, users_lookup,
 };
 use application::{AppError, Resource};
 use contracts::internal::{
     AdminGuildDto, AdminUserDto, AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto,
     ChannelRoutingDto, IntrospectRequest, IntrospectResponse, SuspendUserRequest, UserReadyDto,
+    UsersLookupRequest,
 };
 use contracts::objects::{ChannelDto, GuildFullDto, RelationshipDto, UserDto, UserSettingsDto};
 use contracts::wire::{timestamp, Id, Perm};
@@ -48,6 +49,21 @@ async fn introspect_token(
         application_id: found.application_id.map(Id),
         session_id: found.session_id.map(|id| id.to_string()),
     }))
+}
+
+async fn users_lookup(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Body(body): Body<UsersLookupRequest>,
+) -> Result<Json<Vec<UserDto>>, ApiError> {
+    let ids: Vec<Snowflake> = body
+        .ids
+        .iter()
+        .filter_map(|raw| raw.parse().ok())
+        .take(users_lookup::LOOKUP_LIMIT)
+        .collect();
+    let users = users_lookup::execute(&state.ports, &ids).await?;
+    Ok(Json(users.iter().map(UserDto::public).collect()))
 }
 
 async fn user_ready_state(
@@ -215,6 +231,7 @@ async fn admin_guilds(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/internal/v1/auth/introspect", post(introspect_token))
+        .route("/internal/v1/users/lookup", post(users_lookup))
         .route("/internal/v1/users/{id}/ready", get(user_ready_state))
         .route("/internal/v1/guilds/{id}/state", get(guild_full_state))
         .route(
