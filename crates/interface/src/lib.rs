@@ -21,7 +21,9 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::channels::routes())
         .merge(routes::members::routes())
         .merge(routes::invites::routes())
-        .merge(routes::emojis::routes());
+        .merge(routes::emojis::routes())
+        .merge(routes::applications::routes())
+        .merge(routes::webhooks::routes());
     Router::new()
         .merge(routes::health::routes())
         .merge(routes::internal::routes())

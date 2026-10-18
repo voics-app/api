@@ -23,6 +23,8 @@ pub struct Settings {
     pub refresh_token_ttl: Duration,
     pub voice_regions: Vec<VoiceRegion>,
     pub default_voice_region: String,
+    /// Public base URL of the api, used to build webhook URLs.
+    pub public_api_base: String,
 }
 
 impl Default for Settings {
@@ -35,6 +37,7 @@ impl Default for Settings {
                 name: "Netherlands (Home)".into(),
             }],
             default_voice_region: "nl-home".into(),
+            public_api_base: "http://localhost:8080".into(),
         }
     }
 }

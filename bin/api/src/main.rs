@@ -103,6 +103,11 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
                 name: region.clone(),
             }],
             default_voice_region: region,
+            public_api_base: config
+                .public_api_url
+                .as_str()
+                .trim_end_matches('/')
+                .to_owned(),
             ..Settings::default()
         },
     };
