@@ -16,6 +16,7 @@ pub struct CommandIndex {
 /// invoke (global and guild commands of installed bots).
 pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppResult<CommandIndex> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
+    ctx.require(Permissions::USE_APPLICATION_COMMANDS)?;
     let permissions = ctx.permissions();
     let applications = ports.applications.installed_in_guild(guild_id).await?;
     let mut commands = Vec::new();
@@ -33,9 +34,6 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
                     }),
             );
         }
-    }
-    if !permissions.contains(Permissions::USE_APPLICATION_COMMANDS) {
-        commands.clear();
     }
     Ok(CommandIndex {
         applications,

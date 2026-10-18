@@ -667,6 +667,7 @@ pub struct ApplicationDto {
     pub description: String,
     pub bot_public: bool,
     pub bot_require_code_grant: bool,
+    pub bot_id: Id,
     pub bot: UserDto,
     pub owner: UserDto,
     pub verify_key: String,
@@ -683,11 +684,46 @@ impl ApplicationDto {
             description: application.description.clone(),
             bot_public: application.bot_public,
             bot_require_code_grant: application.bot_require_code_grant,
+            bot_id: Id(application.bot_user_id),
             bot: UserDto::public(bot),
             owner: UserDto::public(owner),
             verify_key: application.verify_key.clone(),
             flags: application.flags,
             interactions_endpoint_url: application.interactions_endpoint_url.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ApplicationIndexDto {
+    pub id: Id,
+    pub name: String,
+    pub icon: Option<String>,
+    pub bot_id: Id,
+}
+
+impl From<&Application> for ApplicationIndexDto {
+    fn from(application: &Application) -> Self {
+        Self {
+            id: Id(application.id),
+            name: application.name.clone(),
+            icon: application.icon.clone(),
+            bot_id: Id(application.bot_user_id),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CommandIndexDto {
+    pub applications: Vec<ApplicationIndexDto>,
+    pub application_commands: Vec<ApplicationCommandDto>,
+}
+
+impl CommandIndexDto {
+    pub fn new(applications: &[Application], commands: &[ApplicationCommand]) -> Self {
+        Self {
+            applications: applications.iter().map(ApplicationIndexDto::from).collect(),
+            application_commands: commands.iter().map(ApplicationCommandDto::from).collect(),
         }
     }
 }
