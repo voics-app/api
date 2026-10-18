@@ -60,7 +60,7 @@ pub async fn execute(
     let mut original_message_id = None;
     match callback {
         CallbackKind::ChannelMessageWithSource => {
-            let body = compose(response.data, origin, true)?;
+            let body = compose(interaction.channel_id, response.data, origin, true)?;
             original_message_id = Some(
                 ports
                     .messages
