@@ -124,13 +124,16 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(config.bind_addr).await?;
     tracing::info!(addr = %config.bind_addr, "api listening");
     let metrics = telemetry::prometheus()?;
-    let app = interface::router(state).route(
-        "/metrics",
-        axum::routing::get(move || {
-            let metrics = metrics.clone();
-            async move { metrics.render() }
-        }),
-    );
+    let cors = interface::cors::layer(&config.cors_allowed_origins)?;
+    let app = interface::router(state)
+        .route(
+            "/metrics",
+            axum::routing::get(move || {
+                let metrics = metrics.clone();
+                async move { metrics.render() }
+            }),
+        )
+        .layer(cors);
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
