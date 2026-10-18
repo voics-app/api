@@ -7,7 +7,7 @@ use application::AppResult;
 use domain::user::{Credentials, PresenceStatus, Suspension, Theme, User, UserSettings};
 use domain::Snowflake;
 
-use super::convert::{custom_status_from_json, like_pattern, mode, raw_ids, sf};
+use super::convert::{custom_status_from_json, like_pattern, mode, raw_ids, sf, sfs};
 use super::error::db;
 use super::PgStore;
 
@@ -186,6 +186,21 @@ impl UserRepository for PgStore {
             .await
             .map_err(db)?;
         Ok(rows.into_iter().map(User::from).collect())
+    }
+
+    async fn co_member_ids(&self, user_id: Snowflake) -> AppResult<Vec<Snowflake>> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT r.user_id FROM channel_recipients mine \
+                 JOIN channel_recipients r ON r.channel_id = mine.channel_id WHERE mine.user_id = $1 \
+             UNION \
+             SELECT m.user_id FROM members mine \
+                 JOIN members m ON m.guild_id = mine.guild_id WHERE mine.user_id = $1",
+        )
+        .bind(user_id.as_i64())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(sfs(rows.into_iter().map(|(id,)| id).collect()))
     }
 
     async fn stats(&self, signups_since: DateTime<Utc>) -> AppResult<UserStats> {

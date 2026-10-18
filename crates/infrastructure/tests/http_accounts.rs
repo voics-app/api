@@ -248,7 +248,11 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
         get(&format!("/api/v1/devices/{device_id}"), Some(&alice_token)),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "no such route");
+    assert_eq!(
+        status,
+        StatusCode::METHOD_NOT_ALLOWED,
+        "the device path only accepts DELETE"
+    );
 }
 
 fn base64_of_32_bytes() -> String {

@@ -2,7 +2,7 @@
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use application::use_cases::devices::register_device::RegisterDeviceInput;
 use application::use_cases::devices::{
-    claim_key_package, list_user_devices, register_device, upload_key_packages,
+    claim_key_package, delete_device, list_user_devices, register_device, upload_key_packages,
 };
 use application::{AppError, Resource};
 use contracts::objects::DeviceDto;
@@ -78,6 +78,15 @@ async fn upload_packages(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn remove(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(device_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    delete_device::execute(&state.ports, &actor, parse_id(&device_id)?).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn user_devices(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -112,6 +121,7 @@ async fn claim_package(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/devices", post(register))
+        .route("/devices/{id}", delete(remove))
         .route("/devices/{id}/key-packages", post(upload_packages))
         .route("/users/{id}/devices", get(user_devices))
         .route(

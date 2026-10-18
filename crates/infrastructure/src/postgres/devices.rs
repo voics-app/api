@@ -42,19 +42,6 @@ const DEVICE_COLUMNS: &str = "id, user_id, name, identity_key, created_at";
 
 #[async_trait]
 impl DeviceRepository for PgStore {
-    async fn create(&self, device: &Device) -> AppResult<()> {
-        sqlx::query("INSERT INTO devices (id, user_id, name, identity_key, created_at) VALUES ($1, $2, $3, $4, $5)")
-            .bind(device.id.as_i64())
-            .bind(device.user_id.as_i64())
-            .bind(&device.name)
-            .bind(device.identity_key.as_slice())
-            .bind(device.created_at)
-            .execute(&self.pool)
-            .await
-            .map_err(db)?;
-        Ok(())
-    }
-
     async fn find(&self, id: Snowflake) -> AppResult<Option<Device>> {
         let sql = format!("SELECT {DEVICE_COLUMNS} FROM devices WHERE id = $1");
         let row: Option<DeviceRow> = sqlx::query_as(&sql)
