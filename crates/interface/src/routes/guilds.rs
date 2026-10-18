@@ -1,5 +1,6 @@
 //! `/api/v1/guilds`, `/users/@me/guilds` and the guild audit log (P9).
 
+use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
@@ -22,7 +23,7 @@ use domain::audit::AuditAction;
 
 use crate::error::ApiError;
 use crate::extract::{AuditReason, Body, Caller};
-use crate::images;
+use crate::images::{self, IMAGE_BODY_LIMIT};
 use crate::routes::ids::snowflake;
 use crate::state::AppState;
 
@@ -173,7 +174,13 @@ async fn audit_logs(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/guilds", post(create))
-        .route("/guilds/{id}", get(fetch).patch(modify).delete(remove))
+        .route(
+            "/guilds/{id}",
+            get(fetch)
+                .patch(modify)
+                .delete(remove)
+                .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
+        )
         .route("/guilds/{id}/audit-logs", get(audit_logs))
         .route("/users/@me/guilds", get(my_guilds))
         .route("/users/@me/guilds/{id}", axum::routing::delete(leave))
