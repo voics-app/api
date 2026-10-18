@@ -52,6 +52,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `MINIO_BUCKET_ASSETS` | no | `discordy-assets` | Asset bucket |
 | `DEFAULT_VOICE_REGION` | no | `nl-home` | Region for new guilds |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | no | | Enables OTLP/HTTP trace export |
+| `CORS_ALLOWED_ORIGINS` | no | `null,http://localhost:5173` | Comma-separated origins allowed by CORS (`null` is the packaged `file://` client) |
 
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`.
 
