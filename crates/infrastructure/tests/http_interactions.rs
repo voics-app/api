@@ -3,12 +3,14 @@
 
 mod support;
 
+use std::sync::Arc;
+
 use axum::http::{Method, StatusCode};
 use serde_json::{json, Value};
 
 use interface::state::AppState;
 use support::http::{call, request, send, INTERNAL_TOKEN};
-use support::{jwt_keys, ports, start_database, Database};
+use support::{jwt_keys, ports_with_messages, start_database, Database, RecordingMessages};
 
 struct Fixture {
     app: axum::Router,
@@ -19,6 +21,7 @@ struct Fixture {
     command_id: String,
     guild_id: String,
     channel_id: String,
+    messages: Arc<RecordingMessages>,
 }
 
 async fn register(app: &axum::Router, email: &str, username: &str) -> String {
@@ -40,8 +43,9 @@ async fn register(app: &axum::Router, email: &str, username: &str) -> String {
 async fn fixture() -> Fixture {
     let database = start_database().await;
     let (private, public) = jwt_keys();
+    let messages = Arc::new(RecordingMessages::default());
     let app = interface::router(AppState {
-        ports: ports(&database.pool, &public, &private),
+        ports: ports_with_messages(&database.pool, &public, &private, messages.clone()),
         internal_token: INTERNAL_TOKEN.into(),
         rate_limiter: std::sync::Arc::new(support::AllowAll),
         rate_policy: interface::state::RatePolicy::default(),
@@ -122,6 +126,7 @@ async fn fixture() -> Fixture {
         command_id,
         guild_id,
         channel_id,
+        messages,
     }
 }
 
@@ -291,5 +296,89 @@ async fn callback_after_the_token_expired_is_not_found() {
         interaction_state(&fixture.database.pool, &interaction_id).await,
         "pending",
         "an expired callback leaves the interaction untouched"
+    );
+}
+
+#[tokio::test]
+async fn interaction_responses_are_sent_as_the_pinned_body() {
+    let fixture = fixture().await;
+    let (_, created) = invoke_ping(&fixture).await;
+    let interaction_id = created["id"].as_str().expect("interaction id").to_owned();
+    let events = interaction_create_events(&fixture.database.pool).await;
+    let token = events[0]["data"]["token"]
+        .as_str()
+        .expect("token")
+        .to_owned();
+    let (_, me) = call(
+        &fixture.app,
+        Method::GET,
+        "/api/v1/users/@me",
+        &fixture.owner,
+        None,
+    )
+    .await;
+
+    let (status, _) = send(
+        &fixture.app,
+        request(
+            Method::POST,
+            &format!("/api/v1/interactions/{interaction_id}/{token}/callback"),
+            None,
+            Some(json!({"type": 4, "data": {"content": "pong", "flags": 64, "tts": true}})),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let bodies = fixture.messages.bodies.lock().unwrap().clone();
+    assert_eq!(
+        bodies,
+        vec![json!({
+            "author_id": fixture.bot_id,
+            "application_id": fixture.application_id,
+            "interaction_id": interaction_id,
+            "content": "pong",
+            "flags": 64,
+            "target_user_ids": [me["id"]],
+        })]
+    );
+}
+
+#[tokio::test]
+async fn webhook_posts_are_authored_by_the_webhook() {
+    let fixture = fixture().await;
+    let (status, hook) = call(
+        &fixture.app,
+        Method::POST,
+        &format!("/api/v1/channels/{}/webhooks", fixture.channel_id),
+        &fixture.owner,
+        Some(json!({"name": "Relay"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{hook}");
+    let hook_id = hook["id"].as_str().expect("webhook id").to_owned();
+    let token = hook["token"].as_str().expect("webhook token").to_owned();
+
+    let (status, _) = send(
+        &fixture.app,
+        request(
+            Method::POST,
+            &format!("/api/v1/webhooks/{hook_id}/{token}"),
+            None,
+            Some(json!({"content": "hook", "username": "Custom"})),
+        ),
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+
+    let bodies = fixture.messages.bodies.lock().unwrap().clone();
+    assert_eq!(
+        bodies,
+        vec![json!({
+            "author_id": hook_id,
+            "webhook_id": hook_id,
+            "username": "Custom",
+            "content": "hook",
+        })]
     );
 }

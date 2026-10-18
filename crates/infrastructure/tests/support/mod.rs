@@ -93,6 +93,38 @@ impl EventPublisher for DiscardEvents {
     }
 }
 
+/// Records the message bodies api sends to the `messages` service.
+#[derive(Default)]
+pub struct RecordingMessages {
+    pub bodies: std::sync::Mutex<Vec<serde_json::Value>>,
+}
+
+#[async_trait]
+impl MessageService for RecordingMessages {
+    async fn create(
+        &self,
+        _: domain::Snowflake,
+        message: serde_json::Value,
+    ) -> AppResult<StoredMessage> {
+        self.bodies.lock().unwrap().push(message);
+        Ok(StoredMessage {
+            id: domain::Snowflake::new(555),
+            body: serde_json::json!({"id": "555"}),
+        })
+    }
+    async fn edit(
+        &self,
+        _: domain::Snowflake,
+        _: domain::Snowflake,
+        _: serde_json::Value,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable("not recorded".into()))
+    }
+    async fn delete(&self, _: domain::Snowflake, _: domain::Snowflake) -> AppResult<()> {
+        Err(AppError::Unavailable("not recorded".into()))
+    }
+}
+
 struct NoMessages;
 
 #[async_trait]
@@ -138,6 +170,16 @@ impl AssetStorage for MemoryAssets {
 
 /// Builds the application ports over `pool` with the production adapters.
 pub fn ports(pool: &PgPool, public_pem: &[u8], private_pem: &[u8]) -> Ports {
+    ports_with_messages(pool, public_pem, private_pem, Arc::new(NoMessages))
+}
+
+/// As [`ports`], with the given `messages` service.
+pub fn ports_with_messages(
+    pool: &PgPool,
+    public_pem: &[u8],
+    private_pem: &[u8],
+    messages: Arc<dyn MessageService>,
+) -> Ports {
     let store = Arc::new(PgStore::new(pool.clone()));
     Ports {
         users: store.clone(),
@@ -161,7 +203,7 @@ pub fn ports(pool: &PgPool, public_pem: &[u8], private_pem: &[u8]) -> Ports {
         secrets: Arc::new(OsSecrets),
         totp: Arc::new(Rfc6238),
         assets: Arc::new(MemoryAssets::default()),
-        messages: Arc::new(NoMessages),
+        messages,
         settings: Settings::default(),
     }
 }

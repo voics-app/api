@@ -19,19 +19,13 @@ pub async fn execute(
     if let Some(webhook) = incoming(ports, id, token).await? {
         let origin = MessageOrigin {
             webhook_id: Some(webhook.id),
+            webhook_name: Some(webhook.name.clone()),
             ..Default::default()
         };
-        let mut body = compose(Some(data), origin, true)?;
-        let fields = body
-            .as_object_mut()
-            .ok_or_else(|| AppError::internal("message body is not an object"))?;
-        fields
-            .entry("username")
-            .or_insert_with(|| Value::String(webhook.name.clone()));
-        if let Some(avatar) = &webhook.avatar {
-            fields.insert("webhook_avatar".to_owned(), Value::String(avatar.clone()));
-        }
-        return ports.messages.create(webhook.channel_id, body).await;
+        return ports
+            .messages
+            .create(webhook.channel_id, compose(Some(data), origin, true)?)
+            .await;
     }
     let interaction = followup_interaction(ports, id, token).await?;
     let application = ports
@@ -43,6 +37,7 @@ pub async fn execute(
         author_id: Some(application.bot_user_id),
         application_id: Some(application.id),
         interaction_id: Some(interaction.id),
+        invoker_id: Some(interaction.user_id),
         ..Default::default()
     };
     ports

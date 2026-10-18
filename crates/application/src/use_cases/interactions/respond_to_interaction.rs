@@ -53,6 +53,7 @@ pub async fn execute(
         author_id: Some(application.bot_user_id),
         application_id: Some(application.id),
         interaction_id: Some(interaction.id),
+        invoker_id: Some(interaction.user_id),
         ..Default::default()
     };
     let mut writes = WriteSet::new();
