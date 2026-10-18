@@ -181,3 +181,59 @@ async fn internal_endpoints_require_the_token_and_serve_state() {
         "suspended accounts cannot sign in"
     );
 }
+
+#[tokio::test]
+async fn users_lookup_returns_public_profiles_only() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let app = interface::router(AppState {
+        ports: ports(&database.pool, &public, &private),
+        internal_token: INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
+    });
+    let (_alice_token, alice_id) = register(&app, "alice@example.com", "alice").await;
+    let (_bob_token, bob_id) = register(&app, "bob@example.com", "bob").await;
+
+    let lookup = |token: Option<&str>, ids: serde_json::Value| {
+        let mut builder = axum::http::Request::builder()
+            .method(Method::POST)
+            .uri("/internal/v1/users/lookup")
+            .header("content-type", "application/json");
+        if let Some(token) = token {
+            builder = builder.header("x-internal-token", token);
+        }
+        builder
+            .body(axum::body::Body::from(json!({ "ids": ids }).to_string()))
+            .expect("request")
+    };
+
+    let (status, _) = send(&app, lookup(None, json!([alice_id]))).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, users) = send(
+        &app,
+        lookup(
+            Some(INTERNAL_TOKEN),
+            json!([alice_id, bob_id, "1", "not-a-number"]),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let users = users.as_array().expect("array");
+    assert_eq!(users.len(), 2, "unknown and malformed ids are skipped");
+    let mut names: Vec<&str> = users
+        .iter()
+        .map(|u| u["username"].as_str().expect("username"))
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["alice", "bob"]);
+    for user in users {
+        assert!(user.get("email").is_none(), "never exposes email");
+        assert!(user.get("locale").is_none());
+    }
+
+    let (status, users) = send(&app, lookup(Some(INTERNAL_TOKEN), json!([]))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(users, json!([]));
+}
