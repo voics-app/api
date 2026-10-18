@@ -111,6 +111,27 @@ async fn internal_endpoints_require_the_token_and_serve_state() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "non-members get 403");
 
+    let (status, routing) = send(
+        &app,
+        internal(
+            Method::GET,
+            &format!("/internal/v1/channels/{channel_id}/delivery"),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "channel routing needs no user");
+    assert_eq!(routing["guild_id"], guild_id);
+    assert_eq!(routing["channel_type"], 0);
+    assert_eq!(routing["delivery_mode"], "standard");
+    assert!(routing.get("permissions").is_none());
+
+    let (status, _) = send(
+        &app,
+        internal(Method::GET, "/internal/v1/channels/1/delivery"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "unknown channels get 404");
+
     let (status, stats) = send(&app, internal(Method::GET, "/internal/v1/admin/stats")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(stats["users_total"], 2);
