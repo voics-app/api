@@ -2,6 +2,7 @@
 //! and relationships.
 
 use axum::body::Bytes;
+use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};
@@ -29,7 +30,7 @@ use domain::Snowflake;
 
 use crate::error::ApiError;
 use crate::extract::{Body, Caller};
-use crate::images;
+use crate::images::{self, IMAGE_BODY_LIMIT};
 use crate::state::AppState;
 
 fn parse_id(raw: &str) -> Result<Snowflake, ApiError> {
@@ -222,7 +223,12 @@ async fn delete_relationship(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/users/@me", get(current_user).patch(update_me))
+        .route(
+            "/users/@me",
+            get(current_user)
+                .patch(update_me)
+                .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
+        )
         .route(
             "/users/@me/settings",
             get(settings).patch(update_settings_handler),

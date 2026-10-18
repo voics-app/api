@@ -1,5 +1,6 @@
 //! Guild emojis (P9).
 
+use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
@@ -18,7 +19,7 @@ use contracts::wire::Id;
 
 use crate::error::ApiError;
 use crate::extract::{AuditReason, Body, Caller};
-use crate::images;
+use crate::images::{self, IMAGE_BODY_LIMIT};
 use crate::routes::ids::snowflake;
 use crate::state::AppState;
 
@@ -126,9 +127,17 @@ async fn remove(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/guilds/{id}/emojis", get(list).post(create))
+        .route(
+            "/guilds/{id}/emojis",
+            get(list)
+                .post(create)
+                .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
+        )
         .route(
             "/guilds/{id}/emojis/{emoji_id}",
-            get(fetch).patch(modify).delete(remove),
+            get(fetch)
+                .patch(modify)
+                .delete(remove)
+                .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
         )
 }

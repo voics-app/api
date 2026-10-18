@@ -1,6 +1,7 @@
 //! Applications, bot accounts, application commands, OAuth2 bot authorization
 //! and interactions (P9).
 
+use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
@@ -35,7 +36,7 @@ use domain::Snowflake;
 
 use crate::error::ApiError;
 use crate::extract::{Body, Caller};
-use crate::images;
+use crate::images::{self, IMAGE_BODY_LIMIT};
 use crate::routes::ids::snowflake;
 use crate::state::AppState;
 
@@ -386,7 +387,12 @@ async fn callback(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/applications", get(list).post(create))
-        .route("/applications/{id}", get(fetch).patch(modify))
+        .route(
+            "/applications/{id}",
+            get(fetch)
+                .patch(modify)
+                .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
+        )
         .route("/applications/{id}/bot/reset-token", post(reset_token))
         .route(
             "/applications/{id}/commands",
