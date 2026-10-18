@@ -1,6 +1,7 @@
 //! HTTP interface: axum routers, extractors and error mapping. Handlers only
 //! translate between the wire (contracts) and application use cases.
 
+pub mod cors;
 pub mod error;
 pub mod extract;
 pub mod images;
