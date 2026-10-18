@@ -13,7 +13,11 @@ jobs:
 
   docker:
     needs: rust
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     uses: discordy-voics/.github/.github/workflows/docker.yml@main
     with:
-      image-name: ghcr.io/discordy-voics/api
+      image-name: api
       description: Discordy REST API
