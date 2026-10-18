@@ -31,7 +31,7 @@ pub fn patch(raw: Option<Option<String>>) -> Result<Option<Option<ImageUpload>>,
     }
 }
 
-/// Largest JSON body an image route reads. A 9 MiB image is 12 MiB of base64
-/// (the 8 MiB bound is still enforced in the application layer), so this must
+/// Largest JSON body an image route reads. An 11 MiB image is about 14.7 MiB of base64
+/// (the 10 MiB bound is still enforced in the application layer), so this must
 /// sit above that to let oversized images reach the `BINARY_TYPE_MAX_SIZE` check.
 pub const IMAGE_BODY_LIMIT: usize = 16 * 1024 * 1024;
