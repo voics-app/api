@@ -9,6 +9,7 @@ use domain::application::{
 use domain::audit::AuditLogEntry;
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
+use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Guild, Member, Role};
 use domain::invite::Invite;
@@ -111,6 +112,12 @@ pub enum Mutation {
         application_id: Snowflake,
         guild_id: Option<Snowflake>,
         commands: Vec<ApplicationCommand>,
+    },
+
+    InsertDevice(Device),
+    DeleteDevice {
+        user_id: Snowflake,
+        device_id: Snowflake,
     },
 
     InsertInteraction(Interaction),

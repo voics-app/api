@@ -22,7 +22,11 @@ pub async fn execute(
     if let Some(message_id) = interaction.original_message_id {
         return ports
             .messages
-            .edit(interaction.channel_id, message_id, edit_patch(Some(data))?)
+            .edit(
+                interaction.channel_id,
+                message_id,
+                edit_patch(interaction.channel_id, Some(data))?,
+            )
             .await;
     }
     let application = ports

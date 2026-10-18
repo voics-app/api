@@ -3,6 +3,8 @@ use domain::device::{Device, IDENTITY_KEY_LENGTH, MAX_DEVICES_PER_USER};
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult};
 use crate::use_cases::auth::tokens::access_token;
+use crate::use_cases::devices::devices_update;
+use crate::write_set::{Mutation, WriteSet};
 
 #[derive(Debug, Clone)]
 pub struct RegisterDeviceInput {
@@ -40,7 +42,8 @@ pub async fn execute(
             "Must be a 32-byte Ed25519 public key.",
         )
     })?;
-    if ports.devices.list_for_user(actor.user_id).await?.len() >= MAX_DEVICES_PER_USER {
+    let mut devices = ports.devices.list_for_user(actor.user_id).await?;
+    if devices.len() >= MAX_DEVICES_PER_USER {
         return Err(AppError::BadRequest {
             code: 30000,
             message: "Maximum number of devices reached.".into(),
@@ -53,7 +56,13 @@ pub async fn execute(
         identity_key,
         created_at: ports.clock.now(),
     };
-    ports.devices.create(&device).await?;
+    devices.push(device.clone());
+    let event = devices_update::build(ports, actor.user_id, devices).await?;
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::InsertDevice(device.clone()))
+        .emit(event);
+    ports.unit_of_work.commit(writes).await?;
     ports.sessions.bind_device(session_id, device.id).await?;
     let access_token = access_token(ports, actor.user_id, session_id, Some(device.id))?;
     Ok(RegisteredDevice {

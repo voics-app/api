@@ -8,6 +8,7 @@ use domain::application::Interaction;
 use domain::audit::AuditLogEntry;
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
+use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Guild, GuildSnapshot, MemberProfile, Role};
 use domain::invite::Invite;
@@ -109,6 +110,12 @@ pub enum DomainEvent {
         channel_id: Snowflake,
         user: User,
         notify: Vec<Snowflake>,
+    },
+    /// The user's full device list after a registration or removal.
+    UserDevicesUpdate {
+        user_id: Snowflake,
+        devices: Vec<Device>,
+        target_user_ids: Vec<Snowflake>,
     },
 
     // discordy.message.v1

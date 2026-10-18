@@ -42,6 +42,8 @@ pub trait UserRepository: Send + Sync {
         limit: u32,
         after: Option<Snowflake>,
     ) -> AppResult<Vec<User>>;
+    /// Users who share a DM, group DM or guild with `user_id` (may include `user_id`).
+    async fn co_member_ids(&self, user_id: Snowflake) -> AppResult<Vec<Snowflake>>;
     async fn stats(&self, signups_since: DateTime<Utc>) -> AppResult<UserStats>;
 }
 
@@ -87,7 +89,6 @@ pub trait SessionRepository: Send + Sync {
 
 #[async_trait]
 pub trait DeviceRepository: Send + Sync {
-    async fn create(&self, device: &Device) -> AppResult<()>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Device>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Device>>;
     async fn add_key_packages(&self, device_id: Snowflake, packages: &[Vec<u8>]) -> AppResult<()>;

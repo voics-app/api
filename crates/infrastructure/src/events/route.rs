@@ -10,8 +10,8 @@ use contracts::envelope::{
     Envelope, TOPIC_AUDIT, TOPIC_GUILD, TOPIC_INTERACTION, TOPIC_MESSAGE, TOPIC_USER,
 };
 use contracts::objects::{
-    interaction_event, AuditLogEntryDto, ChannelDto, EmojiDto, GuildDto, GuildFullDto, MemberDto,
-    RelationshipDto, RoleDto, UserDto, UserSettingsDto,
+    interaction_event, AuditLogEntryDto, ChannelDto, DeviceDto, EmojiDto, GuildDto, GuildFullDto,
+    MemberDto, RelationshipDto, RoleDto, UserDto, UserSettingsDto,
 };
 use contracts::Id;
 use domain::relationship::Relationship;
@@ -311,6 +311,22 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             Some(notify.clone()),
             json!({ "channel_id": channel_id.to_string(), "user": UserDto::public(user) }),
         ),
+        DomainEvent::UserDevicesUpdate {
+            user_id,
+            devices,
+            target_user_ids,
+        } => {
+            let devices: Vec<DeviceDto> = devices.iter().map(DeviceDto::from).collect();
+            emit(
+                TOPIC_USER,
+                *user_id,
+                "USER_DEVICES_UPDATE",
+                None,
+                None,
+                Some(target_user_ids.clone()),
+                json!({ "user_id": user_id.to_string(), "devices": devices }),
+            )
+        }
         DomainEvent::TypingStart {
             channel_id,
             guild_id,
@@ -569,5 +585,37 @@ mod tests {
             Some(vec![Id(Snowflake::new(10))])
         );
         assert_eq!(routed[0].envelope.kind, "GUILD_CREATE");
+    }
+
+    #[test]
+    fn user_devices_update_is_keyed_by_user_and_targets_the_given_users() {
+        let device = domain::device::Device {
+            id: Snowflake::new(20),
+            user_id: Snowflake::new(10),
+            name: "laptop".into(),
+            identity_key: [7u8; 32],
+            created_at: at(),
+        };
+        let event = DomainEvent::UserDevicesUpdate {
+            user_id: Snowflake::new(10),
+            devices: vec![device],
+            target_user_ids: vec![Snowflake::new(10), Snowflake::new(11)],
+        };
+        let routed = route(&event, "nl-home", at());
+        assert_eq!(routed.len(), 1);
+        assert_eq!(routed[0].topic, TOPIC_USER);
+        assert_eq!(routed[0].key, "10");
+        assert_eq!(routed[0].envelope.kind, "USER_DEVICES_UPDATE");
+        assert_eq!(
+            routed[0].envelope.target_user_ids,
+            Some(vec![Id(Snowflake::new(10)), Id(Snowflake::new(11))])
+        );
+        assert_eq!(routed[0].envelope.data["user_id"], "10");
+        assert_eq!(routed[0].envelope.data["devices"][0]["device_id"], "20");
+        assert!(routed[0].envelope.data["devices"][0]["identity_key_b64"].is_string());
+        assert_eq!(
+            routed[0].envelope.data["devices"].as_array().map(Vec::len),
+            Some(1)
+        );
     }
 }

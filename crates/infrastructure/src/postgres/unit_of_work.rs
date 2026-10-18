@@ -2,6 +2,7 @@
 //! events in the outbox within the same transaction (P6).
 
 mod applications;
+mod devices;
 mod guilds;
 mod identity;
 
@@ -143,6 +144,11 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             guild_id,
             commands,
         } => applications::replace_commands(conn, *application_id, *guild_id, commands).await,
+        Mutation::InsertDevice(device) => devices::insert_device(conn, device).await,
+        Mutation::DeleteDevice { user_id, device_id } => {
+            devices::delete_device(conn, *user_id, *device_id).await
+        }
+
         Mutation::InsertInteraction(interaction) => {
             applications::insert_interaction(conn, interaction).await
         }
