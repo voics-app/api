@@ -7,11 +7,13 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use application::use_cases::admin::{list_guilds, list_users, stats, suspend_user};
-use application::use_cases::internal::{channel_access, guild_state, introspect, user_ready};
+use application::use_cases::internal::{
+    channel_access, channel_routing, guild_state, introspect, user_ready,
+};
 use application::{AppError, Resource};
 use contracts::internal::{
     AdminGuildDto, AdminUserDto, AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto,
-    IntrospectRequest, IntrospectResponse, SuspendUserRequest, UserReadyDto,
+    ChannelRoutingDto, IntrospectRequest, IntrospectResponse, SuspendUserRequest, UserReadyDto,
 };
 use contracts::objects::{ChannelDto, GuildFullDto, RelationshipDto, UserDto, UserSettingsDto};
 use contracts::wire::{timestamp, Id, Perm};
@@ -90,6 +92,20 @@ async fn guild_full_state(
 ) -> Result<Json<GuildFullDto>, ApiError> {
     let snapshot = guild_state::execute(&state.ports, parse_id(&guild_id)?).await?;
     Ok(Json(GuildFullDto::new(&snapshot, region(&state))))
+}
+
+async fn channel_delivery(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(channel_id): Path<String>,
+) -> Result<Json<ChannelRoutingDto>, ApiError> {
+    let routing = channel_routing::execute(&state.ports, parse_id(&channel_id)?).await?;
+    Ok(Json(ChannelRoutingDto {
+        guild_id: routing.guild_id.map(Id),
+        channel_type: routing.channel_type.code(),
+        delivery_mode: routing.delivery_mode.as_str().to_owned(),
+        recipient_ids: routing.recipient_ids.into_iter().map(Id).collect(),
+    }))
 }
 
 async fn channel_access_info(
@@ -205,6 +221,7 @@ pub fn routes() -> Router<AppState> {
             "/internal/v1/channels/{id}/access/{user_id}",
             get(channel_access_info),
         )
+        .route("/internal/v1/channels/{id}/delivery", get(channel_delivery))
         .route("/internal/v1/admin/stats", get(admin_stats))
         .route("/internal/v1/admin/users", get(admin_users))
         .route("/internal/v1/admin/users/{id}/suspend", post(admin_suspend))

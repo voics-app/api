@@ -36,6 +36,15 @@ pub struct ChannelAccessDto {
     pub recipient_ids: Vec<Id>,
 }
 
+/// `GET /internal/v1/channels/{id}/delivery`: the channel without a user.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChannelRoutingDto {
+    pub guild_id: Option<Id>,
+    pub channel_type: u8,
+    pub delivery_mode: String,
+    pub recipient_ids: Vec<Id>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiAdminStatsDto {
     pub users_total: u64,
