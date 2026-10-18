@@ -38,6 +38,8 @@ pub struct Config {
     pub default_voice_region: String,
     pub object_store: ObjectStore,
     pub otlp_endpoint: Option<Url>,
+    /// Origins allowed by CORS; `null` is the origin of the packaged `file://` client.
+    pub cors_allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -49,6 +51,15 @@ pub enum ConfigError {
 }
 
 const WORKER_ID_MAX: u16 = 1023;
+const DEFAULT_CORS_ALLOWED_ORIGINS: &str = "null,http://localhost:5173";
+
+/// Splits a comma-separated list, trimming blanks and dropping empty entries.
+fn split_list(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|item| item.trim().to_owned())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
 
 fn invalid(name: &'static str, reason: impl Into<String>) -> ConfigError {
     ConfigError::Invalid {
@@ -115,11 +126,7 @@ impl Config {
         let bind_addr = optional(&get, "API_BIND_ADDR", "0.0.0.0:8080")
             .parse()
             .map_err(|_| invalid("API_BIND_ADDR", "expected host:port"))?;
-        let kafka_brokers: Vec<String> = required(&get, "KAFKA_BROKERS")?
-            .split(',')
-            .map(|broker| broker.trim().to_owned())
-            .filter(|broker| !broker.is_empty())
-            .collect();
+        let kafka_brokers = split_list(&required(&get, "KAFKA_BROKERS")?);
         let otlp_endpoint =
             match get("OTEL_EXPORTER_OTLP_ENDPOINT").filter(|v| !v.trim().is_empty()) {
                 Some(raw) => Some(
@@ -128,6 +135,12 @@ impl Config {
                 ),
                 None => None,
             };
+
+        let cors_allowed_origins = split_list(&optional(
+            &get,
+            "CORS_ALLOWED_ORIGINS",
+            DEFAULT_CORS_ALLOWED_ORIGINS,
+        ));
 
         Ok(Self {
             environment,
@@ -152,6 +165,7 @@ impl Config {
                 assets_bucket: optional(&get, "MINIO_BUCKET_ASSETS", "discordy-assets"),
             },
             otlp_endpoint,
+            cors_allowed_origins,
         })
     }
 }
@@ -246,6 +260,29 @@ mod tests {
         );
         let config = Config::from_lookup(lookup(values)).expect("valid");
         assert!(config.jwt_private_pem.contains("\nAAAA\n"));
+    }
+
+    #[test]
+    fn cors_origins_default_to_the_packaged_client_and_dev_server() {
+        let config = Config::from_lookup(lookup(complete())).expect("valid");
+        assert_eq!(
+            config.cors_allowed_origins,
+            vec!["null".to_owned(), "http://localhost:5173".to_owned()]
+        );
+    }
+
+    #[test]
+    fn cors_origins_are_parsed_from_a_comma_list() {
+        let mut values = complete();
+        values.insert(
+            "CORS_ALLOWED_ORIGINS",
+            " https://app.discordy.example , null ,".to_owned(),
+        );
+        let config = Config::from_lookup(lookup(values)).expect("valid");
+        assert_eq!(
+            config.cors_allowed_origins,
+            vec!["https://app.discordy.example".to_owned(), "null".to_owned()]
+        );
     }
 
     #[test]
