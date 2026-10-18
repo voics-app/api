@@ -89,6 +89,8 @@ pub struct ModifyUserSettingsRequest {
     #[serde(default)]
     pub default_delivery_mode: Option<String>,
     #[serde(default)]
+    pub e2ee_calls_default: Option<bool>,
+    #[serde(default)]
     pub developer_mode: Option<bool>,
     #[serde(default, deserialize_with = "double_option")]
     pub accent_color: Option<Option<u32>>,

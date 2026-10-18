@@ -9,6 +9,7 @@ use crate::write_set::{Mutation, WriteSet};
 #[derive(Debug, Clone, Default)]
 pub struct UpdateSettingsInput {
     pub default_delivery_mode: Option<String>,
+    pub e2ee_calls_default: Option<bool>,
     pub theme: Option<String>,
     pub locale: Option<String>,
     pub status: Option<String>,
@@ -26,6 +27,9 @@ pub async fn execute(
     let mut settings = ports.users.settings(actor.user_id).await?;
     if let Some(mode) = input.default_delivery_mode {
         settings.default_delivery_mode = mode.parse::<DeliveryMode>()?;
+    }
+    if let Some(e2ee) = input.e2ee_calls_default {
+        settings.e2ee_calls_default = e2ee;
     }
     if let Some(theme) = input.theme {
         settings.theme = Theme::parse(&theme).ok_or_else(|| {

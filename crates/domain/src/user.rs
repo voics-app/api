@@ -119,6 +119,7 @@ pub struct CustomStatus {
 pub struct UserSettings {
     pub user_id: Snowflake,
     pub default_delivery_mode: DeliveryMode,
+    pub e2ee_calls_default: bool,
     pub theme: Theme,
     pub locale: String,
     pub status: PresenceStatus,
@@ -132,6 +133,7 @@ impl UserSettings {
         Self {
             user_id,
             default_delivery_mode: DeliveryMode::Standard,
+            e2ee_calls_default: false,
             theme: Theme::Dark,
             locale: "en-US".to_owned(),
             status: PresenceStatus::Online,
