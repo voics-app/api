@@ -1,4 +1,4 @@
-use domain::device::{Device, IDENTITY_KEY_LENGTH, MAX_DEVICES_PER_USER};
+use domain::device::{eviction_candidate, Device, IDENTITY_KEY_LENGTH, MAX_DEVICES_PER_USER};
 
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult};
@@ -19,7 +19,8 @@ pub struct RegisteredDevice {
     pub access_token: String,
 }
 
-/// Registers a device and binds it to the caller's session.
+/// Registers a device and binds it to the caller's session. At the device
+/// limit, the oldest device without a live session is evicted first.
 pub async fn execute(
     ports: &Ports,
     actor: &Actor,
@@ -43,11 +44,21 @@ pub async fn execute(
         )
     })?;
     let mut devices = ports.devices.list_for_user(actor.user_id).await?;
+    let mut writes = WriteSet::new();
     if devices.len() >= MAX_DEVICES_PER_USER {
-        return Err(AppError::BadRequest {
-            code: 30000,
-            message: "Maximum number of devices reached.".into(),
-        });
+        let now = ports.clock.now();
+        let live = ports.sessions.live_device_ids(actor.user_id, now).await?;
+        while devices.len() >= MAX_DEVICES_PER_USER {
+            let victim = eviction_candidate(&devices, &live).ok_or(AppError::BadRequest {
+                code: 30000,
+                message: "Maximum number of devices reached.".into(),
+            })?;
+            devices.retain(|device| device.id != victim);
+            writes.mutate(Mutation::DeleteDevice {
+                user_id: actor.user_id,
+                device_id: victim,
+            });
+        }
     }
     let device = Device {
         id: ports.ids.next_id(),
@@ -58,7 +69,6 @@ pub async fn execute(
     };
     devices.push(device.clone());
     let event = devices_update::build(ports, actor.user_id, devices).await?;
-    let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::InsertDevice(device.clone()))
         .emit(event);

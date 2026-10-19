@@ -85,6 +85,13 @@ pub trait SessionRepository: Send + Sync {
     async fn revoke(&self, id: Uuid, now: DateTime<Utc>) -> AppResult<()>;
     async fn revoke_all_for_user(&self, user_id: Snowflake, now: DateTime<Utc>) -> AppResult<()>;
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()>;
+    /// Devices of `user_id` that a session bound to them still holds: not
+    /// revoked, and with an unrotated refresh token that has not expired.
+    async fn live_device_ids(
+        &self,
+        user_id: Snowflake,
+        now: DateTime<Utc>,
+    ) -> AppResult<Vec<Snowflake>>;
 }
 
 #[async_trait]
