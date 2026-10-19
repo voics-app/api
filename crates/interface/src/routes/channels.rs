@@ -193,6 +193,7 @@ async fn modify(
         position: body.position,
         parent_id: body.parent_id.map(|inner| inner.map(|Id(id)| id)),
         nsfw: body.nsfw,
+        text_chat_enabled: body.text_chat_enabled,
         permission_overwrites: body
             .permission_overwrites
             .map(|items| {

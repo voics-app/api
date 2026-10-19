@@ -28,6 +28,7 @@ pub struct UpdateChannelInput {
     pub position: Option<i32>,
     pub parent_id: Option<Option<Snowflake>>,
     pub nsfw: Option<bool>,
+    pub text_chat_enabled: Option<bool>,
     pub permission_overwrites: Option<Vec<PermissionOverwrite>>,
     pub delivery_mode: Option<DeliveryMode>,
     pub voice_region: Option<Option<String>>,
@@ -178,6 +179,16 @@ async fn update_guild_channel(
     if let Some(nsfw) = input.nsfw {
         channel.nsfw = nsfw;
     }
+    if let Some(enabled) = input.text_chat_enabled {
+        if !channel.kind.is_voice() {
+            return Err(AppError::invalid(
+                "text_chat_enabled",
+                "CHANNEL_TYPE_INVALID",
+                "Only voice channels have a text chat.",
+            ));
+        }
+        channel.text_chat_enabled = enabled;
+    }
     if let Some(overwrites) = input.permission_overwrites {
         check_overwrites(ctx, access.permissions, &overwrites)?;
         channel.overwrites = overwrites;
@@ -200,6 +211,11 @@ async fn update_guild_channel(
                 json!(channel.delivery_mode.as_str()),
             ),
             AuditChange::if_changed("nsfw", json!(before.nsfw), json!(channel.nsfw)),
+            AuditChange::if_changed(
+                "text_chat_enabled",
+                json!(before.text_chat_enabled),
+                json!(channel.text_chat_enabled),
+            ),
             AuditChange::if_changed(
                 "rate_limit_per_user",
                 json!(before.rate_limit_per_user),

@@ -223,6 +223,7 @@ pub struct ChannelDto {
     pub name: Option<String>,
     pub topic: Option<String>,
     pub nsfw: bool,
+    pub text_chat_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bitrate: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -260,6 +261,7 @@ impl ChannelDto {
             name: channel.name.clone(),
             topic: channel.topic.clone(),
             nsfw: channel.nsfw,
+            text_chat_enabled: channel.text_chat_enabled,
             bitrate: channel.bitrate,
             user_limit: channel.user_limit,
             rate_limit_per_user: channel.rate_limit_per_user,

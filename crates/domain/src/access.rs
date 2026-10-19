@@ -74,6 +74,11 @@ impl<'a> GuildAccess<'a> {
         let permissions = self
             .context()
             .channel_permissions(&self.member_context(member), overwrites);
+        let permissions = if channel.kind.is_voice() && !channel.text_chat_enabled {
+            permissions.without(Permissions::SEND_MESSAGES)
+        } else {
+            permissions
+        };
         if !channel.kind.is_thread() || permissions == Permissions::ALL {
             return permissions;
         }
@@ -231,6 +236,40 @@ mod tests {
         assert!(!access
             .in_channel(&alice, &parent, None)
             .contains(Permissions::SEND_MESSAGES));
+    }
+
+    #[test]
+    fn voice_text_chat_can_be_switched_off_for_senders() {
+        let (guild, roles) = (guild(), roles());
+        let access = GuildAccess::new(&guild, &roles, Utc::now());
+        let mut voice = channel(102, ChannelType::GuildVoice);
+        let alice = member(2, &[]);
+        let owner = member(1, &[]);
+        assert!(voice.text_chat_enabled);
+        // Text chat is on by default: the everyone role grants sending here.
+        voice.overwrites.push(PermissionOverwrite {
+            id: GUILD,
+            kind: OverwriteKind::Role,
+            allow: Permissions::SEND_MESSAGES | Permissions::VIEW_CHANNEL,
+            deny: Permissions::NONE,
+        });
+        assert!(access
+            .in_channel(&alice, &voice, None)
+            .contains(Permissions::SEND_MESSAGES));
+        voice.text_chat_enabled = false;
+        for m in [&alice, &owner] {
+            let perms = access.in_channel(m, &voice, None);
+            assert!(
+                !perms.contains(Permissions::SEND_MESSAGES),
+                "user {}",
+                m.user_id
+            );
+            assert!(
+                perms.contains(Permissions::VIEW_CHANNEL),
+                "user {}",
+                m.user_id
+            );
+        }
     }
 
     #[test]
