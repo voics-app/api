@@ -167,4 +167,23 @@ impl SessionRepository for PgStore {
             .map_err(db)?;
         Ok(())
     }
+
+    async fn live_device_ids(
+        &self,
+        user_id: Snowflake,
+        now: DateTime<Utc>,
+    ) -> AppResult<Vec<Snowflake>> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT DISTINCT s.device_id FROM sessions s \
+             WHERE s.user_id = $1 AND s.device_id IS NOT NULL AND s.revoked_at IS NULL \
+               AND EXISTS (SELECT 1 FROM refresh_tokens r \
+                           WHERE r.session_id = s.id AND r.rotated_at IS NULL AND r.expires_at > $2)",
+        )
+        .bind(user_id.as_i64())
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(|(id,)| sf(id)).collect())
+    }
 }
