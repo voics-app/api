@@ -210,6 +210,8 @@ pub struct ModifyChannelRequest {
     #[serde(default)]
     pub nsfw: Option<bool>,
     #[serde(default)]
+    pub text_chat_enabled: Option<bool>,
+    #[serde(default)]
     pub permission_overwrites: Option<Vec<OverwriteRequest>>,
     #[serde(default)]
     pub delivery_mode: Option<String>,

@@ -123,6 +123,8 @@ pub struct Channel {
     pub name: Option<String>,
     pub topic: Option<String>,
     pub nsfw: bool,
+    /// Voice channels only: whether members may send messages to the channel's chat.
+    pub text_chat_enabled: bool,
     pub bitrate: Option<u32>,
     pub user_limit: Option<u32>,
     pub rate_limit_per_user: u32,
@@ -154,6 +156,7 @@ impl Channel {
             name: None,
             topic: None,
             nsfw: false,
+            text_chat_enabled: true,
             bitrate: kind.is_voice().then_some(64_000),
             user_limit: kind.is_voice().then_some(0),
             rate_limit_per_user: 0,

@@ -171,12 +171,12 @@ pub(super) async fn suspend_user(
 
 pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO channels (id, kind, guild_id, position, name, topic, nsfw, bitrate, user_limit, \
+        "INSERT INTO channels (id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
              rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) \
          ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, guild_id = EXCLUDED.guild_id, \
              position = EXCLUDED.position, name = EXCLUDED.name, topic = EXCLUDED.topic, nsfw = EXCLUDED.nsfw, \
-             bitrate = EXCLUDED.bitrate, user_limit = EXCLUDED.user_limit, \
+             text_chat_enabled = EXCLUDED.text_chat_enabled, bitrate = EXCLUDED.bitrate, user_limit = EXCLUDED.user_limit, \
              rate_limit_per_user = EXCLUDED.rate_limit_per_user, parent_id = EXCLUDED.parent_id, \
              owner_id = EXCLUDED.owner_id, icon = EXCLUDED.icon, delivery_mode = EXCLUDED.delivery_mode, \
              voice_region = EXCLUDED.voice_region, thread_metadata = EXCLUDED.thread_metadata",
@@ -188,6 +188,7 @@ pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -
     .bind(&channel.name)
     .bind(&channel.topic)
     .bind(channel.nsfw)
+    .bind(channel.text_chat_enabled)
     .bind(channel.bitrate.map(|v| v as i32))
     .bind(channel.user_limit.map(|v| v as i32))
     .bind(channel.rate_limit_per_user as i32)

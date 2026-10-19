@@ -17,7 +17,7 @@ use super::convert::{mode, permissions, sf, sf_opt, sfs, thread_metadata_from_js
 use super::error::db;
 use super::PgStore;
 
-pub(super) const CHANNEL_COLUMNS: &str = "id, kind, guild_id, position, name, topic, nsfw, bitrate, user_limit, \
+pub(super) const CHANNEL_COLUMNS: &str = "id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
      rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at";
 
 #[derive(FromRow)]
@@ -29,6 +29,7 @@ pub(super) struct ChannelRow {
     name: Option<String>,
     topic: Option<String>,
     nsfw: bool,
+    text_chat_enabled: bool,
     bitrate: Option<i32>,
     user_limit: Option<i32>,
     rate_limit_per_user: i32,
@@ -56,6 +57,7 @@ pub(super) fn assemble(
         name: row.name,
         topic: row.topic,
         nsfw: row.nsfw,
+        text_chat_enabled: row.text_chat_enabled,
         bitrate: row.bitrate.map(|v| v as u32),
         user_limit: row.user_limit.map(|v| v as u32),
         rate_limit_per_user: row.rate_limit_per_user as u32,
