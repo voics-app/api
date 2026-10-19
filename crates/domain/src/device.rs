@@ -39,13 +39,18 @@ pub fn validate_key_packages(packages: &[Vec<u8>]) -> Result<(), KeyPackageError
 }
 
 /// The device to evict once the limit is reached: the oldest one that no
-/// live session is bound to. `None` when every device is still in use.
+/// live session is bound to, otherwise the oldest one overall. A sign-in must
+/// always be able to register its device; the session of an evicted device
+/// keeps working without device keys until that client registers again.
+/// `None` only when there are no devices.
 pub fn eviction_candidate(devices: &[Device], live_device_ids: &[Snowflake]) -> Option<Snowflake> {
-    devices
-        .iter()
-        .filter(|device| !live_device_ids.contains(&device.id))
-        .min_by_key(|device| (device.created_at, device.id))
-        .map(|device| device.id)
+    let oldest = |candidates: &mut dyn Iterator<Item = &Device>| {
+        candidates
+            .min_by_key(|device| (device.created_at, device.id))
+            .map(|device| device.id)
+    };
+    oldest(&mut devices.iter().filter(|d| !live_device_ids.contains(&d.id)))
+        .or_else(|| oldest(&mut devices.iter()))
 }
 
 #[cfg(test)]
@@ -73,10 +78,14 @@ mod tests {
     }
 
     #[test]
-    fn evicts_nothing_when_every_device_has_a_live_session() {
+    fn evicts_the_oldest_device_when_every_device_has_a_live_session() {
         let devices = [device(10, 300), device(11, 100)];
         let live = [Snowflake::new(10), Snowflake::new(11)];
-        assert_eq!(eviction_candidate(&devices, &live), None);
+        assert_eq!(
+            eviction_candidate(&devices, &live),
+            Some(Snowflake::new(11))
+        );
+        assert_eq!(eviction_candidate(&[], &[]), None);
     }
 
     #[test]
