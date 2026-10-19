@@ -307,26 +307,39 @@ async fn registering_at_the_limit_evicts_the_oldest_device_without_a_live_sessio
 }
 
 #[tokio::test]
-async fn registering_at_the_limit_is_refused_while_every_device_has_a_live_session() {
+async fn registering_at_the_limit_evicts_the_oldest_device_when_every_one_is_in_use() {
     let database = start_database().await;
     let app = app_for(&database);
     register(&app, "alice").await;
 
+    let mut device_ids = Vec::new();
     for index in 0..20 {
         let token = sign_in(&app, "alice@example.com").await;
-        let (status, _) = register_device(&app, &token, &format!("device {index}")).await;
+        let (status, body) = register_device(&app, &token, &format!("device {index}")).await;
         assert_eq!(status, StatusCode::CREATED, "device {index}");
+        device_ids.push(body["device_id"].as_str().expect("id").to_owned());
     }
-    let before = device_updates(&database).await.len();
 
     let token = sign_in(&app, "alice@example.com").await;
-    let (status, body) = register_device(&app, &token, "one too many").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["code"], 30000);
+    let (status, _) = register_device(&app, &token, "one more").await;
     assert_eq!(
-        device_updates(&database).await.len(),
-        before,
-        "no eviction on refusal"
+        status,
+        StatusCode::CREATED,
+        "a sign-in can always register its device"
+    );
+
+    let (status, _) = call(
+        &app,
+        Method::DELETE,
+        &format!("/api/v1/devices/{}", device_ids[0]),
+        &token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "the oldest device was evicted"
     );
 }
 

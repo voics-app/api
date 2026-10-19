@@ -20,7 +20,8 @@ pub struct RegisteredDevice {
 }
 
 /// Registers a device and binds it to the caller's session. At the device
-/// limit, the oldest device without a live session is evicted first.
+/// limit, the oldest device without a live session is evicted first, or the
+/// oldest device overall when every one is still in use.
 pub async fn execute(
     ports: &Ports,
     actor: &Actor,
