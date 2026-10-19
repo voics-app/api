@@ -1,0 +1,321 @@
+//! Guild, role, member and ban reads.
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use sqlx::FromRow;
+
+use application::ports::GuildRepository;
+use application::AppResult;
+use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
+use domain::Snowflake;
+
+use super::convert::{like_pattern, permissions, sf, sf_opt, sfs};
+use super::error::db;
+use super::users::{UserRow, USER_COLUMNS};
+use super::PgStore;
+
+const GUILD_COLUMNS: &str = "id, name, icon, description, owner_id, voice_region, verification_level, \
+     default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, created_at";
+
+const ROLE_COLUMNS: &str =
+    "id, guild_id, name, color, hoist, icon, unicode_emoji, position, permissions, \
+     managed, mentionable, bot_id";
+
+/// Member columns, with the role list aggregated from `member_roles`.
+const MEMBER_COLUMNS: &str = "m.guild_id, m.user_id, m.nick, m.avatar AS member_avatar, m.joined_at, m.deaf, m.mute, \
+     m.communication_disabled_until, m.pending, \
+     ARRAY(SELECT role_id FROM member_roles mr WHERE mr.guild_id = m.guild_id AND mr.user_id = m.user_id \
+           ORDER BY role_id) AS role_ids";
+
+#[derive(FromRow)]
+pub(super) struct GuildRow {
+    id: i64,
+    name: String,
+    icon: Option<String>,
+    description: Option<String>,
+    owner_id: i64,
+    voice_region: Option<String>,
+    verification_level: i16,
+    default_message_notifications: i16,
+    explicit_content_filter: i16,
+    afk_channel_id: Option<i64>,
+    afk_timeout: i32,
+    system_channel_id: Option<i64>,
+    created_at: DateTime<Utc>,
+}
+
+impl From<GuildRow> for Guild {
+    fn from(row: GuildRow) -> Self {
+        Guild {
+            id: sf(row.id),
+            name: row.name,
+            icon: row.icon,
+            description: row.description,
+            owner_id: sf(row.owner_id),
+            voice_region: row.voice_region,
+            verification_level: row.verification_level as u8,
+            default_message_notifications: row.default_message_notifications as u8,
+            explicit_content_filter: row.explicit_content_filter as u8,
+            afk_channel_id: sf_opt(row.afk_channel_id),
+            afk_timeout: row.afk_timeout as u32,
+            system_channel_id: sf_opt(row.system_channel_id),
+            created_at: row.created_at,
+        }
+    }
+}
+
+#[derive(FromRow)]
+pub(super) struct RoleRow {
+    id: i64,
+    guild_id: i64,
+    name: String,
+    color: i32,
+    hoist: bool,
+    icon: Option<String>,
+    unicode_emoji: Option<String>,
+    position: i32,
+    permissions: i64,
+    managed: bool,
+    mentionable: bool,
+    bot_id: Option<i64>,
+}
+
+impl From<RoleRow> for Role {
+    fn from(row: RoleRow) -> Self {
+        Role {
+            id: sf(row.id),
+            guild_id: sf(row.guild_id),
+            name: row.name,
+            color: row.color as u32,
+            hoist: row.hoist,
+            icon: row.icon,
+            unicode_emoji: row.unicode_emoji,
+            position: row.position,
+            permissions: permissions(row.permissions),
+            managed: row.managed,
+            mentionable: row.mentionable,
+            bot_id: sf_opt(row.bot_id),
+        }
+    }
+}
+
+#[derive(FromRow)]
+pub(super) struct MemberRow {
+    guild_id: i64,
+    user_id: i64,
+    nick: Option<String>,
+    #[sqlx(rename = "member_avatar")]
+    avatar: Option<String>,
+    joined_at: DateTime<Utc>,
+    deaf: bool,
+    mute: bool,
+    communication_disabled_until: Option<DateTime<Utc>>,
+    pending: bool,
+    role_ids: Vec<i64>,
+}
+
+impl From<MemberRow> for Member {
+    fn from(row: MemberRow) -> Self {
+        Member {
+            guild_id: sf(row.guild_id),
+            user_id: sf(row.user_id),
+            nick: row.nick,
+            avatar: row.avatar,
+            role_ids: sfs(row.role_ids),
+            joined_at: row.joined_at,
+            deaf: row.deaf,
+            mute: row.mute,
+            communication_disabled_until: row.communication_disabled_until,
+            pending: row.pending,
+        }
+    }
+}
+
+/// A member row joined with its user, as produced by `member_profile_query`.
+#[derive(FromRow)]
+struct MemberProfileRow {
+    #[sqlx(flatten)]
+    member: MemberRow,
+    #[sqlx(flatten)]
+    user: UserRow,
+}
+
+impl From<MemberProfileRow> for MemberProfile {
+    fn from(row: MemberProfileRow) -> Self {
+        MemberProfile {
+            member: row.member.into(),
+            user: row.user.into(),
+        }
+    }
+}
+
+#[derive(FromRow)]
+struct BanRow {
+    guild_id: i64,
+    reason: Option<String>,
+    #[sqlx(flatten)]
+    user: UserRow,
+}
+
+impl From<BanRow> for Ban {
+    fn from(row: BanRow) -> Self {
+        Ban {
+            guild_id: sf(row.guild_id),
+            user: row.user.into(),
+            reason: row.reason,
+        }
+    }
+}
+
+fn member_profile_select(filter: &str) -> String {
+    format!(
+        "SELECT {MEMBER_COLUMNS}, {user_columns} FROM members m JOIN users u ON u.id = m.user_id {filter}",
+        user_columns = prefixed_user_columns()
+    )
+}
+
+#[async_trait]
+impl GuildRepository for PgStore {
+    async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>> {
+        let sql = format!("SELECT {GUILD_COLUMNS} FROM guilds WHERE id = $1");
+        let row: Option<GuildRow> = sqlx::query_as(&sql)
+            .bind(id.as_i64())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(row.map(Guild::from))
+    }
+
+    async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>> {
+        let sql = format!(
+            "SELECT g.{cols} FROM guilds g JOIN members m ON m.guild_id = g.id WHERE m.user_id = $1 ORDER BY g.id",
+            cols = GUILD_COLUMNS.replace(", ", ", g.")
+        );
+        let rows: Vec<GuildRow> = sqlx::query_as(&sql)
+            .bind(user_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows.into_iter().map(Guild::from).collect())
+    }
+
+    async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>> {
+        let sql =
+            format!("SELECT {ROLE_COLUMNS} FROM roles WHERE guild_id = $1 ORDER BY position, id");
+        let rows: Vec<RoleRow> = sqlx::query_as(&sql)
+            .bind(guild_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows.into_iter().map(Role::from).collect())
+    }
+
+    async fn member(&self, guild_id: Snowflake, user_id: Snowflake) -> AppResult<Option<Member>> {
+        let sql = format!(
+            "SELECT {MEMBER_COLUMNS} FROM members m WHERE m.guild_id = $1 AND m.user_id = $2"
+        );
+        let row: Option<MemberRow> = sqlx::query_as(&sql)
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(row.map(Member::from))
+    }
+
+    async fn member_profiles(
+        &self,
+        guild_id: Snowflake,
+        limit: u32,
+        after: Option<Snowflake>,
+    ) -> AppResult<Vec<MemberProfile>> {
+        let sql = member_profile_select("WHERE m.guild_id = $1 AND ($2::bigint IS NULL OR m.user_id > $2) ORDER BY m.user_id LIMIT $3");
+        let rows: Vec<MemberProfileRow> = sqlx::query_as(&sql)
+            .bind(guild_id.as_i64())
+            .bind(after.map(|id| id.as_i64()))
+            .bind(i64::from(limit))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows.into_iter().map(MemberProfile::from).collect())
+    }
+
+    async fn members(&self, guild_id: Snowflake) -> AppResult<Vec<Member>> {
+        let sql = format!(
+            "SELECT {MEMBER_COLUMNS} FROM members m WHERE m.guild_id = $1 ORDER BY m.user_id"
+        );
+        let rows: Vec<MemberRow> = sqlx::query_as(&sql)
+            .bind(guild_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows.into_iter().map(Member::from).collect())
+    }
+
+    async fn member_count(&self, guild_id: Snowflake) -> AppResult<u64> {
+        let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM members WHERE guild_id = $1")
+            .bind(guild_id.as_i64())
+            .fetch_one(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(count as u64)
+    }
+
+    async fn ban(&self, guild_id: Snowflake, user_id: Snowflake) -> AppResult<Option<Ban>> {
+        let sql = format!(
+            "SELECT b.guild_id, b.reason, {user_columns} FROM bans b JOIN users u ON u.id = b.user_id \
+             WHERE b.guild_id = $1 AND b.user_id = $2",
+            user_columns = prefixed_user_columns()
+        );
+        let row: Option<BanRow> = sqlx::query_as(&sql)
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(row.map(Ban::from))
+    }
+
+    async fn bans(&self, guild_id: Snowflake) -> AppResult<Vec<Ban>> {
+        let sql = format!(
+            "SELECT b.guild_id, b.reason, {user_columns} FROM bans b JOIN users u ON u.id = b.user_id \
+             WHERE b.guild_id = $1 ORDER BY b.user_id",
+            user_columns = prefixed_user_columns()
+        );
+        let rows: Vec<BanRow> = sqlx::query_as(&sql)
+            .bind(guild_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows.into_iter().map(Ban::from).collect())
+    }
+
+    async fn search(&self, query: Option<&str>, limit: u32) -> AppResult<Vec<Guild>> {
+        let sql = format!(
+            "SELECT {GUILD_COLUMNS} FROM guilds WHERE ($1::text IS NULL OR name ILIKE $1) ORDER BY id LIMIT $2"
+        );
+        let rows: Vec<GuildRow> = sqlx::query_as(&sql)
+            .bind(query.map(like_pattern))
+            .bind(i64::from(limit))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows.into_iter().map(Guild::from).collect())
+    }
+
+    async fn count(&self) -> AppResult<u64> {
+        let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM guilds")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(count as u64)
+    }
+}
+
+fn prefixed_user_columns() -> String {
+    USER_COLUMNS
+        .split(", ")
+        .map(|column| format!("u.{column}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}

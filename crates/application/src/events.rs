@@ -1,0 +1,161 @@
+//! Domain events emitted by use cases. Infrastructure maps them onto the
+//! P6 envelope and topics.
+
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+
+use domain::application::Interaction;
+use domain::audit::AuditLogEntry;
+use domain::channel::Channel;
+use domain::delivery_mode::DeliveryMode;
+use domain::device::Device;
+use domain::emoji::Emoji;
+use domain::guild::{Guild, GuildSnapshot, MemberProfile, Role};
+use domain::invite::Invite;
+use domain::permissions::Permissions;
+use domain::relationship::RelationshipType;
+use domain::user::{User, UserSettings};
+use domain::Snowflake;
+
+/// A DM or group DM with everything needed to render it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrivateChannelView {
+    pub channel: Channel,
+    pub recipients: Vec<User>,
+    pub delivery_mode: DeliveryMode,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DomainEvent {
+    // discordy.guild.v1
+    /// Sent to `recipients` only (a creator or a joining member).
+    GuildCreate {
+        snapshot: Box<GuildSnapshot>,
+        recipients: Vec<Snowflake>,
+    },
+    GuildUpdate(Guild),
+    /// `recipients: None` fans out to the whole guild.
+    GuildDelete {
+        guild_id: Snowflake,
+        recipients: Option<Vec<Snowflake>>,
+    },
+    ChannelCreate(Channel),
+    ChannelUpdate(Channel),
+    ChannelDelete(Channel),
+    RoleCreate(Role),
+    RoleUpdate(Role),
+    RoleDelete {
+        guild_id: Snowflake,
+        role_id: Snowflake,
+    },
+    MemberAdd(MemberProfile),
+    MemberUpdate(MemberProfile),
+    MemberRemove {
+        guild_id: Snowflake,
+        user: User,
+    },
+    BanAdd {
+        guild_id: Snowflake,
+        user: User,
+    },
+    BanRemove {
+        guild_id: Snowflake,
+        user: User,
+    },
+    EmojisUpdate {
+        guild_id: Snowflake,
+        emojis: Vec<Emoji>,
+    },
+    InviteCreate {
+        invite: Invite,
+        inviter: Option<User>,
+    },
+    InviteDelete {
+        guild_id: Snowflake,
+        channel_id: Snowflake,
+        code: String,
+    },
+    ThreadCreate(Channel),
+    ThreadUpdate(Channel),
+    ThreadDelete(Channel),
+
+    // discordy.user.v1
+    UserUpdate(User),
+    UserSettingsUpdate(UserSettings),
+    RelationshipAdd {
+        user_id: Snowflake,
+        kind: RelationshipType,
+        target: User,
+        since: DateTime<Utc>,
+    },
+    RelationshipRemove {
+        user_id: Snowflake,
+        target_id: Snowflake,
+        kind: RelationshipType,
+    },
+    /// One envelope per recipient, each excluding that recipient from `recipients`.
+    PrivateChannelCreate(PrivateChannelView),
+    PrivateChannelUpdate(PrivateChannelView),
+    /// Sent to `user_id` when they leave a group DM.
+    PrivateChannelDelete {
+        channel: Channel,
+        user_id: Snowflake,
+    },
+    RecipientAdd {
+        channel_id: Snowflake,
+        user: User,
+        notify: Vec<Snowflake>,
+    },
+    RecipientRemove {
+        channel_id: Snowflake,
+        user: User,
+        notify: Vec<Snowflake>,
+    },
+    /// The user's full device list after a registration or removal.
+    UserDevicesUpdate {
+        user_id: Snowflake,
+        devices: Vec<Device>,
+        target_user_ids: Vec<Snowflake>,
+    },
+
+    // discordy.message.v1
+    TypingStart {
+        channel_id: Snowflake,
+        guild_id: Option<Snowflake>,
+        /// Participants of a DM or group DM (empty for guild channels).
+        recipient_ids: Vec<Snowflake>,
+        user_id: Snowflake,
+        timestamp: DateTime<Utc>,
+        member: Option<Box<MemberProfile>>,
+    },
+
+    // discordy.interaction.v1
+    InteractionCreate {
+        application_id: Snowflake,
+        bot_user_id: Snowflake,
+        interaction: Interaction,
+        /// The raw interaction token; only its hash is stored.
+        token: String,
+        /// The bot's permissions in the channel.
+        app_permissions: Permissions,
+        user: User,
+        member: Option<Box<MemberProfile>>,
+    },
+    /// Sent back to the invoking user (modal or autocomplete result).
+    InteractionUserNotice {
+        application_id: Snowflake,
+        user_id: Snowflake,
+        event_type: &'static str,
+        payload: Value,
+    },
+
+    // discordy.audit.v1
+    AuditLogEntryCreate(AuditLogEntry),
+}
+
+/// Any channel as returned by the REST API.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChannelView {
+    Guild(Channel),
+    Private(PrivateChannelView),
+}

@@ -1,0 +1,65 @@
+# api
+
+The Discordy REST API: accounts, users and settings, DMs, relationships, devices, guilds and their channels, roles, members, bans, invites, emojis, audit log, applications and bots, commands, interactions and webhooks. It also serves the internal P4 endpoints used by gateway and admin-bff.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
+
+## Run locally
+
+Prerequisites: Rust 1.99, Docker (for the integration tests and the local dependencies).
+
+```sh
+cp .env.example .env
+make dev
+```
+
+`make dev` expects Postgres on `5432`, Valkey on `6379`, Redpanda on `19092`, MinIO on `9000` and the messages service on `8082` (see the compose stack in `gitops/local`). The api listens on `8080`.
+
+## Test
+
+```sh
+make test     # unit and integration tests; integration tests start containers
+make lint     # rustfmt check and clippy with -D warnings
+make build    # release binary
+make docker   # OCI image, ghcr.io/discordy-voics/api:<version>
+```
+
+Integration tests start throwaway containers with testcontainers (Postgres 16, Redpanda v24.2.7, Valkey 8). Docker must be running.
+
+## Configuration
+
+All configuration comes from environment variables, validated at startup. Missing or invalid values stop the process with a message naming the variable.
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `DISCORDY_ENV` | no | `local` | `local` or `production` |
+| `LOG_LEVEL` | no | `info` | Tracing filter |
+| `API_BIND_ADDR` | no | `0.0.0.0:8080` | HTTP listen address |
+| `DATABASE_URL` | yes | | Postgres (`discordy`) |
+| `VALKEY_URL` | yes | | Rate limit buckets |
+| `KAFKA_BROKERS` | yes | | Comma-separated Redpanda brokers |
+| `INTERNAL_SERVICE_TOKEN` | yes | | Shared secret for `/internal/v1` (`X-Internal-Token`) |
+| `JWT_PRIVATE_KEY` | yes | | Ed25519 PEM; `\n` escapes allowed |
+| `JWT_PUBLIC_KEY` | yes | | Ed25519 PEM |
+| `SNOWFLAKE_WORKER_ID` | yes | | 0 to 1023 |
+| `PUBLIC_API_URL` | yes | | Base for webhook URLs |
+| `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
+| `CDN_PUBLIC_URL` | yes | | Public asset base |
+| `MESSAGES_INTERNAL_URL` | yes | | messages service internal base |
+| `MINIO_ENDPOINT` | yes | | S3 API endpoint |
+| `MINIO_ACCESS_KEY` | yes | | |
+| `MINIO_SECRET_KEY` | yes | | |
+| `MINIO_BUCKET_ASSETS` | no | `discordy-assets` | Asset bucket |
+| `DEFAULT_VOICE_REGION` | no | `nl-home` | Region for new guilds |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | | Enables OTLP/HTTP trace export |
+| `CORS_ALLOWED_ORIGINS` | no | `null,http://localhost:5173` | Comma-separated origins allowed by CORS (`null` is the packaged `file://` client) |
+
+Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`.
+
+## Pending owner actions
+
+- The reusable workflows `discordy-voics/.github/.github/workflows/rust.yml` and `docker.yml` must exist on `main` before `ci.yml` can run.
+- The messages service must expose `POST|PATCH|DELETE /internal/v1/channels/{id}/messages[/{mid}]`. P4 does not pin these routes, so api calls them for bot, webhook and interaction messages. Until they exist, those calls return 503.
+- Interaction creation and callbacks are routed but have no HTTP contract test yet.
+- Redpanda topics listed in `contracts::envelope::API_TOPICS` are created by the compose init container and the cluster, not by api.
+- The `.env.example` JWT keys are dev-only and public; production keys must be generated per environment.
