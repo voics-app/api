@@ -2,6 +2,10 @@
 
 ## 0.1.0
 
+First release: everything on develop up to this point, deployed to gen-serv.
+
+## 0.1.0
+
 Initial release of the api service.
 
 - Accounts: register, login with TOTP, refresh-token rotation with reuse detection, logout, EdDSA access tokens.
