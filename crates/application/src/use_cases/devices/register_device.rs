@@ -61,12 +61,14 @@ pub async fn execute(
             });
         }
     }
+    let now = ports.clock.now();
     let device = Device {
         id: ports.ids.next_id(),
         user_id: actor.user_id,
         name,
         identity_key,
-        created_at: ports.clock.now(),
+        created_at: now,
+        last_seen_at: now,
     };
     devices.push(device.clone());
     let event = devices_update::build(ports, actor.user_id, devices).await?;

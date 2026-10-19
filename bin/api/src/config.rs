@@ -40,6 +40,10 @@ pub struct Config {
     pub otlp_endpoint: Option<Url>,
     /// Origins allowed by CORS; `null` is the origin of the packaged `file://` client.
     pub cors_allowed_origins: Vec<String>,
+    /// Devices idle for more than this many days leave E2EE device listings and are pruned.
+    pub device_max_idle_days: u32,
+    /// Seconds between two stale-device prune runs.
+    pub device_prune_interval_secs: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -52,6 +56,21 @@ pub enum ConfigError {
 
 const WORKER_ID_MAX: u16 = 1023;
 const DEFAULT_CORS_ALLOWED_ORIGINS: &str = "null,http://localhost:5173";
+const DEFAULT_DEVICE_MAX_IDLE_DAYS: &str = "30";
+const DEFAULT_DEVICE_PRUNE_INTERVAL_SECS: &str = "3600";
+
+/// A strictly positive integer variable with a default.
+fn positive<T: std::str::FromStr + PartialOrd + From<u8>>(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &'static str,
+    default: &str,
+) -> Result<T, ConfigError> {
+    optional(get, name, default)
+        .parse::<T>()
+        .ok()
+        .filter(|value| *value >= T::from(1))
+        .ok_or_else(|| invalid(name, "expected a positive integer"))
+}
 
 /// Splits a comma-separated list, trimming blanks and dropping empty entries.
 fn split_list(raw: &str) -> Vec<String> {
@@ -166,6 +185,16 @@ impl Config {
             },
             otlp_endpoint,
             cors_allowed_origins,
+            device_max_idle_days: positive(
+                &get,
+                "DEVICE_MAX_IDLE_DAYS",
+                DEFAULT_DEVICE_MAX_IDLE_DAYS,
+            )?,
+            device_prune_interval_secs: positive(
+                &get,
+                "DEVICE_PRUNE_INTERVAL_SECS",
+                DEFAULT_DEVICE_PRUNE_INTERVAL_SECS,
+            )?,
         })
     }
 }
@@ -283,6 +312,39 @@ mod tests {
             config.cors_allowed_origins,
             vec!["https://app.discordy.example".to_owned(), "null".to_owned()]
         );
+    }
+
+    #[test]
+    fn device_pruning_defaults_to_thirty_idle_days_checked_hourly() {
+        let config = Config::from_lookup(lookup(complete())).expect("valid");
+        assert_eq!(config.device_max_idle_days, 30);
+        assert_eq!(config.device_prune_interval_secs, 3600);
+    }
+
+    #[test]
+    fn device_pruning_is_configurable_and_must_be_positive() {
+        let mut values = complete();
+        values.insert("DEVICE_MAX_IDLE_DAYS", "90".to_owned());
+        values.insert("DEVICE_PRUNE_INTERVAL_SECS", "600".to_owned());
+        let config = Config::from_lookup(lookup(values)).expect("valid");
+        assert_eq!(config.device_max_idle_days, 90);
+        assert_eq!(config.device_prune_interval_secs, 600);
+
+        for (name, bad) in [
+            ("DEVICE_MAX_IDLE_DAYS", "0"),
+            ("DEVICE_MAX_IDLE_DAYS", "soon"),
+            ("DEVICE_PRUNE_INTERVAL_SECS", "0"),
+        ] {
+            let mut values = complete();
+            values.insert(name, bad.to_owned());
+            assert!(
+                matches!(
+                    Config::from_lookup(lookup(values)),
+                    Err(ConfigError::Invalid { name: n, .. }) if n == name
+                ),
+                "{name}={bad}"
+            );
+        }
     }
 
     #[test]

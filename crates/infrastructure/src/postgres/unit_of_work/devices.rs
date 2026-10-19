@@ -10,13 +10,15 @@ use crate::postgres::error::db;
 
 pub(super) async fn insert_device(conn: &mut PgConnection, device: &Device) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO devices (id, user_id, name, identity_key, created_at) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO devices (id, user_id, name, identity_key, created_at, last_seen_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(device.id.as_i64())
     .bind(device.user_id.as_i64())
     .bind(&device.name)
     .bind(device.identity_key.as_slice())
     .bind(device.created_at)
+    .bind(device.last_seen_at)
     .execute(conn)
     .await
     .map_err(db)?;
