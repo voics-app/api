@@ -18,6 +18,8 @@ pub enum AuditAction {
     MemberBanRemove,
     MemberUpdate,
     MemberRoleUpdate,
+    MemberMove,
+    MemberDisconnect,
     BotAdd,
     RoleCreate,
     RoleUpdate,
@@ -51,6 +53,8 @@ impl AuditAction {
             MemberBanRemove => 23,
             MemberUpdate => 24,
             MemberRoleUpdate => 25,
+            MemberMove => 26,
+            MemberDisconnect => 27,
             BotAdd => 28,
             RoleCreate => 30,
             RoleUpdate => 31,
@@ -69,7 +73,7 @@ impl AuditAction {
         }
     }
 
-    pub const ALL: [AuditAction; 27] = {
+    pub const ALL: [AuditAction; 29] = {
         use AuditAction::*;
         [
             GuildUpdate,
@@ -84,6 +88,8 @@ impl AuditAction {
             MemberBanRemove,
             MemberUpdate,
             MemberRoleUpdate,
+            MemberMove,
+            MemberDisconnect,
             BotAdd,
             RoleCreate,
             RoleUpdate,
@@ -153,6 +159,8 @@ mod tests {
         }
         assert_eq!(AuditAction::from_code(999), None);
         assert_eq!(AuditAction::MemberBanAdd.code(), 22);
+        assert_eq!(AuditAction::MemberMove.code(), 26);
+        assert_eq!(AuditAction::MemberDisconnect.code(), 27);
     }
 
     #[test]

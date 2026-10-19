@@ -305,6 +305,9 @@ pub struct ModifyMemberRequest {
     pub deaf: Option<bool>,
     #[serde(default, deserialize_with = "double_option")]
     pub communication_disabled_until: Option<Option<DateTime<Utc>>>,
+    /// A voice channel to move the member to; `null` disconnects them from voice.
+    #[serde(default, deserialize_with = "double_option")]
+    pub channel_id: Option<Option<Id>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
