@@ -96,6 +96,50 @@ pub struct ModifyUserSettingsRequest {
     pub accent_color: Option<Option<u32>>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct MuteConfigRequest {
+    #[serde(default)]
+    pub end_time: Option<DateTime<Utc>>,
+    /// Seconds from now (900, 3600, 28800, 86400, ...) or -1 for until turned off.
+    #[serde(default)]
+    pub selected_time_window: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChannelOverrideRequest {
+    pub channel_id: Id,
+    #[serde(default, deserialize_with = "double_option")]
+    pub message_notifications: Option<Option<u8>>,
+    #[serde(default)]
+    pub muted: Option<bool>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub mute_config: Option<Option<MuteConfigRequest>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ModifyGuildNotificationSettingsRequest {
+    #[serde(default, deserialize_with = "double_option")]
+    pub message_notifications: Option<Option<u8>>,
+    #[serde(default)]
+    pub suppress_everyone: Option<bool>,
+    #[serde(default)]
+    pub suppress_roles: Option<bool>,
+    #[serde(default)]
+    pub muted: Option<bool>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub mute_config: Option<Option<MuteConfigRequest>>,
+    #[serde(default)]
+    pub hide_muted_channels: Option<bool>,
+    #[serde(default)]
+    pub channel_overrides: Option<Vec<ChannelOverrideRequest>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct PutNoteRequest {
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateDmRequest {
     pub recipient_ids: Vec<Id>,

@@ -13,6 +13,7 @@ use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Guild, Member, Role};
 use domain::invite::Invite;
+use domain::notification::GuildNotificationSettings;
 use domain::relationship::RelationshipType;
 use domain::user::{Credentials, Suspension, User, UserSettings};
 use domain::Snowflake;
@@ -36,6 +37,13 @@ pub enum Mutation {
         suspension: Suspension,
     },
     UpsertSettings(UserSettings),
+    UpsertGuildNotificationSettings(GuildNotificationSettings),
+    /// `note: None` removes the note.
+    SetUserNote {
+        owner_id: Snowflake,
+        target_id: Snowflake,
+        note: Option<String>,
+    },
     /// `kind: None` removes the row.
     SetRelationship {
         user_id: Snowflake,

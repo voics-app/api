@@ -10,6 +10,7 @@ mod error;
 mod guilds;
 mod interactions;
 mod invites;
+mod notifications;
 pub mod outbox;
 mod relationships;
 mod sessions;
