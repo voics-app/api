@@ -4,6 +4,7 @@ use sqlx::FromRow;
 
 use application::ports::{UserRepository, UserStats};
 use application::AppResult;
+use domain::notification::GuildNotificationSettings;
 use domain::user::{Credentials, PresenceStatus, Suspension, Theme, User, UserSettings};
 use domain::Snowflake;
 
@@ -166,6 +167,65 @@ impl UserRepository for PgStore {
             .await
             .map_err(db)?;
         Ok(rows.into_iter().map(UserSettings::from).collect())
+    }
+
+    async fn guild_notification_settings(
+        &self,
+        user_id: Snowflake,
+        guild_id: Snowflake,
+    ) -> AppResult<Option<GuildNotificationSettings>> {
+        let sql = format!(
+            "SELECT {} FROM user_guild_settings WHERE user_id = $1 AND guild_id = $2",
+            super::notifications::COLUMNS
+        );
+        let row: Option<super::notifications::Row> = sqlx::query_as(&sql)
+            .bind(user_id.as_i64())
+            .bind(guild_id.as_i64())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(row.map(GuildNotificationSettings::from))
+    }
+
+    async fn list_guild_notification_settings(
+        &self,
+        user_id: Snowflake,
+    ) -> AppResult<Vec<GuildNotificationSettings>> {
+        let sql = format!(
+            "SELECT {} FROM user_guild_settings WHERE user_id = $1 ORDER BY guild_id",
+            super::notifications::COLUMNS
+        );
+        let rows: Vec<super::notifications::Row> = sqlx::query_as(&sql)
+            .bind(user_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(GuildNotificationSettings::from)
+            .collect())
+    }
+
+    async fn note(&self, owner_id: Snowflake, target_id: Snowflake) -> AppResult<Option<String>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT note FROM user_notes WHERE owner_id = $1 AND target_id = $2")
+                .bind(owner_id.as_i64())
+                .bind(target_id.as_i64())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(row.map(|(note,)| note))
+    }
+
+    async fn notes(&self, owner_id: Snowflake) -> AppResult<Vec<(Snowflake, String)>> {
+        let rows: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT target_id, note FROM user_notes WHERE owner_id = $1 ORDER BY target_id",
+        )
+        .bind(owner_id.as_i64())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(|(id, note)| (sf(id), note)).collect())
     }
 
     async fn search(

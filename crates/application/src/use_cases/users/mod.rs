@@ -1,8 +1,12 @@
 pub mod get_current_user;
+pub mod get_guild_notification_settings;
+pub mod get_note;
 pub mod get_settings;
 pub mod get_user;
 pub mod list_private_channels;
 pub mod open_private_channel;
 pub mod set_delivery_override;
+pub mod set_note;
 pub mod update_current_user;
+pub mod update_guild_notification_settings;
 pub mod update_settings;

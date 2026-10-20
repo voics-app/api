@@ -11,7 +11,7 @@ use contracts::envelope::{
 };
 use contracts::objects::{
     interaction_event, AuditLogEntryDto, ChannelDto, DeviceDto, EmojiDto, GuildDto, GuildFullDto,
-    MemberDto, RelationshipDto, RoleDto, UserDto, UserSettingsDto,
+    GuildNotificationSettingsDto, MemberDto, RelationshipDto, RoleDto, UserDto, UserSettingsDto,
 };
 use contracts::Id;
 use domain::relationship::Relationship;
@@ -150,6 +150,23 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             None,
             json!({ "guild_id": guild_id.to_string(), "user": UserDto::public(user) }),
         ),
+        DomainEvent::VoiceMemberMove {
+            guild_id,
+            user_id,
+            channel_id,
+        } => emit(
+            TOPIC_GUILD,
+            *guild_id,
+            "VOICE_MEMBER_MOVE",
+            Some(*guild_id),
+            None,
+            None,
+            json!({
+                "guild_id": guild_id.to_string(),
+                "user_id": user_id.to_string(),
+                "channel_id": channel_id.map(|id| id.to_string()),
+            }),
+        ),
         DomainEvent::BanAdd { guild_id, user } => emit(
             TOPIC_GUILD,
             *guild_id,
@@ -229,6 +246,28 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             None,
             Some(vec![settings.user_id]),
             to_value(UserSettingsDto::from(settings)),
+        ),
+        DomainEvent::UserGuildSettingsUpdate(settings) => emit(
+            TOPIC_USER,
+            settings.user_id,
+            "USER_GUILD_SETTINGS_UPDATE",
+            None,
+            None,
+            Some(vec![settings.user_id]),
+            to_value(GuildNotificationSettingsDto::from(settings)),
+        ),
+        DomainEvent::UserNoteUpdate {
+            owner_id,
+            target_id,
+            note,
+        } => emit(
+            TOPIC_USER,
+            *owner_id,
+            "USER_NOTE_UPDATE",
+            None,
+            None,
+            Some(vec![*owner_id]),
+            json!({ "id": target_id.to_string(), "note": note }),
         ),
         DomainEvent::RelationshipAdd {
             user_id,
@@ -595,6 +634,7 @@ mod tests {
             name: "laptop".into(),
             identity_key: [7u8; 32],
             created_at: at(),
+            last_seen_at: at(),
         };
         let event = DomainEvent::UserDevicesUpdate {
             user_id: Snowflake::new(10),

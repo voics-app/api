@@ -4,6 +4,7 @@ use serde_json::json;
 
 use domain::audit::{AuditAction, AuditChange};
 use domain::guild::{Member, MemberProfile};
+use domain::Snowflake;
 
 use crate::context::Ports;
 use crate::error::AppResult;
@@ -16,6 +17,7 @@ pub async fn commit_member_update(
     ports: &Ports,
     before: &Member,
     after: Member,
+    voice: Option<Option<Snowflake>>,
     audit: AuditContext<'_>,
 ) -> AppResult<MemberProfile> {
     let profile = member_profile(ports, after).await?;
@@ -68,6 +70,31 @@ pub async fn commit_member_update(
             ports,
             member.guild_id,
             AuditAction::MemberUpdate,
+            Some(member.user_id),
+            changes,
+        )?);
+    }
+    if let Some(channel_id) = voice {
+        let (action, changes) = match channel_id {
+            Some(id) => (
+                AuditAction::MemberMove,
+                vec![AuditChange::new(
+                    "channel_id",
+                    None,
+                    Some(json!(id.to_string())),
+                )],
+            ),
+            None => (AuditAction::MemberDisconnect, Vec::new()),
+        };
+        writes.emit(DomainEvent::VoiceMemberMove {
+            guild_id: member.guild_id,
+            user_id: member.user_id,
+            channel_id,
+        });
+        writes.audit(audit.entry(
+            ports,
+            member.guild_id,
+            action,
             Some(member.user_id),
             changes,
         )?);

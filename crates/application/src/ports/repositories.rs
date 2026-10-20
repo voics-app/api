@@ -13,6 +13,7 @@ use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
 use domain::invite::Invite;
+use domain::notification::GuildNotificationSettings;
 use domain::relationship::Relationship;
 use domain::user::{Credentials, User, UserSettings};
 use domain::Snowflake;
@@ -36,6 +37,21 @@ pub trait UserRepository: Send + Sync {
     /// Stored settings, or defaults when none were saved yet.
     async fn settings(&self, user_id: Snowflake) -> AppResult<UserSettings>;
     async fn settings_many(&self, user_ids: &[Snowflake]) -> AppResult<Vec<UserSettings>>;
+    /// Stored notification settings for one guild (`DIRECT_MESSAGES` for DMs), if any.
+    async fn guild_notification_settings(
+        &self,
+        user_id: Snowflake,
+        guild_id: Snowflake,
+    ) -> AppResult<Option<GuildNotificationSettings>>;
+    /// Every stored notification settings row of the user.
+    async fn list_guild_notification_settings(
+        &self,
+        user_id: Snowflake,
+    ) -> AppResult<Vec<GuildNotificationSettings>>;
+    /// The private note `owner_id` wrote about `target_id`.
+    async fn note(&self, owner_id: Snowflake, target_id: Snowflake) -> AppResult<Option<String>>;
+    /// All notes of `owner_id` as `(target_id, note)`.
+    async fn notes(&self, owner_id: Snowflake) -> AppResult<Vec<(Snowflake, String)>>;
     async fn search(
         &self,
         query: Option<&str>,
@@ -98,6 +114,10 @@ pub trait SessionRepository: Send + Sync {
 pub trait DeviceRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Device>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Device>>;
+    /// Records that the device was seen at `now` (throttled by the adapter).
+    async fn touch(&self, device_id: Snowflake, now: DateTime<Utc>) -> AppResult<()>;
+    /// Devices last seen before `cutoff`, least recently seen first.
+    async fn list_stale(&self, cutoff: DateTime<Utc>, limit: u32) -> AppResult<Vec<Device>>;
     async fn add_key_packages(&self, device_id: Snowflake, packages: &[Vec<u8>]) -> AppResult<()>;
     /// Removes and returns one package; concurrent claims never get the same one.
     async fn claim_key_package(&self, device_id: Snowflake) -> AppResult<Option<Vec<u8>>>;

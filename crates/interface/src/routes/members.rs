@@ -84,6 +84,7 @@ async fn modify_member(
         mute: body.mute,
         deaf: body.deaf,
         communication_disabled_until: body.communication_disabled_until,
+        voice_channel: body.channel_id.map(|channel| channel.map(|Id(id)| id)),
     };
     let audit = AuditContext {
         actor_id: actor.user_id,
