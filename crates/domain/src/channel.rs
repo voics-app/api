@@ -178,7 +178,7 @@ impl Channel {
 }
 
 /// Group DMs are capped at this many participants.
-pub const MAX_GROUP_DM_PARTICIPANTS: usize = 25;
+pub const MAX_GROUP_DM_PARTICIPANTS: usize = 10;
 
 #[cfg(test)]
 mod tests {
