@@ -54,6 +54,13 @@ pub enum DomainEvent {
         guild_id: Snowflake,
         user: User,
     },
+    /// Bus-only: asks the gateway to move `user_id`'s voice session to `channel_id`, or to
+    /// disconnect it when `None`. The gateway ignores it when the user is not in voice.
+    VoiceMemberMove {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        channel_id: Option<Snowflake>,
+    },
     BanAdd {
         guild_id: Snowflake,
         user: User,

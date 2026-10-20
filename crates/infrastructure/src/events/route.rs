@@ -150,6 +150,23 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             None,
             json!({ "guild_id": guild_id.to_string(), "user": UserDto::public(user) }),
         ),
+        DomainEvent::VoiceMemberMove {
+            guild_id,
+            user_id,
+            channel_id,
+        } => emit(
+            TOPIC_GUILD,
+            *guild_id,
+            "VOICE_MEMBER_MOVE",
+            Some(*guild_id),
+            None,
+            None,
+            json!({
+                "guild_id": guild_id.to_string(),
+                "user_id": user_id.to_string(),
+                "channel_id": channel_id.map(|id| id.to_string()),
+            }),
+        ),
         DomainEvent::BanAdd { guild_id, user } => emit(
             TOPIC_GUILD,
             *guild_id,

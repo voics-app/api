@@ -21,6 +21,8 @@ pub struct UpdateMemberInput {
     pub mute: Option<bool>,
     pub deaf: Option<bool>,
     pub communication_disabled_until: Option<Option<DateTime<Utc>>>,
+    /// `Some(Some(channel))` moves the member to a voice channel, `Some(None)` disconnects them.
+    pub voice_channel: Option<Option<Snowflake>>,
 }
 
 pub async fn execute(
@@ -93,5 +95,48 @@ pub async fn execute(
         }
         member.communication_disabled_until = until;
     }
-    commit_member_update(ports, &before, member, audit).await
+    let voice = match input.voice_channel {
+        Some(target) => Some(voice_move(ports, &ctx, guild_id, target).await?),
+        None => None,
+    };
+    commit_member_update(ports, &before, member, voice, audit).await
+}
+
+/// Checks that the caller may move members to `target` (or disconnect them for `None`).
+///
+/// The api does not track who is in voice: the gateway applies the move to the member's live
+/// voice session and ignores it when they are not connected.
+async fn voice_move(
+    ports: &Ports,
+    ctx: &GuildContext,
+    guild_id: Snowflake,
+    target: Option<Snowflake>,
+) -> AppResult<Option<Snowflake>> {
+    let Some(channel_id) = target else {
+        ctx.require(Permissions::MOVE_MEMBERS)?;
+        return Ok(None);
+    };
+    let channel = ports
+        .channels
+        .find(channel_id)
+        .await?
+        .filter(|c| c.guild_id == Some(guild_id))
+        .ok_or(AppError::NotFound(Resource::Channel))?;
+    if !channel.kind.is_voice() {
+        return Err(AppError::invalid(
+            "channel_id",
+            "BASE_TYPE_CHOICES",
+            "The channel must be a voice channel.",
+        ));
+    }
+    let parent = match channel.parent_id {
+        Some(parent_id) => ports.channels.find(parent_id).await?,
+        None => None,
+    };
+    ctx.require_in_channel(
+        &channel,
+        parent.as_ref(),
+        Permissions::MOVE_MEMBERS | Permissions::CONNECT,
+    )?;
+    Ok(Some(channel_id))
 }
