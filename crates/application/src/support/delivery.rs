@@ -56,14 +56,14 @@ pub async fn effective_mode_with(
     }))
 }
 
-/// How many guild members can view `channel` (for the ephemeral audience limit).
-pub async fn viewer_count(
+/// The guild members that can view `channel`.
+pub async fn viewer_ids(
     ports: &Ports,
     guild: &Guild,
     roles: &[Role],
     channel: &Channel,
     parent: Option<&Channel>,
-) -> AppResult<usize> {
+) -> AppResult<Vec<Snowflake>> {
     let members = ports.guilds.members(guild.id).await?;
     let access = GuildAccess::new(guild, roles, ports.clock.now());
     Ok(members
@@ -73,5 +73,19 @@ pub async fn viewer_count(
                 .in_channel(m, channel, parent)
                 .contains(Permissions::VIEW_CHANNEL)
         })
-        .count())
+        .map(|m| m.user_id)
+        .collect())
+}
+
+/// How many guild members can view `channel` (for the ephemeral audience limit).
+pub async fn viewer_count(
+    ports: &Ports,
+    guild: &Guild,
+    roles: &[Role],
+    channel: &Channel,
+    parent: Option<&Channel>,
+) -> AppResult<usize> {
+    Ok(viewer_ids(ports, guild, roles, channel, parent)
+        .await?
+        .len())
 }
