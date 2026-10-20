@@ -111,6 +111,39 @@ async fn internal_endpoints_require_the_token_and_serve_state() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "non-members get 403");
 
+    let (status, _) = call(
+        &app,
+        Method::PATCH,
+        &format!("/api/v1/channels/{channel_id}"),
+        &alice_token,
+        Some(json!({"delivery_mode": "ephemeral"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, ephemeral) = send(
+        &app,
+        internal(
+            Method::GET,
+            &format!("/internal/v1/channels/{channel_id}/access/{alice_id}"),
+        ),
+    )
+    .await;
+    assert_eq!(ephemeral["delivery_mode"], "ephemeral");
+    assert_eq!(
+        ephemeral["recipient_ids"],
+        json!([alice_id]),
+        "an encrypted guild channel lists its viewers so the gateway relay can address them"
+    );
+    let (status, _) = call(
+        &app,
+        Method::PATCH,
+        &format!("/api/v1/channels/{channel_id}"),
+        &alice_token,
+        Some(json!({"delivery_mode": "standard"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
     let (status, routing) = send(
         &app,
         internal(
