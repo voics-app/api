@@ -18,6 +18,7 @@ struct DeviceRow {
     name: String,
     identity_key: Vec<u8>,
     created_at: DateTime<Utc>,
+    last_seen_at: DateTime<Utc>,
 }
 
 impl TryFrom<DeviceRow> for Device {
@@ -34,11 +35,12 @@ impl TryFrom<DeviceRow> for Device {
             name: row.name,
             identity_key,
             created_at: row.created_at,
+            last_seen_at: row.last_seen_at,
         })
     }
 }
 
-const DEVICE_COLUMNS: &str = "id, user_id, name, identity_key, created_at";
+const DEVICE_COLUMNS: &str = "id, user_id, name, identity_key, created_at, last_seen_at";
 
 #[async_trait]
 impl DeviceRepository for PgStore {
@@ -56,6 +58,33 @@ impl DeviceRepository for PgStore {
         let sql = format!("SELECT {DEVICE_COLUMNS} FROM devices WHERE user_id = $1 ORDER BY id");
         let rows: Vec<DeviceRow> = sqlx::query_as(&sql)
             .bind(user_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        rows.into_iter().map(Device::try_from).collect()
+    }
+
+    /// Bumped at most hourly: the idle window is measured in days, and refreshes are frequent.
+    async fn touch(&self, device_id: Snowflake, now: DateTime<Utc>) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE devices SET last_seen_at = $2 \
+             WHERE id = $1 AND last_seen_at < $2 - interval '1 hour'",
+        )
+        .bind(device_id.as_i64())
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    async fn list_stale(&self, cutoff: DateTime<Utc>, limit: u32) -> AppResult<Vec<Device>> {
+        let sql = format!(
+            "SELECT {DEVICE_COLUMNS} FROM devices WHERE last_seen_at < $1 ORDER BY last_seen_at LIMIT $2"
+        );
+        let rows: Vec<DeviceRow> = sqlx::query_as(&sql)
+            .bind(cutoff)
+            .bind(i64::from(limit))
             .fetch_all(&self.pool)
             .await
             .map_err(db)?;

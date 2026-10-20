@@ -10,6 +10,7 @@ application.workspace = true
 infrastructure.workspace = true
 interface.workspace = true
 axum.workspace = true
+chrono.workspace = true
 reqwest.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

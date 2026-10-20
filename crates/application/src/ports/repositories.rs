@@ -98,6 +98,10 @@ pub trait SessionRepository: Send + Sync {
 pub trait DeviceRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Device>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Device>>;
+    /// Records that the device was seen at `now` (throttled by the adapter).
+    async fn touch(&self, device_id: Snowflake, now: DateTime<Utc>) -> AppResult<()>;
+    /// Devices last seen before `cutoff`, least recently seen first.
+    async fn list_stale(&self, cutoff: DateTime<Utc>, limit: u32) -> AppResult<Vec<Device>>;
     async fn add_key_packages(&self, device_id: Snowflake, packages: &[Vec<u8>]) -> AppResult<()>;
     /// Removes and returns one package; concurrent claims never get the same one.
     async fn claim_key_package(&self, device_id: Snowflake) -> AppResult<Option<Vec<u8>>>;

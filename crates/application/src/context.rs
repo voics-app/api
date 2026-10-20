@@ -17,10 +17,15 @@ pub struct VoiceRegion {
     pub name: String,
 }
 
+/// Default for `Settings::device_max_idle`, in days.
+pub const DEFAULT_DEVICE_MAX_IDLE_DAYS: i64 = 30;
+
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub access_token_ttl: Duration,
     pub refresh_token_ttl: Duration,
+    /// Devices not seen for this long leave E2EE device listings and are pruned.
+    pub device_max_idle: Duration,
     pub voice_regions: Vec<VoiceRegion>,
     pub default_voice_region: String,
     /// Public base URL of the api, used to build webhook URLs.
@@ -32,6 +37,7 @@ impl Default for Settings {
         Self {
             access_token_ttl: Duration::minutes(15),
             refresh_token_ttl: Duration::days(30),
+            device_max_idle: Duration::days(DEFAULT_DEVICE_MAX_IDLE_DAYS),
             voice_regions: vec![VoiceRegion {
                 id: "nl-home".into(),
                 name: "Netherlands (Home)".into(),

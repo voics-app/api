@@ -33,6 +33,9 @@ pub async fn execute(ports: &Ports, refresh_token: &str) -> AppResult<AuthTokens
         delete_device::remove_if_unheld(ports, user.id, session.device_id, now).await?;
         return Err(AppError::Forbidden(Denial::Suspended));
     }
+    if let Some(device_id) = session.device_id {
+        ports.devices.touch(device_id, now).await?;
+    }
     let access_token = access_token(ports, user.id, session.id, session.device_id)?;
     Ok(AuthTokens {
         access_token,

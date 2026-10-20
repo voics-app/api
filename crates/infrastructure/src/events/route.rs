@@ -612,6 +612,7 @@ mod tests {
             name: "laptop".into(),
             identity_key: [7u8; 32],
             created_at: at(),
+            last_seen_at: at(),
         };
         let event = DomainEvent::UserDevicesUpdate {
             user_id: Snowflake::new(10),

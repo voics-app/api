@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
+use application::use_cases::devices::prune_stale;
 use application::{Ports, Settings, VoiceRegion};
 use config::Config;
 use infrastructure::events::direct::KafkaEvents;
@@ -109,11 +110,25 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
                 .as_str()
                 .trim_end_matches('/')
                 .to_owned(),
+            device_max_idle: chrono::Duration::days(i64::from(config.device_max_idle_days)),
             ..Settings::default()
         },
     };
+    let prune_ports = ports.clone();
+    let prune_every = std::time::Duration::from_secs(config.device_prune_interval_secs);
 
     tokio::spawn(OutboxRelay::new(pool.clone(), publisher.clone()).run());
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(prune_every);
+        loop {
+            tick.tick().await;
+            match prune_stale::execute(&prune_ports).await {
+                Ok(0) => {}
+                Ok(count) => tracing::info!(count, "pruned stale devices"),
+                Err(error) => tracing::warn!(%error, "stale device prune failed"),
+            }
+        }
+    });
 
     let state = AppState {
         ports,

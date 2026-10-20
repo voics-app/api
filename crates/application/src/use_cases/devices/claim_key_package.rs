@@ -16,7 +16,9 @@ pub async fn execute(
         .find(device_id)
         .await?
         .ok_or(AppError::NotFound(Resource::Device))?;
-    if device.user_id != user_id {
+    if device.user_id != user_id
+        || device.is_stale(ports.clock.now(), ports.settings.device_max_idle)
+    {
         return Err(AppError::NotFound(Resource::Device));
     }
     ports

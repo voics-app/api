@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use crate::snowflake::Snowflake;
 
@@ -15,6 +15,16 @@ pub struct Device {
     pub name: String,
     pub identity_key: [u8; IDENTITY_KEY_LENGTH],
     pub created_at: DateTime<Utc>,
+    /// Last time the device was seen: registration, or a token refresh of its session.
+    pub last_seen_at: DateTime<Utc>,
+}
+
+impl Device {
+    /// A device that has not been seen for longer than `max_idle`. Stale devices are left out of
+    /// E2EE device listings and key-package claims, and are eventually pruned.
+    pub fn is_stale(&self, now: DateTime<Utc>, max_idle: Duration) -> bool {
+        self.last_seen_at < now - max_idle
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -64,7 +74,21 @@ mod tests {
             name: format!("device {id}"),
             identity_key: [0; IDENTITY_KEY_LENGTH],
             created_at: DateTime::from_timestamp(created_at, 0).expect("timestamp"),
+            last_seen_at: DateTime::from_timestamp(created_at, 0).expect("timestamp"),
         }
+    }
+
+    #[test]
+    fn a_device_is_stale_only_after_the_idle_window() {
+        let seen = device(1, 1_000);
+        let idle = Duration::days(30);
+        let at = |secs| DateTime::from_timestamp(secs, 0).expect("timestamp");
+        assert!(!seen.is_stale(at(1_000), idle));
+        assert!(
+            !seen.is_stale(at(1_000 + 30 * 86_400), idle),
+            "exactly at the limit is still active"
+        );
+        assert!(seen.is_stale(at(1_001 + 30 * 86_400), idle));
     }
 
     #[test]
