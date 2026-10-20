@@ -1,4 +1,5 @@
 use domain::guild::GuildSnapshot;
+use domain::notification::{GuildNotificationSettings, DIRECT_MESSAGES};
 use domain::relationship::Relationship;
 use domain::user::{User, UserSettings};
 use domain::Snowflake;
@@ -15,6 +16,10 @@ pub struct UserReady {
     pub private_channels: Vec<PrivateChannelView>,
     pub relationships: Vec<(Relationship, User)>,
     pub settings: UserSettings,
+    /// Stored notification settings for the user's guilds and DMs.
+    pub guild_settings: Vec<GuildNotificationSettings>,
+    /// The user's private notes as `(target_id, note)`.
+    pub notes: Vec<(Snowflake, String)>,
 }
 
 /// `GET /internal/v1/users/{id}/ready`: everything the gateway needs for READY.
@@ -42,11 +47,23 @@ pub async fn execute(ports: &Ports, user_id: Snowflake) -> AppResult<UserReady> 
         })
         .collect();
     let settings = ports.users.settings(user_id).await?;
+    let guild_settings = ports
+        .users
+        .list_guild_notification_settings(user_id)
+        .await?
+        .into_iter()
+        .filter(|s| {
+            s.guild_id == DIRECT_MESSAGES || guilds.iter().any(|g| g.guild.id == s.guild_id)
+        })
+        .collect();
+    let notes = ports.users.notes(user_id).await?;
     Ok(UserReady {
         user,
         guilds,
         private_channels,
         relationships,
         settings,
+        guild_settings,
+        notes,
     })
 }

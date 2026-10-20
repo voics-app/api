@@ -5,6 +5,7 @@ use sqlx::PgConnection;
 use application::AppResult;
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
+use domain::notification::GuildNotificationSettings;
 use domain::permissions::OverwriteKind;
 use domain::relationship::RelationshipType;
 use domain::user::{Credentials, Suspension, User, UserSettings};
@@ -12,6 +13,7 @@ use domain::Snowflake;
 
 use crate::postgres::convert::{bits, custom_status_json, thread_metadata_json};
 use crate::postgres::error::db;
+use crate::postgres::notifications;
 
 pub(super) async fn upsert_user(conn: &mut PgConnection, user: &User) -> AppResult<()> {
     let (suspended, reason, until) = suspension_columns(user.suspension.as_ref());
@@ -116,6 +118,66 @@ pub(super) async fn upsert_settings(
     .execute(conn)
     .await
     .map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn upsert_guild_notification_settings(
+    conn: &mut PgConnection,
+    settings: &GuildNotificationSettings,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO user_guild_settings (user_id, guild_id, message_notifications, suppress_everyone, \
+             suppress_roles, muted, mute_end_time, hide_muted_channels, channel_overrides, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now()) \
+         ON CONFLICT (user_id, guild_id) DO UPDATE SET message_notifications = EXCLUDED.message_notifications, \
+             suppress_everyone = EXCLUDED.suppress_everyone, suppress_roles = EXCLUDED.suppress_roles, \
+             muted = EXCLUDED.muted, mute_end_time = EXCLUDED.mute_end_time, \
+             hide_muted_channels = EXCLUDED.hide_muted_channels, \
+             channel_overrides = EXCLUDED.channel_overrides, updated_at = now()",
+    )
+    .bind(settings.user_id.as_i64())
+    .bind(settings.guild_id.as_i64())
+    .bind(settings.level.map(|l| i16::from(l.code())))
+    .bind(settings.suppress_everyone)
+    .bind(settings.suppress_roles)
+    .bind(settings.mute.muted)
+    .bind(settings.mute.end_time)
+    .bind(settings.hide_muted_channels)
+    .bind(notifications::overrides_json(&settings.channel_overrides))
+    .execute(conn)
+    .await
+    .map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn set_user_note(
+    conn: &mut PgConnection,
+    owner_id: Snowflake,
+    target_id: Snowflake,
+    note: Option<&str>,
+) -> AppResult<()> {
+    match note {
+        Some(note) => {
+            sqlx::query(
+                "INSERT INTO user_notes (owner_id, target_id, note) VALUES ($1, $2, $3) \
+                 ON CONFLICT (owner_id, target_id) DO UPDATE SET note = EXCLUDED.note",
+            )
+            .bind(owner_id.as_i64())
+            .bind(target_id.as_i64())
+            .bind(note)
+            .execute(conn)
+            .await
+            .map_err(db)?;
+        }
+        None => {
+            sqlx::query("DELETE FROM user_notes WHERE owner_id = $1 AND target_id = $2")
+                .bind(owner_id.as_i64())
+                .bind(target_id.as_i64())
+                .execute(conn)
+                .await
+                .map_err(db)?;
+        }
+    }
     Ok(())
 }
 

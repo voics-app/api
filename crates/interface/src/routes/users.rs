@@ -14,17 +14,24 @@ use application::use_cases::relationships::{
 use application::use_cases::users::update_current_user::UpdateCurrentUserInput;
 use application::use_cases::users::update_settings::UpdateSettingsInput;
 use application::use_cases::users::{
-    get_current_user, get_settings, get_user, list_private_channels, open_private_channel,
-    set_delivery_override, update_current_user, update_settings,
+    get_current_user, get_guild_notification_settings, get_note, get_settings, get_user,
+    list_private_channels, open_private_channel, set_delivery_override, set_note,
+    update_current_user, update_guild_notification_settings, update_settings,
 };
 use application::AppError;
-use contracts::objects::{ChannelDto, RelationshipDto, UserDto, UserSettingsDto};
+use contracts::objects::{
+    ChannelDto, GuildNotificationSettingsDto, NoteDto, RelationshipDto, UserDto, UserSettingsDto,
+};
 use contracts::requests::{
-    CreateDmRequest, ModifyCurrentUserRequest, ModifyUserSettingsRequest, PutRelationshipRequest,
+    CreateDmRequest, ModifyCurrentUserRequest, ModifyGuildNotificationSettingsRequest,
+    ModifyUserSettingsRequest, MuteConfigRequest, PutNoteRequest, PutRelationshipRequest,
     SetDeliveryModeRequest,
 };
 use contracts::wire::Id;
 use domain::delivery_mode::DeliveryMode;
+use domain::notification::{
+    ChannelOverrideInput, GuildNotificationPatch, MuteConfigInput, NotifyLevel,
+};
 use domain::user::CustomStatus;
 use domain::Snowflake;
 
@@ -108,6 +115,109 @@ async fn update_settings_handler(
     };
     let stored = update_settings::execute(&state.ports, &actor, input).await?;
     Ok(Json(UserSettingsDto::from(&stored)))
+}
+
+fn mute_config(raw: Option<Option<MuteConfigRequest>>) -> Option<Option<MuteConfigInput>> {
+    raw.map(|inner| {
+        inner.map(|config| MuteConfigInput {
+            end_time: config.end_time,
+            selected_time_window: config.selected_time_window,
+        })
+    })
+}
+
+fn level(field: &str, raw: Option<Option<u8>>) -> Result<Option<Option<NotifyLevel>>, ApiError> {
+    raw.map(|inner| NotifyLevel::parse_optional(field, inner))
+        .transpose()
+        .map_err(|e| AppError::from(e).into())
+}
+
+/// `@me` addresses the user's direct messages.
+fn settings_scope(raw: &str) -> Result<Option<Snowflake>, ApiError> {
+    if raw == "@me" {
+        return Ok(None);
+    }
+    raw.parse()
+        .map(Some)
+        .map_err(|_| AppError::NotFound(application::Resource::Guild).into())
+}
+
+async fn guild_settings(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+) -> Result<Json<GuildNotificationSettingsDto>, ApiError> {
+    let stored =
+        get_guild_notification_settings::execute(&state.ports, &actor, settings_scope(&guild)?)
+            .await?;
+    Ok(Json(GuildNotificationSettingsDto::from(&stored)))
+}
+
+async fn update_guild_settings(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+    Body(body): Body<ModifyGuildNotificationSettingsRequest>,
+) -> Result<Json<GuildNotificationSettingsDto>, ApiError> {
+    let mut overrides = Vec::new();
+    for entry in body.channel_overrides.unwrap_or_default() {
+        overrides.push(ChannelOverrideInput {
+            channel_id: entry.channel_id.0,
+            level: level("channel_overrides", entry.message_notifications)?,
+            muted: entry.muted,
+            mute_config: mute_config(entry.mute_config),
+        });
+    }
+    let patch = GuildNotificationPatch {
+        level: level("message_notifications", body.message_notifications)?,
+        suppress_everyone: body.suppress_everyone,
+        suppress_roles: body.suppress_roles,
+        muted: body.muted,
+        mute_config: mute_config(body.mute_config),
+        hide_muted_channels: body.hide_muted_channels,
+        channel_overrides: (!overrides.is_empty()).then_some(overrides),
+    };
+    let stored = update_guild_notification_settings::execute(
+        &state.ports,
+        &actor,
+        settings_scope(&guild)?,
+        patch,
+    )
+    .await?;
+    Ok(Json(GuildNotificationSettingsDto::from(&stored)))
+}
+
+async fn get_note_handler(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<NoteDto>, ApiError> {
+    let target = parse_id(&id)?;
+    let note = get_note::execute(&state.ports, &actor, target).await?;
+    Ok(Json(NoteDto {
+        user_id: Id(actor.user_id),
+        note_user_id: Id(target),
+        note,
+    }))
+}
+
+async fn put_note_handler(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<PutNoteRequest>,
+) -> Result<StatusCode, ApiError> {
+    set_note::execute(&state.ports, &actor, parse_id(&id)?, body.note).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_note_handler(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    set_note::execute(&state.ports, &actor, parse_id(&id)?, None).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn private_channels(
@@ -233,6 +343,16 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/users/@me/settings",
             get(settings).patch(update_settings_handler),
+        )
+        .route(
+            "/users/@me/guilds/{id}/settings",
+            get(guild_settings).patch(update_guild_settings),
+        )
+        .route(
+            "/users/@me/notes/{id}",
+            get(get_note_handler)
+                .put(put_note_handler)
+                .delete(delete_note_handler),
         )
         .route("/users/@me/channels", get(private_channels).post(open_dm))
         .route("/users/@me/channels/{id}/delivery-mode", put(delivery_mode))

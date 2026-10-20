@@ -12,6 +12,7 @@ use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Guild, GuildSnapshot, MemberProfile, Role};
 use domain::invite::Invite;
+use domain::notification::GuildNotificationSettings;
 use domain::permissions::Permissions;
 use domain::relationship::RelationshipType;
 use domain::user::{User, UserSettings};
@@ -89,6 +90,14 @@ pub enum DomainEvent {
     // discordy.user.v1
     UserUpdate(User),
     UserSettingsUpdate(UserSettings),
+    /// The user's notification settings for one guild or for DMs; sent to that user only.
+    UserGuildSettingsUpdate(GuildNotificationSettings),
+    /// The user's private note about `target_id` changed (empty `note` = removed); owner only.
+    UserNoteUpdate {
+        owner_id: Snowflake,
+        target_id: Snowflake,
+        note: String,
+    },
     RelationshipAdd {
         user_id: Snowflake,
         kind: RelationshipType,

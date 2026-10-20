@@ -16,7 +16,10 @@ use contracts::internal::{
     ChannelRoutingDto, IntrospectRequest, IntrospectResponse, SuspendUserRequest, UserReadyDto,
     UsersLookupRequest,
 };
-use contracts::objects::{ChannelDto, GuildFullDto, RelationshipDto, UserDto, UserSettingsDto};
+use contracts::objects::{
+    ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
+    UserSettingsDto,
+};
 use contracts::wire::{timestamp, Id, Perm};
 use domain::Snowflake;
 
@@ -98,6 +101,16 @@ async fn user_ready_state(
             .map(|(relationship, user)| RelationshipDto::new(relationship, user))
             .collect(),
         user_settings: UserSettingsDto::from(&ready.settings),
+        user_guild_settings: ready
+            .guild_settings
+            .iter()
+            .map(GuildNotificationSettingsDto::from)
+            .collect(),
+        notes: ready
+            .notes
+            .iter()
+            .map(|(target, note)| (target.to_string(), note.clone()))
+            .collect(),
     }))
 }
 

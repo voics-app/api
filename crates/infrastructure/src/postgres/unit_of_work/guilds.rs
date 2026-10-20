@@ -46,6 +46,11 @@ pub(super) async fn upsert_guild(conn: &mut PgConnection, guild: &Guild) -> AppR
 }
 
 pub(super) async fn delete_guild(conn: &mut PgConnection, guild_id: Snowflake) -> AppResult<()> {
+    sqlx::query("DELETE FROM user_guild_settings WHERE guild_id = $1")
+        .bind(guild_id.as_i64())
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
     sqlx::query("DELETE FROM guilds WHERE id = $1")
         .bind(guild_id.as_i64())
         .execute(conn)

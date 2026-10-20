@@ -13,6 +13,7 @@ use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
 use domain::invite::Invite;
+use domain::notification::GuildNotificationSettings;
 use domain::relationship::Relationship;
 use domain::user::{Credentials, User, UserSettings};
 use domain::Snowflake;
@@ -36,6 +37,21 @@ pub trait UserRepository: Send + Sync {
     /// Stored settings, or defaults when none were saved yet.
     async fn settings(&self, user_id: Snowflake) -> AppResult<UserSettings>;
     async fn settings_many(&self, user_ids: &[Snowflake]) -> AppResult<Vec<UserSettings>>;
+    /// Stored notification settings for one guild (`DIRECT_MESSAGES` for DMs), if any.
+    async fn guild_notification_settings(
+        &self,
+        user_id: Snowflake,
+        guild_id: Snowflake,
+    ) -> AppResult<Option<GuildNotificationSettings>>;
+    /// Every stored notification settings row of the user.
+    async fn list_guild_notification_settings(
+        &self,
+        user_id: Snowflake,
+    ) -> AppResult<Vec<GuildNotificationSettings>>;
+    /// The private note `owner_id` wrote about `target_id`.
+    async fn note(&self, owner_id: Snowflake, target_id: Snowflake) -> AppResult<Option<String>>;
+    /// All notes of `owner_id` as `(target_id, note)`.
+    async fn notes(&self, owner_id: Snowflake) -> AppResult<Vec<(Snowflake, String)>>;
     async fn search(
         &self,
         query: Option<&str>,

@@ -13,6 +13,7 @@ use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Ban, Guild, GuildSnapshot, Member, MemberProfile, Role};
 use domain::invite::Invite;
+use domain::notification::{ChannelOverride, GuildNotificationSettings, Mute, DIRECT_MESSAGES};
 use domain::permissions::{PermissionOverwrite, Permissions};
 use domain::relationship::Relationship;
 use domain::user::{CustomStatus, User, UserSettings};
@@ -129,6 +130,76 @@ impl From<&UserSettings> for UserSettingsDto {
             accent_color: settings.accent_color,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MuteConfigDto {
+    /// `null` means until turned off.
+    pub end_time: Option<String>,
+}
+
+fn mute_config(mute: &Mute) -> Option<MuteConfigDto> {
+    mute.muted.then(|| MuteConfigDto {
+        end_time: mute.end_time.map(timestamp),
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChannelOverrideDto {
+    pub channel_id: Id,
+    /// 0 all, 1 mentions, 2 nothing; `null` inherits the guild level.
+    pub message_notifications: Option<u8>,
+    pub muted: bool,
+    pub mute_config: Option<MuteConfigDto>,
+}
+
+impl From<&ChannelOverride> for ChannelOverrideDto {
+    fn from(o: &ChannelOverride) -> Self {
+        Self {
+            channel_id: Id(o.channel_id),
+            message_notifications: o.level.map(|l| l.code()),
+            muted: o.mute.muted,
+            mute_config: mute_config(&o.mute),
+        }
+    }
+}
+
+/// `GET /users/@me/guilds/{id}/settings` and the `USER_GUILD_SETTINGS_UPDATE` payload.
+#[derive(Debug, Clone, Serialize)]
+pub struct GuildNotificationSettingsDto {
+    /// `null` for the user's direct messages.
+    pub guild_id: Option<Id>,
+    /// 0 all, 1 mentions, 2 nothing; `null` uses the guild's default.
+    pub message_notifications: Option<u8>,
+    pub suppress_everyone: bool,
+    pub suppress_roles: bool,
+    pub muted: bool,
+    pub mute_config: Option<MuteConfigDto>,
+    pub hide_muted_channels: bool,
+    pub channel_overrides: Vec<ChannelOverrideDto>,
+}
+
+impl From<&GuildNotificationSettings> for GuildNotificationSettingsDto {
+    fn from(s: &GuildNotificationSettings) -> Self {
+        Self {
+            guild_id: (s.guild_id != DIRECT_MESSAGES).then_some(Id(s.guild_id)),
+            message_notifications: s.level.map(|l| l.code()),
+            suppress_everyone: s.suppress_everyone,
+            suppress_roles: s.suppress_roles,
+            muted: s.mute.muted,
+            mute_config: mute_config(&s.mute),
+            hide_muted_channels: s.hide_muted_channels,
+            channel_overrides: s.channel_overrides.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// `GET/PUT /users/@me/notes/{id}`.
+#[derive(Debug, Clone, Serialize)]
+pub struct NoteDto {
+    pub user_id: Id,
+    pub note_user_id: Id,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

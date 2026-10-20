@@ -2,7 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::objects::{ChannelDto, GuildFullDto, RelationshipDto, UserDto, UserSettingsDto};
+use std::collections::BTreeMap;
+
+use crate::objects::{
+    ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
+    UserSettingsDto,
+};
 use crate::wire::{Id, Perm};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -30,6 +35,9 @@ pub struct UserReadyDto {
     pub private_channels: Vec<ChannelDto>,
     pub relationships: Vec<RelationshipDto>,
     pub user_settings: UserSettingsDto,
+    pub user_guild_settings: Vec<GuildNotificationSettingsDto>,
+    /// The user's private notes keyed by the noted user's id.
+    pub notes: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

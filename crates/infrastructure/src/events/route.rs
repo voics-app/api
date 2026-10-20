@@ -11,7 +11,7 @@ use contracts::envelope::{
 };
 use contracts::objects::{
     interaction_event, AuditLogEntryDto, ChannelDto, DeviceDto, EmojiDto, GuildDto, GuildFullDto,
-    MemberDto, RelationshipDto, RoleDto, UserDto, UserSettingsDto,
+    GuildNotificationSettingsDto, MemberDto, RelationshipDto, RoleDto, UserDto, UserSettingsDto,
 };
 use contracts::Id;
 use domain::relationship::Relationship;
@@ -246,6 +246,28 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             None,
             Some(vec![settings.user_id]),
             to_value(UserSettingsDto::from(settings)),
+        ),
+        DomainEvent::UserGuildSettingsUpdate(settings) => emit(
+            TOPIC_USER,
+            settings.user_id,
+            "USER_GUILD_SETTINGS_UPDATE",
+            None,
+            None,
+            Some(vec![settings.user_id]),
+            to_value(GuildNotificationSettingsDto::from(settings)),
+        ),
+        DomainEvent::UserNoteUpdate {
+            owner_id,
+            target_id,
+            note,
+        } => emit(
+            TOPIC_USER,
+            *owner_id,
+            "USER_NOTE_UPDATE",
+            None,
+            None,
+            Some(vec![*owner_id]),
+            json!({ "id": target_id.to_string(), "note": note }),
         ),
         DomainEvent::RelationshipAdd {
             user_id,

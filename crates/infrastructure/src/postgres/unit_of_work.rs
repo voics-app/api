@@ -77,6 +77,14 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             suspension,
         } => identity::suspend_user(conn, *user_id, suspension).await,
         Mutation::UpsertSettings(settings) => identity::upsert_settings(conn, settings).await,
+        Mutation::UpsertGuildNotificationSettings(settings) => {
+            identity::upsert_guild_notification_settings(conn, settings).await
+        }
+        Mutation::SetUserNote {
+            owner_id,
+            target_id,
+            note,
+        } => identity::set_user_note(conn, *owner_id, *target_id, note.as_deref()).await,
         Mutation::SetRelationship {
             user_id,
             target_id,
