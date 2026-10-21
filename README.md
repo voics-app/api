@@ -65,3 +65,7 @@ Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`.
 - Interaction creation and callbacks are routed but have no HTTP contract test yet.
 - Redpanda topics listed in `contracts::envelope::API_TOPICS` are created by the compose init container and the cluster, not by api.
 - The `.env.example` JWT keys are dev-only and public; production keys must be generated per environment.
+
+## Git hooks
+
+Tests run locally, not in CI. Install [lefthook](https://lefthook.dev/installation/) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
