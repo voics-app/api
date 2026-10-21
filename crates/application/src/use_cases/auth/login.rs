@@ -1,13 +1,19 @@
+use domain::account::AccountState;
+use domain::user::User;
 use domain::Snowflake;
 
 use crate::context::Ports;
 use crate::error::{AppError, AppResult, Denial};
+use crate::support::account_mail::issue_mfa_ticket;
+use crate::support::credentials::verify_second_factor;
 use crate::use_cases::auth::tokens::{start_session, AuthTokens};
+use crate::write_set::{Mutation, WriteSet};
 
 #[derive(Debug, Clone)]
 pub struct LoginInput {
     pub email: String,
     pub password: String,
+    /// A TOTP code or an unused backup code.
     pub totp: Option<String>,
     /// Binds the session to one of the caller's registered devices.
     pub device_id: Option<Snowflake>,
@@ -39,17 +45,25 @@ pub async fn execute(ports: &Ports, input: LoginInput) -> AppResult<AuthTokens> 
     if user.is_suspended(ports.clock.now()) {
         return Err(AppError::Forbidden(Denial::Suspended));
     }
-    if let Some(secret) = &credentials.totp_secret {
-        let code = input.totp.as_deref().ok_or(AppError::MfaRequired)?;
-        if !ports.totp.verify(secret, code, ports.clock.now()) {
-            return Err(AppError::invalid(
-                "totp",
-                "INVALID_TOTP",
-                "Invalid two-factor code.",
-            ));
-        }
+    if credentials.totp_secret.is_some() {
+        let Some(code) = input.totp.as_deref() else {
+            let ticket = issue_mfa_ticket(ports, user.id).await?;
+            return Err(AppError::MfaRequired { ticket });
+        };
+        verify_second_factor(ports, user.id, &credentials, code, "totp").await?;
     }
-    if let Some(device_id) = input.device_id {
+    complete(ports, user, input.device_id).await
+}
+
+/// Final step shared by every login path once the caller is authenticated:
+/// reactivates a disabled or deletion-scheduled account, checks the device
+/// and starts the session.
+pub(super) async fn complete(
+    ports: &Ports,
+    user: User,
+    device_id: Option<Snowflake>,
+) -> AppResult<AuthTokens> {
+    if let Some(device_id) = device_id {
         let owned = ports
             .devices
             .find(device_id)
@@ -63,5 +77,13 @@ pub async fn execute(ports: &Ports, input: LoginInput) -> AppResult<AuthTokens> 
             ));
         }
     }
-    start_session(ports, user, input.device_id).await
+    if ports.users.account_state(user.id).await?.is_inactive() {
+        let mut writes = WriteSet::new();
+        writes.mutate(Mutation::SetAccountState {
+            user_id: user.id,
+            state: AccountState::default(),
+        });
+        ports.unit_of_work.commit(writes).await?;
+    }
+    start_session(ports, user, device_id).await
 }

@@ -17,6 +17,7 @@ use state::AppState;
 pub fn router(state: AppState) -> Router {
     let public = Router::new()
         .merge(routes::auth::routes())
+        .merge(routes::mfa::routes())
         .merge(routes::users::routes())
         .merge(routes::devices::routes())
         .merge(routes::guilds::routes())

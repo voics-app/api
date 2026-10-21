@@ -1,5 +1,6 @@
 //! sqlx Postgres repositories and the transactional unit of work.
 
+mod account_tokens;
 mod applications;
 mod audit;
 mod channels;

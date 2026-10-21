@@ -10,12 +10,14 @@ use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
+use application::use_cases::account::purge_deleted;
 use application::use_cases::devices::prune_stale;
 use application::{Ports, Settings, VoiceRegion};
-use config::Config;
+use config::{Config, Environment, MailTransport};
 use infrastructure::events::direct::KafkaEvents;
 use infrastructure::events::kafka::KafkaPublisher;
 use infrastructure::events::relay::OutboxRelay;
+use infrastructure::mail::{LogMailer, SmtpMailer, SmtpSettings, SmtpTls};
 use infrastructure::messages_client::HttpMessages;
 use infrastructure::postgres::{connect, migrate, PgStore, PgUnitOfWork};
 use infrastructure::ratelimit::ValkeyRateLimiter;
@@ -65,7 +67,28 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let region = config.default_voice_region.clone();
     let publisher = Arc::new(KafkaPublisher::connect(config.kafka_brokers.clone()).await?);
     let store = Arc::new(PgStore::new(pool.clone()));
+    let rate_limiter = Arc::new(ValkeyRateLimiter::connect(&config.valkey_url).await?);
+    let mailer: Arc<dyn application::ports::Mailer> = match &config.mail {
+        MailTransport::Log => Arc::new(LogMailer {
+            include_body: config.environment == Environment::Local,
+        }),
+        MailTransport::Smtp(smtp) => Arc::new(SmtpMailer::new(&SmtpSettings {
+            host: smtp.host.clone(),
+            port: smtp.port,
+            tls: match smtp.tls.as_str() {
+                "tls" => SmtpTls::Implicit,
+                "none" => SmtpTls::None,
+                _ => SmtpTls::StartTls,
+            },
+            username: smtp.username.clone(),
+            password: smtp.password.clone(),
+            from: smtp.from.clone(),
+        })?),
+    };
     let ports = Ports {
+        account_tokens: store.clone(),
+        mailer,
+        limiter: rate_limiter.clone(),
         users: store.clone(),
         sessions: store.clone(),
         devices: store.clone(),
@@ -111,10 +134,16 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
                 .trim_end_matches('/')
                 .to_owned(),
             device_max_idle: chrono::Duration::days(i64::from(config.device_max_idle_days)),
+            app_link_base: config.app_link_base.clone(),
+            account_deletion_retention: chrono::Duration::days(i64::from(
+                config.account_deletion_retention_days,
+            )),
             ..Settings::default()
         },
     };
     let prune_ports = ports.clone();
+    let purge_ports = ports.clone();
+    let purge_every = std::time::Duration::from_secs(config.account_purge_interval_secs);
     let prune_every = std::time::Duration::from_secs(config.device_prune_interval_secs);
 
     tokio::spawn(OutboxRelay::new(pool.clone(), publisher.clone()).run());
@@ -130,10 +159,22 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         }
     });
 
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(purge_every);
+        loop {
+            tick.tick().await;
+            match purge_deleted::execute(&purge_ports).await {
+                Ok(0) => {}
+                Ok(count) => tracing::info!(count, "purged deleted accounts"),
+                Err(error) => tracing::warn!(%error, "account purge failed"),
+            }
+        }
+    });
+
     let state = AppState {
         ports,
         internal_token: Arc::from(config.internal_token.as_str()),
-        rate_limiter: Arc::new(ValkeyRateLimiter::connect(&config.valkey_url).await?),
+        rate_limiter,
         rate_policy: RatePolicy::default(),
     };
     let listener = TcpListener::bind(config.bind_addr).await?;

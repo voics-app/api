@@ -126,9 +126,8 @@ async fn introspection_rejects_unknown_tokens_and_reports_user_tokens() {
 
 #[tokio::test]
 async fn totp_enrolment_gates_password_login() {
-    use application::ports::TotpVerifier;
-    use application::use_cases::auth::{authenticate, enable_totp};
-    use infrastructure::security::totp::Rfc6238;
+    use application::use_cases::auth::authenticate;
+    use application::use_cases::mfa::{begin_enrolment, confirm_enrolment};
 
     let database = start_database().await;
     let (private, public) = jwt_keys();
@@ -143,19 +142,14 @@ async fn totp_enrolment_gates_password_login() {
     .await
     .expect("authenticate");
 
-    let secret = Rfc6238.generate_secret();
+    let enrolment = begin_enrolment::execute(&ports, &actor, "a-long-enough-passphrase")
+        .await
+        .expect("begin enrolment");
+    let secret = enrolment.secret;
     let code = totp_code(&secret);
-    enable_totp::execute(
-        &ports,
-        &actor,
-        enable_totp::EnableTotpInput {
-            secret: secret.clone(),
-            code: code.clone(),
-            password: "a-long-enough-passphrase".into(),
-        },
-    )
-    .await
-    .expect("enrol totp");
+    confirm_enrolment::execute(&ports, &actor, &code)
+        .await
+        .expect("confirm enrolment");
 
     let without_code = login::execute(
         &ports,
@@ -167,7 +161,7 @@ async fn totp_enrolment_gates_password_login() {
         },
     )
     .await;
-    assert!(matches!(without_code, Err(AppError::MfaRequired)));
+    assert!(matches!(without_code, Err(AppError::MfaRequired { .. })));
 
     let wrong_code = login::execute(
         &ports,

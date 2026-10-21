@@ -134,6 +134,29 @@ pub async fn enforce(
     }
 }
 
+/// A stricter per-caller bucket on top of the general limiter, for endpoints
+/// that send mail or accept guessable secrets. Fails open like [`enforce`].
+pub async fn strict(
+    state: &AppState,
+    headers: &HeaderMap,
+    name: &str,
+    limit: u32,
+    window: std::time::Duration,
+) -> Result<(), crate::error::ApiError> {
+    let key = format!("rl-strict:{}:{name}", identity_of(headers));
+    match state.rate_limiter.hit(&key, limit, window).await {
+        Ok(decision) if !decision.allowed => Err(application::AppError::RateLimited {
+            retry_after_secs: decision.retry_after.as_secs().max(1),
+        }
+        .into()),
+        Ok(_) => Ok(()),
+        Err(error) => {
+            tracing::warn!(%error, "rate limiter unavailable; request allowed");
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

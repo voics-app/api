@@ -158,6 +158,24 @@ impl SessionRepository for PgStore {
         Ok(())
     }
 
+    async fn revoke_others(
+        &self,
+        user_id: Snowflake,
+        keep: Uuid,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE sessions SET revoked_at = $3 WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL",
+        )
+        .bind(user_id.as_i64())
+        .bind(keep)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()> {
         sqlx::query("UPDATE sessions SET device_id = $2 WHERE id = $1")
             .bind(id)

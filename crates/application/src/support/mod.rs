@@ -1,9 +1,13 @@
+pub mod account_mail;
 pub mod audit;
 pub mod channel_access;
+pub mod credentials;
 pub mod delivery;
 pub mod guild_context;
 pub mod images;
 pub mod message_payload;
 pub mod relationships;
+pub mod sessions;
 pub mod system_messages;
+pub mod throttle;
 pub mod views;

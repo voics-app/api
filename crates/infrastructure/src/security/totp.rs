@@ -54,4 +54,35 @@ mod tests {
     fn malformed_secrets_never_verify() {
         assert!(!Rfc6238.verify("not base32!", "123456", Utc::now()));
     }
+
+    /// RFC 6238 appendix B (SHA-1, secret "12345678901234567890"); the RFC lists
+    /// 8-digit codes, of which the 6-digit code is the last six digits.
+    const RFC_SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    const RFC_VECTORS: [(i64, &str); 6] = [
+        (59, "287082"),
+        (1_111_111_109, "081804"),
+        (1_111_111_111, "050471"),
+        (1_234_567_890, "005924"),
+        (2_000_000_000, "279037"),
+        (20_000_000_000, "353130"),
+    ];
+
+    #[test]
+    fn rfc_6238_vectors_verify_at_their_timestamps() {
+        for (seconds, code) in RFC_VECTORS {
+            let at = Utc.timestamp_opt(seconds, 0).unwrap();
+            assert!(Rfc6238.verify(RFC_SECRET, code, at), "T={seconds}");
+        }
+    }
+
+    #[test]
+    fn one_step_of_skew_is_accepted_and_two_are_not() {
+        let code = "081804";
+        let at = |seconds: i64| Utc.timestamp_opt(seconds, 0).unwrap();
+        let base = 1_111_111_109;
+        assert!(Rfc6238.verify(RFC_SECRET, code, at(base + 30)));
+        assert!(Rfc6238.verify(RFC_SECRET, code, at(base - 30)));
+        assert!(!Rfc6238.verify(RFC_SECRET, code, at(base + 90)));
+        assert!(!Rfc6238.verify(RFC_SECRET, "000000", at(base)));
+    }
 }

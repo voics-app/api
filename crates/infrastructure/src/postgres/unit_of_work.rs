@@ -72,6 +72,21 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::SetTotpSecret { user_id, secret } => {
             identity::set_totp_secret(conn, *user_id, secret.as_deref()).await
         }
+        Mutation::SetPasswordHash { user_id, hash } => {
+            identity::set_password_hash(conn, *user_id, hash).await
+        }
+        Mutation::SetPendingTotp { user_id, secret } => {
+            identity::set_pending_totp(conn, *user_id, secret.as_deref()).await
+        }
+        Mutation::ReplaceBackupCodes { user_id, hashes } => {
+            identity::replace_backup_codes(conn, *user_id, hashes).await
+        }
+        Mutation::SetAccountState { user_id, state } => {
+            identity::set_account_state(conn, *user_id, state).await
+        }
+        Mutation::AnonymizeUser { user_id, username } => {
+            identity::anonymize_user(conn, *user_id, username).await
+        }
         Mutation::SuspendUser {
             user_id,
             suspension,

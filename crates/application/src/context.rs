@@ -20,6 +20,9 @@ pub struct VoiceRegion {
 /// Default for `Settings::device_max_idle`, in days.
 pub const DEFAULT_DEVICE_MAX_IDLE_DAYS: i64 = 30;
 
+/// Default for `Settings::account_deletion_retention`, in days.
+pub const DEFAULT_ACCOUNT_DELETION_DAYS: i64 = 14;
+
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub access_token_ttl: Duration,
@@ -30,6 +33,10 @@ pub struct Settings {
     pub default_voice_region: String,
     /// Public base URL of the api, used to build webhook URLs.
     pub public_api_base: String,
+    /// Prefix of the links in account emails, e.g. `discordy://`.
+    pub app_link_base: String,
+    /// How long a deleted account stays recoverable by logging in.
+    pub account_deletion_retention: Duration,
 }
 
 impl Default for Settings {
@@ -44,6 +51,8 @@ impl Default for Settings {
             }],
             default_voice_region: "nl-home".into(),
             public_api_base: "http://localhost:8080".into(),
+            app_link_base: "discordy://".into(),
+            account_deletion_retention: Duration::days(DEFAULT_ACCOUNT_DELETION_DAYS),
         }
     }
 }
@@ -52,6 +61,7 @@ impl Default for Settings {
 pub struct Ports {
     pub users: Arc<dyn UserRepository>,
     pub sessions: Arc<dyn SessionRepository>,
+    pub account_tokens: Arc<dyn AccountTokenRepository>,
     pub devices: Arc<dyn DeviceRepository>,
     pub relationships: Arc<dyn RelationshipRepository>,
     pub channels: Arc<dyn ChannelRepository>,
@@ -70,6 +80,10 @@ pub struct Ports {
     pub ids: Arc<dyn IdGenerator>,
     pub secrets: Arc<dyn SecretGenerator>,
     pub totp: Arc<dyn TotpVerifier>,
+    pub mailer: Arc<dyn Mailer>,
+    /// Per-user and per-address throttles inside use cases (second-factor
+    /// attempts, outbound mail); the HTTP layer keeps its own limiter.
+    pub limiter: Arc<dyn RateLimiter>,
     pub assets: Arc<dyn AssetStorage>,
     pub messages: Arc<dyn MessageService>,
     pub settings: Settings,

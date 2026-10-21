@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use domain::account::{AccountState, AccountToken, TokenPurpose};
 use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
 use domain::channel::Channel;
@@ -13,6 +14,7 @@ use domain::device::Device;
 use domain::emoji::Emoji;
 use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
 use domain::invite::Invite;
+use domain::mfa::BackupCodeRecord;
 use domain::notification::GuildNotificationSettings;
 use domain::relationship::Relationship;
 use domain::user::{Credentials, User, UserSettings};
@@ -34,6 +36,15 @@ pub trait UserRepository: Send + Sync {
     async fn find_by_email(&self, email: &str) -> AppResult<Option<User>>;
     async fn find_by_username(&self, username: &str) -> AppResult<Option<User>>;
     async fn credentials(&self, user_id: Snowflake) -> AppResult<Option<Credentials>>;
+    /// Disabled / scheduled-for-deletion state; default when the user has none.
+    async fn account_state(&self, user_id: Snowflake) -> AppResult<AccountState>;
+    /// Every backup code of the user, oldest first, consumed ones included.
+    async fn backup_codes(&self, user_id: Snowflake) -> AppResult<Vec<BackupCodeRecord>>;
+    /// Marks one backup code consumed; `false` when it was already used.
+    async fn consume_backup_code(&self, id: i64, now: DateTime<Utc>) -> AppResult<bool>;
+    /// Users whose scheduled deletion is final at `now`, oldest first.
+    async fn list_due_deletions(&self, now: DateTime<Utc>, limit: u32)
+        -> AppResult<Vec<Snowflake>>;
     /// Stored settings, or defaults when none were saved yet.
     async fn settings(&self, user_id: Snowflake) -> AppResult<UserSettings>;
     async fn settings_many(&self, user_ids: &[Snowflake]) -> AppResult<Vec<UserSettings>>;
@@ -100,6 +111,13 @@ pub trait SessionRepository: Send + Sync {
     async fn find(&self, id: Uuid) -> AppResult<Option<Session>>;
     async fn revoke(&self, id: Uuid, now: DateTime<Utc>) -> AppResult<()>;
     async fn revoke_all_for_user(&self, user_id: Snowflake, now: DateTime<Utc>) -> AppResult<()>;
+    /// Revokes every live session of the user except `keep`.
+    async fn revoke_others(
+        &self,
+        user_id: Snowflake,
+        keep: Uuid,
+        now: DateTime<Utc>,
+    ) -> AppResult<()>;
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()>;
     /// Devices of `user_id` that a session bound to them still holds: not
     /// revoked, and with an unrotated refresh token that has not expired.
@@ -108,6 +126,33 @@ pub trait SessionRepository: Send + Sync {
         user_id: Snowflake,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<Snowflake>>;
+}
+
+/// Single-use tokens for email verification, password reset and login MFA tickets.
+#[async_trait]
+pub trait AccountTokenRepository: Send + Sync {
+    async fn create(&self, token: &AccountToken) -> AppResult<()>;
+    /// An unused, unexpired token, left in place.
+    async fn find_active(
+        &self,
+        token_hash: &str,
+        purpose: TokenPurpose,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<AccountToken>>;
+    /// Atomically marks an unused, unexpired token used and returns it.
+    async fn consume(
+        &self,
+        token_hash: &str,
+        purpose: TokenPurpose,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<AccountToken>>;
+    /// Voids the user's outstanding tokens of `purpose`.
+    async fn revoke_for_user(
+        &self,
+        user_id: Snowflake,
+        purpose: TokenPurpose,
+        now: DateTime<Utc>,
+    ) -> AppResult<()>;
 }
 
 #[async_trait]
