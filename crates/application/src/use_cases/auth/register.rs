@@ -3,6 +3,7 @@ use domain::validation::{self, ValidationErrors};
 
 use crate::context::Ports;
 use crate::error::AppResult;
+use crate::support::account_mail::send_verification;
 use crate::use_cases::auth::tokens::{start_session, AuthTokens};
 use crate::write_set::{Mutation, WriteSet};
 
@@ -59,6 +60,7 @@ pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthToken
         user_id: user.id,
         password_hash: ports.passwords.hash(&input.password).await?,
         totp_secret: None,
+        pending_totp_secret: None,
     };
     let mut writes = WriteSet::new();
     writes.mutate(Mutation::InsertUser {
@@ -67,5 +69,11 @@ pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthToken
         settings: UserSettings::defaults_for(user.id),
     });
     ports.unit_of_work.commit(writes).await?;
+    if let Some(address) = &user.email {
+        if let Err(error) = send_verification(ports, user.id, &user.username, address, false).await
+        {
+            tracing::warn!(%error, "verification email not sent at registration");
+        }
+    }
     start_session(ports, user, None).await
 }

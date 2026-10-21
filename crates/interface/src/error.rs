@@ -11,9 +11,10 @@ use serde_json::{json, Value};
 use application::{AppError, Denial, Resource};
 use contracts::errors::{
     BANNED, CANNOT_MESSAGE_USER, GENERAL_ERROR, INVALID_FORM_BODY, MFA_REQUIRED, MISSING_ACCESS,
-    MISSING_PERMISSIONS, UNAUTHORIZED, UNKNOWN_APPLICATION, UNKNOWN_APPLICATION_COMMAND,
-    UNKNOWN_BAN, UNKNOWN_CHANNEL, UNKNOWN_EMOJI, UNKNOWN_GUILD, UNKNOWN_INTERACTION,
-    UNKNOWN_INVITE, UNKNOWN_MEMBER, UNKNOWN_MESSAGE, UNKNOWN_ROLE, UNKNOWN_USER, UNKNOWN_WEBHOOK,
+    MISSING_PERMISSIONS, RATE_LIMITED, UNAUTHORIZED, UNKNOWN_APPLICATION,
+    UNKNOWN_APPLICATION_COMMAND, UNKNOWN_BAN, UNKNOWN_CHANNEL, UNKNOWN_EMOJI, UNKNOWN_GUILD,
+    UNKNOWN_INTERACTION, UNKNOWN_INVITE, UNKNOWN_MEMBER, UNKNOWN_MESSAGE, UNKNOWN_ROLE,
+    UNKNOWN_USER, UNKNOWN_WEBHOOK,
 };
 
 /// An error ready to be rendered as `{ code, message, errors? }`.
@@ -32,6 +33,10 @@ struct Body {
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     errors: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ticket: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_after: Option<u64>,
 }
 
 fn unknown_code(resource: Resource) -> u32 {
@@ -102,6 +107,8 @@ fn field_errors(errors: &domain::validation::ValidationErrors) -> Value {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let mut ticket = None;
+        let mut retry_after = None;
         let (status, code, message, errors) = match self.0 {
             AppError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
@@ -109,12 +116,24 @@ impl IntoResponse for ApiError {
                 "401: Unauthorized".to_owned(),
                 None,
             ),
-            AppError::MfaRequired => (
-                StatusCode::UNAUTHORIZED,
-                MFA_REQUIRED,
-                "Two-factor authentication required".to_owned(),
-                None,
-            ),
+            AppError::MfaRequired { ticket: issued } => {
+                ticket = Some(issued);
+                (
+                    StatusCode::UNAUTHORIZED,
+                    MFA_REQUIRED,
+                    "Two-factor authentication required".to_owned(),
+                    None,
+                )
+            }
+            AppError::RateLimited { retry_after_secs } => {
+                retry_after = Some(retry_after_secs);
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    RATE_LIMITED,
+                    "You are being rate limited.".to_owned(),
+                    None,
+                )
+            }
             AppError::Forbidden(denial) => {
                 let (status, code, message) = denial_code(denial);
                 (status, code, message.to_owned(), None)
@@ -154,14 +173,23 @@ impl IntoResponse for ApiError {
                 )
             }
         };
-        (
+        let mut response = (
             status,
             Json(Body {
                 code,
                 message,
                 errors,
+                ticket,
+                retry_after,
             }),
         )
-            .into_response()
+            .into_response();
+        if let Some(seconds) = retry_after {
+            response.headers_mut().insert(
+                axum::http::header::RETRY_AFTER,
+                axum::http::HeaderValue::from(seconds),
+            );
+        }
+        response
     }
 }

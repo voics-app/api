@@ -2,6 +2,7 @@
 //! No framework or IO dependencies.
 
 pub mod access;
+pub mod account;
 pub mod application;
 pub mod audit;
 pub mod channel;
@@ -10,6 +11,7 @@ pub mod device;
 pub mod emoji;
 pub mod guild;
 pub mod invite;
+pub mod mfa;
 pub mod notification;
 pub mod permissions;
 pub mod relationship;

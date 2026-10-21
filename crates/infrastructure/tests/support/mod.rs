@@ -184,6 +184,7 @@ pub fn ports_with_messages(
     Ports {
         users: store.clone(),
         sessions: store.clone(),
+        account_tokens: store.clone(),
         devices: store.clone(),
         relationships: store.clone(),
         channels: store.clone(),
@@ -202,6 +203,8 @@ pub fn ports_with_messages(
         ids: Arc::new(SnowflakeIds::new(1).expect("worker id")),
         secrets: Arc::new(OsSecrets),
         totp: Arc::new(Rfc6238),
+        mailer: Arc::new(DiscardMail),
+        limiter: Arc::new(AllowAll),
         assets: Arc::new(MemoryAssets::default()),
         messages,
         settings: Settings::default(),
@@ -226,6 +229,86 @@ impl application::ports::RateLimiter for AllowAll {
             remaining: limit,
             reset_after: window,
             retry_after: Duration::ZERO,
+        })
+    }
+}
+
+/// Mailer that drops everything.
+pub struct DiscardMail;
+
+#[async_trait]
+impl application::ports::Mailer for DiscardMail {
+    async fn send(&self, _mail: &application::ports::Mail) -> AppResult<()> {
+        Ok(())
+    }
+}
+
+/// Keeps every mail so tests can read the tokens out of them.
+#[derive(Default)]
+pub struct RecordingMail {
+    pub sent: std::sync::Mutex<Vec<application::ports::Mail>>,
+}
+
+impl RecordingMail {
+    /// The token in the latest mail to `to`: the text after `paste this code into Discordy: `.
+    pub fn latest_token(&self, to: &str) -> Option<String> {
+        let sent = self.sent.lock().unwrap();
+        let mail = sent.iter().rev().find(|mail| mail.to == to)?;
+        let marker = "paste this code into Discordy: ";
+        let start = mail.body.find(marker)? + marker.len();
+        Some(mail.body[start..].lines().next()?.trim().to_owned())
+    }
+
+    pub fn count_to(&self, to: &str) -> usize {
+        self.sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.to == to)
+            .count()
+    }
+}
+
+#[async_trait]
+impl application::ports::Mailer for RecordingMail {
+    async fn send(&self, mail: &application::ports::Mail) -> AppResult<()> {
+        self.sent.lock().unwrap().push(mail.clone());
+        Ok(())
+    }
+}
+
+/// Allows `budget` hits per key in total, then denies (no refill): enough to test lockouts.
+pub struct BudgetLimiter {
+    pub budget: u32,
+    hits: std::sync::Mutex<std::collections::HashMap<String, u32>>,
+}
+
+impl BudgetLimiter {
+    pub fn new(budget: u32) -> Self {
+        Self {
+            budget,
+            hits: Default::default(),
+        }
+    }
+}
+
+#[async_trait]
+impl application::ports::RateLimiter for BudgetLimiter {
+    async fn hit(
+        &self,
+        key: &str,
+        limit: u32,
+        window: Duration,
+    ) -> AppResult<application::ports::RateLimitDecision> {
+        let mut hits = self.hits.lock().unwrap();
+        let used = hits.entry(key.to_owned()).or_default();
+        *used += 1;
+        Ok(application::ports::RateLimitDecision {
+            allowed: *used <= self.budget,
+            limit,
+            remaining: 0,
+            reset_after: window,
+            retry_after: Duration::from_secs(60),
         })
     }
 }

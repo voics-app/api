@@ -4,6 +4,8 @@ use sqlx::FromRow;
 
 use application::ports::{UserRepository, UserStats};
 use application::AppResult;
+use domain::account::AccountState;
+use domain::mfa::BackupCodeRecord;
 use domain::notification::GuildNotificationSettings;
 use domain::user::{Credentials, PresenceStatus, Suspension, Theme, User, UserSettings};
 use domain::Snowflake;
@@ -133,18 +135,82 @@ impl UserRepository for PgStore {
     }
 
     async fn credentials(&self, user_id: Snowflake) -> AppResult<Option<Credentials>> {
-        let row: Option<(String, Option<String>)> = sqlx::query_as(
-            "SELECT password_hash, totp_secret FROM user_credentials WHERE user_id = $1",
+        let row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT password_hash, totp_secret, pending_totp_secret FROM user_credentials WHERE user_id = $1",
         )
         .bind(user_id.as_i64())
         .fetch_optional(&self.pool)
         .await
         .map_err(db)?;
-        Ok(row.map(|(password_hash, totp_secret)| Credentials {
-            user_id,
-            password_hash,
-            totp_secret,
-        }))
+        Ok(row.map(
+            |(password_hash, totp_secret, pending_totp_secret)| Credentials {
+                user_id,
+                password_hash,
+                totp_secret,
+                pending_totp_secret,
+            },
+        ))
+    }
+
+    async fn account_state(&self, user_id: Snowflake) -> AppResult<AccountState> {
+        let row: Option<(Option<DateTime<Utc>>, Option<DateTime<Utc>>)> =
+            sqlx::query_as("SELECT disabled_at, delete_after FROM users WHERE id = $1")
+                .bind(user_id.as_i64())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(row
+            .map(|(disabled_at, delete_after)| AccountState {
+                disabled_at,
+                delete_after,
+            })
+            .unwrap_or_default())
+    }
+
+    async fn backup_codes(&self, user_id: Snowflake) -> AppResult<Vec<BackupCodeRecord>> {
+        let rows: Vec<(i64, String, Option<DateTime<Utc>>)> = sqlx::query_as(
+            "SELECT id, code_hash, consumed_at FROM user_backup_codes WHERE user_id = $1 ORDER BY id",
+        )
+        .bind(user_id.as_i64())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, hash, consumed_at)| BackupCodeRecord {
+                id,
+                hash,
+                consumed: consumed_at.is_some(),
+            })
+            .collect())
+    }
+
+    async fn consume_backup_code(&self, id: i64, now: DateTime<Utc>) -> AppResult<bool> {
+        let result = sqlx::query(
+            "UPDATE user_backup_codes SET consumed_at = $2 WHERE id = $1 AND consumed_at IS NULL",
+        )
+        .bind(id)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn list_due_deletions(
+        &self,
+        now: DateTime<Utc>,
+        limit: u32,
+    ) -> AppResult<Vec<Snowflake>> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT id FROM users WHERE delete_after IS NOT NULL AND delete_after <= $1 ORDER BY delete_after LIMIT $2",
+        )
+        .bind(now)
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(|(id,)| sf(id)).collect())
     }
 
     async fn settings(&self, user_id: Snowflake) -> AppResult<UserSettings> {

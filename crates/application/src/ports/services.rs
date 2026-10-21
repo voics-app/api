@@ -63,6 +63,8 @@ pub trait SecretGenerator: Send + Sync {
     fn invite_code(&self) -> String;
     /// Deterministic one-way hash used to store tokens.
     fn hash(&self, secret: &str) -> String;
+    /// A fresh backup code in canonical form (see `domain::mfa`).
+    fn backup_code(&self) -> String;
     /// Hex-encoded Ed25519 public key for a new application (`verify_key`).
     fn verify_key(&self) -> String;
 }
@@ -112,4 +114,17 @@ pub struct RateLimitDecision {
 #[async_trait]
 pub trait RateLimiter: Send + Sync {
     async fn hit(&self, key: &str, limit: u32, window: Duration) -> AppResult<RateLimitDecision>;
+}
+
+/// A plain-text email.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mail {
+    pub to: String,
+    pub subject: String,
+    pub body: String,
+}
+
+#[async_trait]
+pub trait Mailer: Send + Sync {
+    async fn send(&self, mail: &Mail) -> AppResult<()>;
 }

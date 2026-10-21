@@ -11,5 +11,6 @@ pub mod ids;
 pub mod internal;
 pub mod invites;
 pub mod members;
+pub mod mfa;
 pub mod users;
 pub mod webhooks;

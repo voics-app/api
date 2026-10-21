@@ -5,9 +5,10 @@ use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 
+use application::use_cases::account::{delete, disable};
 use application::use_cases::relationships::{
     list_relationships, put_relationship, remove_relationship, send_friend_request,
 };
@@ -24,8 +25,8 @@ use contracts::objects::{
 };
 use contracts::requests::{
     CreateDmRequest, ModifyCurrentUserRequest, ModifyGuildNotificationSettingsRequest,
-    ModifyUserSettingsRequest, MuteConfigRequest, PutNoteRequest, PutRelationshipRequest,
-    SetDeliveryModeRequest,
+    ModifyUserSettingsRequest, MuteConfigRequest, PasswordConfirmationRequest, PutNoteRequest,
+    PutRelationshipRequest, SetDeliveryModeRequest,
 };
 use contracts::wire::Id;
 use domain::delivery_mode::DeliveryMode;
@@ -63,10 +64,31 @@ async fn update_me(
         username: body.username,
         global_name: body.global_name,
         avatar: images::patch(body.avatar)?,
+        password: body.password,
+        new_password: body.new_password,
+        email: body.email,
     };
     let user = update_current_user::execute(&state.ports, &actor, input).await?;
     let locale = state.ports.users.settings(user.id).await?.locale;
     Ok(Json(UserDto::private(&user, &locale)))
+}
+
+async fn disable_account(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Body(body): Body<PasswordConfirmationRequest>,
+) -> Result<StatusCode, ApiError> {
+    disable::execute(&state.ports, &actor, &body.password).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_account(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Body(body): Body<PasswordConfirmationRequest>,
+) -> Result<StatusCode, ApiError> {
+    delete::execute(&state.ports, &actor, &body.password).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn public_user(
@@ -340,6 +362,8 @@ pub fn routes() -> Router<AppState> {
                 .patch(update_me)
                 .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
         )
+        .route("/users/@me/disable", post(disable_account))
+        .route("/users/@me/delete", post(delete_account))
         .route(
             "/users/@me/settings",
             get(settings).patch(update_settings_handler),

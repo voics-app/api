@@ -19,6 +19,25 @@ pub struct ObjectStore {
     pub assets_bucket: String,
 }
 
+/// How account emails leave the api.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MailTransport {
+    /// Logged, not sent (local development, or production before SMTP exists).
+    Log,
+    Smtp(SmtpConfig),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    /// `starttls`, `tls` or `none`.
+    pub tls: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub from: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub environment: Environment,
@@ -44,6 +63,13 @@ pub struct Config {
     pub device_max_idle_days: u32,
     /// Seconds between two stale-device prune runs.
     pub device_prune_interval_secs: u64,
+    pub mail: MailTransport,
+    /// Prefix of the links in account emails.
+    pub app_link_base: String,
+    /// Days a deleted account stays recoverable by logging in.
+    pub account_deletion_retention_days: u32,
+    /// Seconds between two runs that anonymize accounts past retention.
+    pub account_purge_interval_secs: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -58,6 +84,38 @@ const WORKER_ID_MAX: u16 = 1023;
 const DEFAULT_CORS_ALLOWED_ORIGINS: &str = "null,http://localhost:5173";
 const DEFAULT_DEVICE_MAX_IDLE_DAYS: &str = "30";
 const DEFAULT_DEVICE_PRUNE_INTERVAL_SECS: &str = "3600";
+const DEFAULT_ACCOUNT_DELETION_DAYS: &str = "14";
+const DEFAULT_ACCOUNT_PURGE_INTERVAL_SECS: &str = "3600";
+const DEFAULT_SMTP_PORT: &str = "587";
+
+fn mail_transport(get: &impl Fn(&str) -> Option<String>) -> Result<MailTransport, ConfigError> {
+    match optional(get, "MAIL_TRANSPORT", "log").as_str() {
+        "log" => Ok(MailTransport::Log),
+        "smtp" => {
+            let tls = optional(get, "SMTP_TLS", "starttls");
+            if !["starttls", "tls", "none"].contains(&tls.as_str()) {
+                return Err(invalid("SMTP_TLS", "expected starttls, tls or none"));
+            }
+            let present = |name: &str| {
+                get(name)
+                    .map(|v| v.trim().to_owned())
+                    .filter(|v| !v.is_empty())
+            };
+            Ok(MailTransport::Smtp(SmtpConfig {
+                host: required(get, "SMTP_HOST")?,
+                port: positive(get, "SMTP_PORT", DEFAULT_SMTP_PORT)?,
+                tls,
+                username: present("SMTP_USERNAME"),
+                password: present("SMTP_PASSWORD"),
+                from: required(get, "MAIL_FROM")?,
+            }))
+        }
+        other => Err(invalid(
+            "MAIL_TRANSPORT",
+            format!("expected log or smtp, got {other}"),
+        )),
+    }
+}
 
 /// A strictly positive integer variable with a default.
 fn positive<T: std::str::FromStr + PartialOrd + From<u8>>(
@@ -194,6 +252,18 @@ impl Config {
                 &get,
                 "DEVICE_PRUNE_INTERVAL_SECS",
                 DEFAULT_DEVICE_PRUNE_INTERVAL_SECS,
+            )?,
+            mail: mail_transport(&get)?,
+            app_link_base: optional(&get, "APP_LINK_BASE", "discordy://"),
+            account_deletion_retention_days: positive(
+                &get,
+                "ACCOUNT_DELETION_RETENTION_DAYS",
+                DEFAULT_ACCOUNT_DELETION_DAYS,
+            )?,
+            account_purge_interval_secs: positive(
+                &get,
+                "ACCOUNT_PURGE_INTERVAL_SECS",
+                DEFAULT_ACCOUNT_PURGE_INTERVAL_SECS,
             )?,
         })
     }
@@ -345,6 +415,45 @@ mod tests {
                 "{name}={bad}"
             );
         }
+    }
+
+    #[test]
+    fn mail_defaults_to_the_log_transport() {
+        let config = Config::from_lookup(lookup(complete())).expect("valid");
+        assert_eq!(config.mail, MailTransport::Log);
+        assert_eq!(config.account_deletion_retention_days, 14);
+    }
+
+    #[test]
+    fn smtp_transport_needs_host_and_sender() {
+        let mut values = complete();
+        values.insert("MAIL_TRANSPORT", "smtp".to_owned());
+        assert_eq!(
+            Config::from_lookup(lookup(values.clone())),
+            Err(ConfigError::Missing("SMTP_HOST"))
+        );
+        values.insert("SMTP_HOST", "smtp.example.com".to_owned());
+        values.insert("MAIL_FROM", "Discordy <no-reply@example.com>".to_owned());
+        values.insert("SMTP_PASSWORD", "  ".to_owned());
+        let config = Config::from_lookup(lookup(values)).expect("valid");
+        let MailTransport::Smtp(smtp) = config.mail else {
+            panic!("smtp expected");
+        };
+        assert_eq!((smtp.port, smtp.tls.as_str()), (587, "starttls"));
+        assert_eq!(smtp.password, None);
+    }
+
+    #[test]
+    fn unknown_mail_transport_is_rejected() {
+        let mut values = complete();
+        values.insert("MAIL_TRANSPORT", "pigeon".to_owned());
+        assert!(matches!(
+            Config::from_lookup(lookup(values)),
+            Err(ConfigError::Invalid {
+                name: "MAIL_TRANSPORT",
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -29,6 +29,14 @@ impl SecretGenerator for OsSecrets {
             .collect()
     }
 
+    fn backup_code(&self) -> String {
+        const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
+        let mut rng = OsRng;
+        (0..domain::mfa::BACKUP_CODE_LENGTH)
+            .map(|_| char::from(ALPHABET[rng.gen_range(0..ALPHABET.len())]))
+            .collect()
+    }
+
     fn hash(&self, secret: &str) -> String {
         hex::encode(Sha256::digest(secret.as_bytes()))
     }
@@ -61,6 +69,12 @@ mod tests {
         let code = OsSecrets.invite_code();
         assert_eq!(code.len(), INVITE_CODE_LENGTH);
         assert!(code.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn backup_codes_are_canonical() {
+        let code = OsSecrets.backup_code();
+        assert_eq!(domain::mfa::normalize_backup_code(&code), Some(code));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+pub mod account;
 pub mod admin;
 pub mod applications;
 pub mod audit;
@@ -12,6 +13,7 @@ pub mod interactions;
 pub mod internal;
 pub mod invites;
 pub mod members;
+pub mod mfa;
 pub mod relationships;
 pub mod roles;
 pub mod users;
