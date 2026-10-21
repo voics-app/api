@@ -8,6 +8,6 @@ pub mod images;
 pub mod message_payload;
 pub mod relationships;
 pub mod sessions;
-pub mod throttle;
 pub mod system_messages;
+pub mod throttle;
 pub mod views;
