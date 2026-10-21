@@ -112,6 +112,11 @@ pub enum DomainEvent {
     /// One envelope per recipient, each excluding that recipient from `recipients`.
     PrivateChannelCreate(PrivateChannelView),
     PrivateChannelUpdate(PrivateChannelView),
+    /// CHANNEL_CREATE for one member only (someone was added to an existing group DM).
+    PrivateChannelCreateFor {
+        view: PrivateChannelView,
+        user_id: Snowflake,
+    },
     /// Sent to `user_id` when they leave a group DM.
     PrivateChannelDelete {
         channel: Channel,

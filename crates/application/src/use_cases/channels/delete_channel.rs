@@ -10,7 +10,8 @@ use crate::error::{AppError, AppResult};
 use crate::events::{ChannelView, DomainEvent};
 use crate::support::audit::AuditContext;
 use crate::support::channel_access::ChannelAccess;
-use crate::support::views::{private_view, require_user};
+use crate::support::views::private_view;
+use crate::use_cases::channels::remove_recipient;
 use crate::write_set::{Mutation, WriteSet};
 
 /// Deletes a guild channel or thread; for group DMs the caller leaves;
@@ -56,40 +57,9 @@ pub async fn execute(
     Ok(ChannelView::Guild(channel))
 }
 
-async fn leave_private(
-    ports: &Ports,
-    actor: &Actor,
-    mut channel: Channel,
-) -> AppResult<ChannelView> {
+async fn leave_private(ports: &Ports, actor: &Actor, channel: Channel) -> AppResult<ChannelView> {
     if channel.kind != ChannelType::GroupDm {
         return Ok(ChannelView::Private(private_view(ports, channel).await?));
     }
-    let leaver = require_user(ports, actor.user_id).await?;
-    channel.recipient_ids.retain(|id| *id != actor.user_id);
-    if channel.owner_id == Some(actor.user_id) {
-        channel.owner_id = channel.recipient_ids.first().copied();
-    }
-    let mut writes = WriteSet::new();
-    writes.emit(DomainEvent::PrivateChannelDelete {
-        channel: channel.clone(),
-        user_id: actor.user_id,
-    });
-    if channel.recipient_ids.is_empty() {
-        writes.mutate(Mutation::DeleteChannel(channel.id));
-    } else {
-        writes
-            .mutate(Mutation::UpdateChannel(channel.clone()))
-            .emit(DomainEvent::RecipientRemove {
-                channel_id: channel.id,
-                user: leaver,
-                notify: channel.recipient_ids.clone(),
-            });
-    }
-    writes.mutate(Mutation::SetDeliveryOverride {
-        user_id: actor.user_id,
-        channel_id: channel.id,
-        mode: None,
-    });
-    ports.unit_of_work.commit(writes).await?;
-    Ok(ChannelView::Private(private_view(ports, channel).await?))
+    remove_recipient::remove(ports, actor, channel, actor.user_id).await
 }

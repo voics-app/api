@@ -12,8 +12,9 @@ use application::use_cases::channels::create_thread::CreateThreadInput;
 use application::use_cases::channels::reorder_channels::ChannelPosition;
 use application::use_cases::channels::update_channel::UpdateChannelInput;
 use application::use_cases::channels::{
-    create_guild_channel, create_thread, delete_channel, delete_overwrite, get_channel,
-    list_guild_channels, put_overwrite, reorder_channels, trigger_typing, update_channel,
+    add_recipient, create_guild_channel, create_thread, delete_channel, delete_overwrite,
+    get_channel, list_guild_channels, put_overwrite, remove_recipient, reorder_channels,
+    trigger_typing, update_channel,
 };
 use application::{AppError, Resource};
 use contracts::objects::ChannelDto;
@@ -244,6 +245,41 @@ async fn remove(
     Ok(Json(view_dto(&view, actor.user_id)))
 }
 
+async fn add_group_recipient(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((channel, user)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    add_recipient::execute(
+        &state.ports,
+        &actor,
+        snowflake(&channel, Resource::Channel)?,
+        snowflake(&user, Resource::User)?,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_group_recipient(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((channel, user)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let target = if user == "@me" {
+        None
+    } else {
+        Some(snowflake(&user, Resource::User)?)
+    };
+    remove_recipient::execute(
+        &state.ports,
+        &actor,
+        snowflake(&channel, Resource::Channel)?,
+        target,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn put_permission(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -348,6 +384,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/channels/{id}/permissions/{overwrite_id}",
             put(put_permission).delete(remove_permission),
+        )
+        .route(
+            "/channels/{id}/recipients/{user_id}",
+            put(add_group_recipient).delete(remove_group_recipient),
         )
         .route("/channels/{id}/threads", post(thread))
         .route("/channels/{id}/typing", post(typing))
