@@ -307,6 +307,20 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
         DomainEvent::PrivateChannelCreate(view) => {
             private_channel(&mut emit, "CHANNEL_CREATE", view)
         }
+        DomainEvent::PrivateChannelCreateFor { view, user_id } => emit(
+            TOPIC_USER,
+            *user_id,
+            "CHANNEL_CREATE",
+            None,
+            Some(view.channel.id),
+            Some(vec![*user_id]),
+            to_value(ChannelDto::private(
+                &view.channel,
+                &view.recipients,
+                view.delivery_mode,
+                Some(*user_id),
+            )),
+        ),
         DomainEvent::PrivateChannelUpdate(view) => {
             private_channel(&mut emit, "CHANNEL_UPDATE", view)
         }
