@@ -63,6 +63,7 @@ async fn guild_lifecycle_round_trips_through_postgres() {
         ))
         .with_env_var("POSTGRES_PASSWORD", "postgres")
         .with_env_var("POSTGRES_DB", "discordy")
+        .with_startup_timeout(Duration::from_secs(300))
         .start()
         .await
         .expect("start postgres container");

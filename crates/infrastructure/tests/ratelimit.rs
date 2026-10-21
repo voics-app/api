@@ -10,7 +10,7 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use testcontainers::core::{ContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
-use testcontainers::GenericImage;
+use testcontainers::{GenericImage, ImageExt};
 use tower::ServiceExt;
 
 use application::ports::RateLimiter;
@@ -22,6 +22,7 @@ async fn start_valkey() -> (testcontainers::ContainerAsync<GenericImage>, String
     let container = GenericImage::new("valkey/valkey", "8-alpine")
         .with_exposed_port(ContainerPort::Tcp(6379))
         .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .with_startup_timeout(Duration::from_secs(300))
         .start()
         .await
         .expect("start valkey");
