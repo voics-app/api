@@ -13,6 +13,7 @@ use crate::support::audit::AuditContext;
 use crate::support::channel_access::ChannelAccess;
 use crate::support::guild_context::GuildContext;
 use crate::support::images::{store_hashed, ImageUpload};
+use crate::support::system_messages;
 use crate::support::views::private_view;
 use crate::use_cases::channels::channel_rules::*;
 use crate::write_set::{Mutation, WriteSet};
@@ -46,7 +47,7 @@ pub async fn execute(
 ) -> AppResult<ChannelView> {
     let access = ChannelAccess::visible(ports, channel_id, actor.user_id).await?;
     match access.guild {
-        None => update_group_dm(ports, access.channel, input).await,
+        None => update_group_dm(ports, actor, access.channel, input).await,
         Some(ref ctx) if access.channel.kind.is_thread() => {
             update_thread(ports, actor, ctx, &access, input, audit).await
         }
@@ -56,12 +57,14 @@ pub async fn execute(
 
 async fn update_group_dm(
     ports: &Ports,
+    actor: &Actor,
     mut channel: Channel,
     input: UpdateChannelInput,
 ) -> AppResult<ChannelView> {
     if channel.kind != ChannelType::GroupDm {
         return Err(AppError::missing_permissions());
     }
+    let before = channel.clone();
     if let Some(name) = input.name {
         apply_name(&mut channel, &name)?;
     }
@@ -76,9 +79,33 @@ async fn update_group_dm(
     let view = private_view(ports, channel.clone()).await?;
     let mut writes = WriteSet::new();
     writes
-        .mutate(Mutation::UpdateChannel(channel))
+        .mutate(Mutation::UpdateChannel(channel.clone()))
         .emit(DomainEvent::PrivateChannelUpdate(view.clone()));
     ports.unit_of_work.commit(writes).await?;
+    if channel.name != before.name {
+        system_messages::post(
+            ports,
+            view.delivery_mode,
+            channel.id,
+            actor.user_id,
+            system_messages::CHANNEL_NAME_CHANGE,
+            None,
+            channel.name.as_deref(),
+        )
+        .await;
+    }
+    if channel.icon != before.icon {
+        system_messages::post(
+            ports,
+            view.delivery_mode,
+            channel.id,
+            actor.user_id,
+            system_messages::CHANNEL_ICON_CHANGE,
+            None,
+            None,
+        )
+        .await;
+    }
     Ok(ChannelView::Private(view))
 }
 

@@ -46,9 +46,13 @@ pub enum Denial {
 pub enum AppError {
     #[error("unauthorized")]
     Unauthorized,
-    /// Login needs a TOTP code (Discord 60008 "MFA required").
+    /// Login needs a second factor (Discord 60008 "MFA required"); `ticket`
+    /// completes it through `POST /auth/mfa/totp`.
     #[error("two-factor code required")]
-    MfaRequired,
+    MfaRequired { ticket: String },
+    /// Too many attempts; retry after the given number of seconds.
+    #[error("rate limited")]
+    RateLimited { retry_after_secs: u64 },
     #[error("access denied: {0:?}")]
     Forbidden(Denial),
     #[error("unknown {0:?}")]

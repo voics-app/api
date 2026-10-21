@@ -61,6 +61,7 @@ async fn relay_publishes_committed_envelopes_to_redpanda() {
             "--advertise-kafka-addr",
             advertised.as_str(),
         ])
+        .with_startup_timeout(Duration::from_secs(300))
         .start()
         .await
         .expect("start redpanda");

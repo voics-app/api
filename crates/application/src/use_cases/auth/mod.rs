@@ -1,8 +1,11 @@
 pub mod authenticate;
-pub mod disable_totp;
-pub mod enable_totp;
+pub mod forgot_password;
 pub mod login;
+pub mod login_mfa;
 pub mod logout;
 pub mod refresh;
 pub mod register;
+pub mod resend_verification;
+pub mod reset_password;
 pub mod tokens;
+pub mod verify_email;

@@ -62,11 +62,12 @@ pub(super) async fn insert_credentials(
     credentials: &Credentials,
 ) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO user_credentials (user_id, password_hash, totp_secret) VALUES ($1, $2, $3)",
+        "INSERT INTO user_credentials (user_id, password_hash, totp_secret, pending_totp_secret) VALUES ($1, $2, $3, $4)",
     )
     .bind(credentials.user_id.as_i64())
     .bind(&credentials.password_hash)
     .bind(&credentials.totp_secret)
+    .bind(&credentials.pending_totp_secret)
     .execute(conn)
     .await
     .map_err(db)?;
@@ -78,12 +79,21 @@ pub(super) async fn set_totp_secret(
     user_id: Snowflake,
     secret: Option<&str>,
 ) -> AppResult<()> {
-    sqlx::query("UPDATE user_credentials SET totp_secret = $2 WHERE user_id = $1")
-        .bind(user_id.as_i64())
-        .bind(secret)
-        .execute(&mut *conn)
-        .await
-        .map_err(db)?;
+    sqlx::query(
+        "UPDATE user_credentials SET totp_secret = $2, pending_totp_secret = NULL WHERE user_id = $1",
+    )
+    .bind(user_id.as_i64())
+    .bind(secret)
+    .execute(&mut *conn)
+    .await
+    .map_err(db)?;
+    if secret.is_none() {
+        sqlx::query("DELETE FROM user_backup_codes WHERE user_id = $1")
+            .bind(user_id.as_i64())
+            .execute(&mut *conn)
+            .await
+            .map_err(db)?;
+    }
     sqlx::query("UPDATE users SET mfa_enabled = $2 WHERE id = $1")
         .bind(user_id.as_i64())
         .bind(secret.is_some())
@@ -346,6 +356,95 @@ pub(super) async fn set_delivery_override(
             .await
             .map_err(db)?;
         }
+    }
+    Ok(())
+}
+
+pub(super) async fn set_password_hash(
+    conn: &mut PgConnection,
+    user_id: Snowflake,
+    hash: &str,
+) -> AppResult<()> {
+    sqlx::query("UPDATE user_credentials SET password_hash = $2 WHERE user_id = $1")
+        .bind(user_id.as_i64())
+        .bind(hash)
+        .execute(conn)
+        .await
+        .map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn set_pending_totp(
+    conn: &mut PgConnection,
+    user_id: Snowflake,
+    secret: Option<&str>,
+) -> AppResult<()> {
+    sqlx::query("UPDATE user_credentials SET pending_totp_secret = $2 WHERE user_id = $1")
+        .bind(user_id.as_i64())
+        .bind(secret)
+        .execute(conn)
+        .await
+        .map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn replace_backup_codes(
+    conn: &mut PgConnection,
+    user_id: Snowflake,
+    hashes: &[String],
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM user_backup_codes WHERE user_id = $1")
+        .bind(user_id.as_i64())
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
+    for hash in hashes {
+        sqlx::query("INSERT INTO user_backup_codes (user_id, code_hash) VALUES ($1, $2)")
+            .bind(user_id.as_i64())
+            .bind(hash)
+            .execute(&mut *conn)
+            .await
+            .map_err(db)?;
+    }
+    Ok(())
+}
+
+pub(super) async fn set_account_state(
+    conn: &mut PgConnection,
+    user_id: Snowflake,
+    state: &domain::account::AccountState,
+) -> AppResult<()> {
+    sqlx::query("UPDATE users SET disabled_at = $2, delete_after = $3 WHERE id = $1")
+        .bind(user_id.as_i64())
+        .bind(state.disabled_at)
+        .bind(state.delete_after)
+        .execute(conn)
+        .await
+        .map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn anonymize_user(
+    conn: &mut PgConnection,
+    user_id: Snowflake,
+    username: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE users SET username = $2, email = NULL, global_name = NULL, avatar = NULL, \
+             verified = FALSE, mfa_enabled = FALSE, delete_after = NULL, \
+             disabled_at = COALESCE(disabled_at, now()) WHERE id = $1",
+    )
+    .bind(user_id.as_i64())
+    .bind(username)
+    .execute(&mut *conn)
+    .await
+    .map_err(db)?;
+    for table in ["user_credentials", "user_backup_codes", "account_tokens"] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE user_id = $1"))
+            .bind(user_id.as_i64())
+            .execute(&mut *conn)
+            .await
+            .map_err(db)?;
     }
     Ok(())
 }

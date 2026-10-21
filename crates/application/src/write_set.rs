@@ -3,6 +3,7 @@
 
 use chrono::{DateTime, Utc};
 
+use domain::account::AccountState;
 use domain::application::{
     Application, ApplicationCommand, Interaction, InteractionState, Webhook,
 };
@@ -28,9 +29,35 @@ pub enum Mutation {
         settings: UserSettings,
     },
     UpdateUser(User),
+    /// Activates (`Some`) or removes (`None`) TOTP, clearing any pending
+    /// secret; removal also deletes the backup codes.
     SetTotpSecret {
         user_id: Snowflake,
         secret: Option<String>,
+    },
+    /// Replaces the password hash.
+    SetPasswordHash {
+        user_id: Snowflake,
+        hash: String,
+    },
+    /// Stores or clears the unconfirmed TOTP secret of an enrolment.
+    SetPendingTotp {
+        user_id: Snowflake,
+        secret: Option<String>,
+    },
+    /// Replaces every backup code with these hashes.
+    ReplaceBackupCodes {
+        user_id: Snowflake,
+        hashes: Vec<String>,
+    },
+    SetAccountState {
+        user_id: Snowflake,
+        state: AccountState,
+    },
+    /// Final step of account deletion: strips personal data and credentials.
+    AnonymizeUser {
+        user_id: Snowflake,
+        username: String,
     },
     SuspendUser {
         user_id: Snowflake,

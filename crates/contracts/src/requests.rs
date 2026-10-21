@@ -30,15 +30,49 @@ pub struct RefreshRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct EnableTotpRequest {
-    pub secret: String,
+pub struct MfaLoginRequest {
+    pub ticket: String,
     pub code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub token: String,
     pub password: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DisableTotpRequest {
+pub struct VerifyEmailRequest {
+    pub token: String,
+}
+
+/// Disable, delete and TOTP enrolment: the current password re-authenticates.
+#[derive(Debug, Deserialize)]
+pub struct PasswordConfirmationRequest {
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyTotpRequest {
     pub code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DisableTotpRequest {
+    pub password: String,
+    pub code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BackupCodesVerificationRequest {
+    pub password: String,
+    #[serde(default)]
+    pub regenerate: bool,
 }
 
 // --- devices ---------------------------------------------------------------
@@ -64,6 +98,13 @@ pub struct ModifyCurrentUserRequest {
     pub global_name: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub avatar: Option<Option<String>>,
+    /// Current password; required with `username`, `email` or `new_password`.
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub new_password: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
