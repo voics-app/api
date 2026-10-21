@@ -9,7 +9,6 @@ use std::sync::Arc;
 use axum::http::{Method, StatusCode};
 use serde_json::{json, Value};
 
-use application::ports::UserRepository;
 use application::use_cases::account::purge_deleted;
 use application::Ports;
 use interface::state::{AppState, RatePolicy};
