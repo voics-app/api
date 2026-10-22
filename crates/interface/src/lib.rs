@@ -4,6 +4,7 @@
 pub mod cors;
 pub mod error;
 pub mod extract;
+pub mod http_metrics;
 pub mod images;
 pub mod ratelimit;
 pub mod routes;
@@ -36,4 +37,5 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::internal::routes())
         .nest("/api/v1", public)
         .with_state(state)
+        .layer(axum::middleware::from_fn(http_metrics::record))
 }
