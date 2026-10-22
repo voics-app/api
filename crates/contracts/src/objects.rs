@@ -251,6 +251,20 @@ impl RelationshipDto {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct MutualGuildDto {
+    pub id: Id,
+    pub nick: Option<String>,
+}
+
+/// `GET /users/{id}/profile`.
+#[derive(Debug, Clone, Serialize)]
+pub struct UserProfileDto {
+    pub user: UserDto,
+    pub mutual_guilds: Vec<MutualGuildDto>,
+    pub mutual_friends: Vec<UserDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DeviceDto {
     pub device_id: Id,
     pub identity_key_b64: String,

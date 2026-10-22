@@ -1,6 +1,7 @@
 pub mod get_current_user;
 pub mod get_guild_notification_settings;
 pub mod get_note;
+pub mod get_profile;
 pub mod get_settings;
 pub mod get_user;
 pub mod list_private_channels;
