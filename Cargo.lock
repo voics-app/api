@@ -1652,6 +1652,8 @@ dependencies = [
  "contracts",
  "domain",
  "hex",
+ "metrics",
+ "metrics-exporter-prometheus",
  "serde",
  "serde_json",
  "sha2 0.10.9",
