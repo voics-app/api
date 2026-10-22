@@ -20,6 +20,7 @@ use infrastructure::events::relay::OutboxRelay;
 use infrastructure::mail::{LogMailer, SmtpMailer, SmtpSettings, SmtpTls};
 use infrastructure::messages_client::HttpMessages;
 use infrastructure::postgres::{connect, migrate, PgStore, PgUnitOfWork};
+use infrastructure::presence::ValkeyPresence;
 use infrastructure::ratelimit::ValkeyRateLimiter;
 use infrastructure::security::jwt::Ed25519Tokens;
 use infrastructure::security::password::Argon2Passwords;
@@ -109,6 +110,7 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
             config.jwt_public_pem.as_bytes(),
         )?),
         clock: Arc::new(SystemClock),
+        presence: Arc::new(ValkeyPresence::connect(&config.valkey_url).await?),
         ids: Arc::new(SnowflakeIds::new(config.worker_id)?),
         secrets: Arc::new(OsSecrets),
         totp: Arc::new(Rfc6238),

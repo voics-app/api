@@ -206,9 +206,21 @@ pub fn ports_with_messages(
         totp: Arc::new(Rfc6238),
         mailer: Arc::new(DiscardMail),
         limiter: Arc::new(AllowAll),
+        presence: Arc::new(NoPresence),
         assets: Arc::new(MemoryAssets::default()),
         messages,
         settings: Settings::default(),
+    }
+}
+
+/// Presence directory that reports nobody online.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoPresence;
+
+#[async_trait]
+impl application::ports::PresenceDirectory for NoPresence {
+    async fn online_count(&self, _user_ids: &[domain::Snowflake]) -> AppResult<u64> {
+        Ok(0)
     }
 }
 

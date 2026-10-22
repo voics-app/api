@@ -111,6 +111,13 @@ pub struct RateLimitDecision {
     pub retry_after: Duration,
 }
 
+/// Live presence, owned by the gateway. Read-only here: the api only counts.
+#[async_trait]
+pub trait PresenceDirectory: Send + Sync {
+    /// How many of `user_ids` are currently online (any status but offline/invisible).
+    async fn online_count(&self, user_ids: &[Snowflake]) -> AppResult<u64>;
+}
+
 #[async_trait]
 pub trait RateLimiter: Send + Sync {
     async fn hit(&self, key: &str, limit: u32, window: Duration) -> AppResult<RateLimitDecision>;

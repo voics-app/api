@@ -27,6 +27,7 @@ fn to_dto(view: &InviteView) -> InviteDto {
         &view.channel,
         view.inviter.as_ref(),
         view.member_count,
+        view.presence_count,
     )
 }
 
