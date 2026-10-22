@@ -167,6 +167,27 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
                 "channel_id": channel_id.map(|id| id.to_string()),
             }),
         ),
+        DomainEvent::BanMessagePurge {
+            guild_id,
+            user_id,
+            channel_ids,
+            since_ms,
+            delete_message_seconds,
+        } => emit(
+            TOPIC_GUILD,
+            *guild_id,
+            "BAN_MESSAGE_PURGE",
+            Some(*guild_id),
+            None,
+            None,
+            json!({
+                "guild_id": guild_id.to_string(),
+                "user_id": user_id.to_string(),
+                "channel_ids": channel_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                "since_ms": since_ms,
+                "delete_message_seconds": delete_message_seconds,
+            }),
+        ),
         DomainEvent::BanAdd { guild_id, user } => emit(
             TOPIC_GUILD,
             *guild_id,

@@ -1,5 +1,6 @@
 //! Members, roles and bans of a guild (P9).
 
+use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};
@@ -16,9 +17,11 @@ use application::use_cases::roles::create_role::RoleInput;
 use application::use_cases::roles::{
     create_role, delete_role, list_roles, reorder_roles, update_role,
 };
-use application::Resource;
+use application::{AppError, Resource};
 use contracts::objects::{BanDto, MemberDto, RoleDto};
-use contracts::requests::{ModifyMemberRequest, RolePositionRequest, RoleRequest};
+use contracts::requests::{
+    CreateBanRequest, ModifyMemberRequest, RolePositionRequest, RoleRequest,
+};
 use contracts::wire::Id;
 
 use crate::error::ApiError;
@@ -304,7 +307,15 @@ async fn ban(
     Caller(actor): Caller,
     AuditReason(reason): AuditReason,
     Path((guild, user)): Path<(String, String)>,
+    body: Bytes,
 ) -> Result<StatusCode, ApiError> {
+    let delete_message_seconds = if body.is_empty() {
+        None
+    } else {
+        serde_json::from_slice::<CreateBanRequest>(&body)
+            .map_err(|error| AppError::invalid("body", "INVALID_BODY", error.to_string()))?
+            .delete_message_seconds
+    };
     let audit = AuditContext {
         actor_id: actor.user_id,
         reason: reason.as_deref(),
@@ -314,6 +325,7 @@ async fn ban(
         &actor,
         snowflake(&guild, Resource::Guild)?,
         snowflake(&user, Resource::User)?,
+        delete_message_seconds,
         audit,
     )
     .await?;
