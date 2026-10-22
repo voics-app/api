@@ -87,6 +87,7 @@ impl<S: tracing::Subscriber> Layer<S> for DbLatency {
         if let Some(seconds) = visitor.elapsed_secs {
             metrics::histogram!(
                 "db_query_duration_seconds",
+                "db" => "postgres",
                 "operation" => sql_operation(visitor.summary.as_deref().unwrap_or(""))
             )
             .record(seconds);
@@ -165,11 +166,13 @@ mod tests {
         });
         let text = handle.render();
         assert!(
-            text.contains("db_query_duration_seconds_bucket{operation=\"select\""),
+            text.contains("db_query_duration_seconds_bucket{db=\"postgres\",operation=\"select\""),
             "{text}"
         );
         assert!(
-            text.contains("db_query_duration_seconds_count{operation=\"select\"} 1"),
+            text.contains(
+                "db_query_duration_seconds_count{db=\"postgres\",operation=\"select\"} 1"
+            ),
             "{text}"
         );
     }
