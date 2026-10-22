@@ -4,6 +4,7 @@
 use serde_json::{Map, Value};
 
 const ACCENTS: [&str; 6] = ["iris", "aurora", "ember", "rose", "citrine", "sky"];
+const ROLE_COLORS: [&str; 3] = ["name", "dot", "hidden"];
 const MAX_SOUND_TOGGLES: usize = 64;
 const MAX_RECENT_REACTIONS: usize = 32;
 
@@ -56,8 +57,18 @@ fn validate(key: &str, value: &Value) -> Result<(), PreferenceError> {
         | "show_avatars_in_compact"
         | "link_previews"
         | "notify_only_mentions"
-        | "notify_sounds" => value.is_boolean(),
+        | "notify_sounds"
+        | "link_underline"
+        | "high_contrast"
+        | "animate_gifs"
+        | "animate_emoji"
+        | "animate_stickers"
+        | "tts_read_aloud" => value.is_boolean(),
         "font_scale" => value.as_f64().is_some_and(|n| (0.75..=1.5).contains(&n)),
+        "saturation" => value.as_f64().is_some_and(|n| (0.0..=1.0).contains(&n)),
+        "tts_rate" => value.as_f64().is_some_and(|n| (0.5..=2.0).contains(&n)),
+        "message_spacing" => value.as_u64().is_some_and(|n| n <= 32),
+        "role_colors" => value.as_str().is_some_and(|s| ROLE_COLORS.contains(&s)),
         "sound_toggles" => value.as_object().is_some_and(|o| {
             o.len() <= MAX_SOUND_TOGGLES
                 && o.iter()
@@ -119,6 +130,12 @@ mod tests {
             json!({"accent": "teal"}),
             json!({"font_scale": 3}),
             json!({"reduce_motion": "yes"}),
+            json!({"saturation": 1.5}),
+            json!({"tts_rate": 0.1}),
+            json!({"message_spacing": 40}),
+            json!({"message_spacing": 1.5}),
+            json!({"role_colors": "bold"}),
+            json!({"high_contrast": 1}),
             json!({"sound_toggles": {"a": 1}}),
             json!({"recent_reactions": [{"id": "x", "name": "a"}]}),
             json!({"recent_reactions": [{"id": null, "name": "a", "extra": 1}]}),
@@ -126,6 +143,16 @@ mod tests {
         ] {
             assert!(merge(&empty, &bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn accepts_appearance_and_accessibility_prefs() {
+        let ok = json!({
+            "saturation": 0.5, "role_colors": "dot", "link_underline": true, "message_spacing": 8,
+            "high_contrast": false, "animate_gifs": false, "animate_emoji": true,
+            "animate_stickers": false, "tts_read_aloud": true, "tts_rate": 1.5
+        });
+        assert!(merge(&Preferences::new(), &ok).is_ok());
     }
 
     #[test]
