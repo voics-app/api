@@ -134,6 +134,20 @@ async fn update_settings_handler(
         custom_status: custom_status(body.custom_status),
         developer_mode: body.developer_mode,
         accent_color: body.accent_color,
+        guild_folders: body.guild_folders.map(|folders| {
+            folders
+                .into_iter()
+                .map(|f| domain::user::GuildFolder {
+                    id: f.id,
+                    name: f.name,
+                    color: f.color,
+                    guild_ids: f.guild_ids.into_iter().map(|id| id.0).collect(),
+                })
+                .collect()
+        }),
+        guild_positions: body
+            .guild_positions
+            .map(|ids| ids.into_iter().map(|id| id.0).collect()),
     };
     let stored = update_settings::execute(&state.ports, &actor, input).await?;
     Ok(Json(UserSettingsDto::from(&stored)))
