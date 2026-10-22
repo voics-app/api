@@ -19,6 +19,9 @@ pub struct UpdateSettingsInput {
     pub accent_color: Option<Option<u32>>,
     pub guild_folders: Option<Vec<GuildFolder>>,
     pub guild_positions: Option<Vec<Snowflake>>,
+    pub message_display_compact: Option<bool>,
+    /// Partial preferences object, merged key by key.
+    pub preferences: Option<serde_json::Value>,
 }
 
 const MAX_RAIL_ENTRIES: usize = 200;
@@ -131,6 +134,19 @@ pub async fn execute(
             ));
         }
         settings.guild_positions = positions;
+    }
+    if let Some(compact) = input.message_display_compact {
+        settings.message_display_compact = compact;
+    }
+    if let Some(patch) = input.preferences {
+        settings.preferences = domain::user_preferences::merge(&settings.preferences, &patch)
+            .map_err(|e| {
+                AppError::invalid(
+                    &format!("preferences.{}", e.key),
+                    "BASE_TYPE_CHOICES",
+                    e.message,
+                )
+            })?;
     }
     let mut writes = WriteSet::new();
     writes
