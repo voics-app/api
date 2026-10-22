@@ -117,6 +117,17 @@ pub struct CustomStatusRequest {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GuildFolderRequest {
+    #[serde(default)]
+    pub id: Option<i64>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub color: Option<u32>,
+    pub guild_ids: Vec<Id>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyUserSettingsRequest {
     #[serde(default)]
@@ -135,6 +146,10 @@ pub struct ModifyUserSettingsRequest {
     pub developer_mode: Option<bool>,
     #[serde(default, deserialize_with = "double_option")]
     pub accent_color: Option<Option<u32>>,
+    #[serde(default)]
+    pub guild_folders: Option<Vec<GuildFolderRequest>>,
+    #[serde(default)]
+    pub guild_positions: Option<Vec<Id>>,
 }
 
 #[derive(Debug, Default, Deserialize)]

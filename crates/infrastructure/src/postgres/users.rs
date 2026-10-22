@@ -71,6 +71,8 @@ struct SettingsRow {
     custom_status: Option<serde_json::Value>,
     developer_mode: bool,
     accent_color: Option<i32>,
+    guild_folders: serde_json::Value,
+    guild_positions: Vec<i64>,
 }
 
 impl From<SettingsRow> for UserSettings {
@@ -85,12 +87,14 @@ impl From<SettingsRow> for UserSettings {
             custom_status: row.custom_status.and_then(custom_status_from_json),
             developer_mode: row.developer_mode,
             accent_color: row.accent_color.map(|c| c as u32),
+            guild_folders: super::convert::guild_folders_from_json(&row.guild_folders),
+            guild_positions: row.guild_positions.into_iter().map(sf).collect(),
         }
     }
 }
 
 const SETTINGS_COLUMNS: &str =
-    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color";
+    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions";
 
 #[async_trait]
 impl UserRepository for PgStore {

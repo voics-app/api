@@ -117,6 +117,15 @@ pub struct CustomStatus {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+/// One entry of the user's server rail; `id: None` is a single un-foldered server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GuildFolder {
+    pub id: Option<i64>,
+    pub name: Option<String>,
+    pub color: Option<u32>,
+    pub guild_ids: Vec<Snowflake>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserSettings {
     pub user_id: Snowflake,
@@ -128,6 +137,8 @@ pub struct UserSettings {
     pub custom_status: Option<CustomStatus>,
     pub developer_mode: bool,
     pub accent_color: Option<u32>,
+    pub guild_folders: Vec<GuildFolder>,
+    pub guild_positions: Vec<Snowflake>,
 }
 
 impl UserSettings {
@@ -142,6 +153,8 @@ impl UserSettings {
             custom_status: None,
             developer_mode: false,
             accent_color: None,
+            guild_folders: Vec::new(),
+            guild_positions: Vec::new(),
         }
     }
 }

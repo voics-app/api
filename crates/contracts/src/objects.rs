@@ -104,6 +104,14 @@ impl From<&CustomStatus> for CustomStatusDto {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct GuildFolderDto {
+    pub id: Option<i64>,
+    pub name: Option<String>,
+    pub color: Option<u32>,
+    pub guild_ids: Vec<Id>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct UserSettingsDto {
     pub locale: String,
     pub theme: &'static str,
@@ -114,6 +122,8 @@ pub struct UserSettingsDto {
     pub developer_mode: bool,
     pub message_display_compact: bool,
     pub accent_color: Option<u32>,
+    pub guild_folders: Vec<GuildFolderDto>,
+    pub guild_positions: Vec<Id>,
 }
 
 impl From<&UserSettings> for UserSettingsDto {
@@ -128,6 +138,22 @@ impl From<&UserSettings> for UserSettingsDto {
             developer_mode: settings.developer_mode,
             message_display_compact: false,
             accent_color: settings.accent_color,
+            guild_folders: settings
+                .guild_folders
+                .iter()
+                .map(|f| GuildFolderDto {
+                    id: f.id,
+                    name: f.name.clone(),
+                    color: f.color,
+                    guild_ids: f.guild_ids.iter().copied().map(Id::from).collect(),
+                })
+                .collect(),
+            guild_positions: settings
+                .guild_positions
+                .iter()
+                .copied()
+                .map(Id::from)
+                .collect(),
         }
     }
 }

@@ -109,12 +109,13 @@ pub(super) async fn upsert_settings(
 ) -> AppResult<()> {
     sqlx::query(
         "INSERT INTO user_settings (user_id, default_delivery_mode, e2ee_calls_default, theme, locale, \
-             status, custom_status, developer_mode, accent_color) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+             status, custom_status, developer_mode, accent_color, guild_folders, guild_positions) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
          ON CONFLICT (user_id) DO UPDATE SET default_delivery_mode = EXCLUDED.default_delivery_mode, \
              e2ee_calls_default = EXCLUDED.e2ee_calls_default, theme = EXCLUDED.theme, locale = EXCLUDED.locale, status = EXCLUDED.status, \
              custom_status = EXCLUDED.custom_status, developer_mode = EXCLUDED.developer_mode, \
-             accent_color = EXCLUDED.accent_color",
+             accent_color = EXCLUDED.accent_color, guild_folders = EXCLUDED.guild_folders, \
+             guild_positions = EXCLUDED.guild_positions",
     )
     .bind(settings.user_id.as_i64())
     .bind(settings.default_delivery_mode.as_str())
@@ -125,6 +126,14 @@ pub(super) async fn upsert_settings(
     .bind(settings.custom_status.as_ref().map(custom_status_json))
     .bind(settings.developer_mode)
     .bind(settings.accent_color.map(|c| c as i32))
+    .bind(super::super::convert::guild_folders_json(&settings.guild_folders))
+    .bind(
+        settings
+            .guild_positions
+            .iter()
+            .map(|id| id.as_i64())
+            .collect::<Vec<_>>(),
+    )
     .execute(conn)
     .await
     .map_err(db)?;
