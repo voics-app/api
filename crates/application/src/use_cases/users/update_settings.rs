@@ -1,5 +1,6 @@
 use domain::delivery_mode::DeliveryMode;
-use domain::user::{CustomStatus, PresenceStatus, Theme, UserSettings};
+use domain::snowflake::Snowflake;
+use domain::user::{CustomStatus, GuildFolder, PresenceStatus, Theme, UserSettings};
 
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult};
@@ -16,6 +17,45 @@ pub struct UpdateSettingsInput {
     pub custom_status: Option<Option<CustomStatus>>,
     pub developer_mode: Option<bool>,
     pub accent_color: Option<Option<u32>>,
+    pub guild_folders: Option<Vec<GuildFolder>>,
+    pub guild_positions: Option<Vec<Snowflake>>,
+}
+
+const MAX_RAIL_ENTRIES: usize = 200;
+const MAX_FOLDER_NAME: usize = 32;
+
+fn validate_folders(folders: &[GuildFolder]) -> AppResult<()> {
+    let bad =
+        |message: &'static str| AppError::invalid("guild_folders", "BASE_TYPE_BAD_LENGTH", message);
+    if folders.len() > MAX_RAIL_ENTRIES {
+        return Err(bad("Too many folders."));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut folder_ids = std::collections::HashSet::new();
+    for folder in folders {
+        if folder.guild_ids.is_empty() || folder.guild_ids.len() > MAX_RAIL_ENTRIES {
+            return Err(bad("A folder holds between 1 and 200 servers."));
+        }
+        if folder.id.is_none() && folder.guild_ids.len() != 1 {
+            return Err(bad("An entry without an id holds exactly one server."));
+        }
+        if folder
+            .name
+            .as_ref()
+            .is_some_and(|n| n.chars().count() > MAX_FOLDER_NAME)
+        {
+            return Err(bad("Folder name must be at most 32 characters."));
+        }
+        if folder.id.is_some_and(|id| !folder_ids.insert(id)) {
+            return Err(bad("Duplicate folder id."));
+        }
+        for guild in &folder.guild_ids {
+            if !seen.insert(*guild) {
+                return Err(bad("A server can only be in one place."));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub async fn execute(
@@ -74,6 +114,23 @@ pub async fn execute(
     }
     if let Some(accent_color) = input.accent_color {
         settings.accent_color = accent_color.map(|c| c & 0x00FF_FFFF);
+    }
+    if let Some(mut folders) = input.guild_folders {
+        validate_folders(&folders)?;
+        for folder in &mut folders {
+            folder.color = folder.color.map(|c| c & 0x00FF_FFFF);
+        }
+        settings.guild_folders = folders;
+    }
+    if let Some(positions) = input.guild_positions {
+        if positions.len() > MAX_RAIL_ENTRIES {
+            return Err(AppError::invalid(
+                "guild_positions",
+                "BASE_TYPE_BAD_LENGTH",
+                "Too many servers.",
+            ));
+        }
+        settings.guild_positions = positions;
     }
     let mut writes = WriteSet::new();
     writes

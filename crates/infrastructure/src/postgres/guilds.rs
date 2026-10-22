@@ -252,6 +252,21 @@ impl GuildRepository for PgStore {
         Ok(rows.into_iter().map(Member::from).collect())
     }
 
+    async fn member_ids(&self, guild_id: Snowflake, limit: u32) -> AppResult<Vec<Snowflake>> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT user_id FROM members WHERE guild_id = $1 ORDER BY user_id LIMIT $2",
+        )
+        .bind(guild_id.as_i64())
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id,)| Snowflake::from_i64(id))
+            .collect())
+    }
+
     async fn member_count(&self, guild_id: Snowflake) -> AppResult<u64> {
         let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM members WHERE guild_id = $1")
             .bind(guild_id.as_i64())

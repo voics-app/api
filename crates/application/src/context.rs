@@ -84,6 +84,7 @@ pub struct Ports {
     /// Per-user and per-address throttles inside use cases (second-factor
     /// attempts, outbound mail); the HTTP layer keeps its own limiter.
     pub limiter: Arc<dyn RateLimiter>,
+    pub presence: Arc<dyn PresenceDirectory>,
     pub assets: Arc<dyn AssetStorage>,
     pub messages: Arc<dyn MessageService>,
     pub settings: Settings,

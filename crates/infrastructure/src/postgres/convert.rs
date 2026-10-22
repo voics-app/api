@@ -108,6 +108,48 @@ pub fn thread_metadata_from_json(value: Value) -> Option<ThreadMetadata> {
     })
 }
 
+pub fn guild_folders_json(folders: &[domain::user::GuildFolder]) -> Value {
+    Value::Array(
+        folders
+            .iter()
+            .map(|f| {
+                json!({
+                    "id": f.id,
+                    "name": f.name,
+                    "color": f.color,
+                    "guild_ids": f.guild_ids.iter().map(|g| g.to_string()).collect::<Vec<_>>(),
+                })
+            })
+            .collect(),
+    )
+}
+
+pub fn guild_folders_from_json(value: &Value) -> Vec<domain::user::GuildFolder> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| domain::user::GuildFolder {
+                    id: item.get("id").and_then(Value::as_i64),
+                    name: item.get("name").and_then(Value::as_str).map(str::to_owned),
+                    color: item.get("color").and_then(Value::as_u64).map(|c| c as u32),
+                    guild_ids: item
+                        .get("guild_ids")
+                        .and_then(Value::as_array)
+                        .map(|ids| {
+                            ids.iter()
+                                .filter_map(Value::as_str)
+                                .filter_map(|id| id.parse().ok())
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
