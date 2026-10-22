@@ -659,6 +659,8 @@ pub struct InviteDto {
     pub temporary: bool,
     pub created_at: String,
     pub approximate_member_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approximate_presence_count: Option<u64>,
 }
 
 impl InviteDto {
@@ -668,6 +670,7 @@ impl InviteDto {
         channel: &Channel,
         inviter: Option<&User>,
         member_count: u64,
+        presence_count: Option<u64>,
     ) -> Self {
         Self {
             kind: 0,
@@ -692,6 +695,7 @@ impl InviteDto {
             temporary: invite.temporary,
             created_at: timestamp(invite.created_at),
             approximate_member_count: member_count,
+            approximate_presence_count: presence_count,
         }
     }
 }

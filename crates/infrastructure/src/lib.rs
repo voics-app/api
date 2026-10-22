@@ -5,6 +5,7 @@ pub mod events;
 pub mod mail;
 pub mod messages_client;
 pub mod postgres;
+pub mod presence;
 pub mod ratelimit;
 pub mod security;
 pub mod storage;

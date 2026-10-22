@@ -14,7 +14,12 @@ pub struct InviteView {
     pub channel: Channel,
     pub inviter: Option<User>,
     pub member_count: u64,
+    /// Members online right now; `None` when presence is unavailable.
+    pub presence_count: Option<u64>,
 }
+
+/// Members counted for the online figure; larger guilds report a lower bound.
+const PRESENCE_SAMPLE: u32 = 10_000;
 
 pub async fn view(ports: &Ports, invite: Invite) -> AppResult<InviteView> {
     let guild = ports
@@ -32,13 +37,25 @@ pub async fn view(ports: &Ports, invite: Invite) -> AppResult<InviteView> {
         None => None,
     };
     let member_count = ports.guilds.member_count(guild.id).await?;
+    let presence_count = online_count(ports, guild.id).await;
     Ok(InviteView {
         invite,
         guild,
         channel,
         inviter,
         member_count,
+        presence_count,
     })
+}
+
+/// Best effort: a presence outage must not break invite lookups.
+async fn online_count(ports: &Ports, guild_id: domain::Snowflake) -> Option<u64> {
+    let ids = ports
+        .guilds
+        .member_ids(guild_id, PRESENCE_SAMPLE)
+        .await
+        .ok()?;
+    ports.presence.online_count(&ids).await.ok()
 }
 
 /// Public: anyone holding the code may look it up.

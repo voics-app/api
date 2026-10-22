@@ -206,6 +206,8 @@ pub trait GuildRepository: Send + Sync {
     ) -> AppResult<Vec<MemberProfile>>;
     async fn members(&self, guild_id: Snowflake) -> AppResult<Vec<Member>>;
     async fn member_count(&self, guild_id: Snowflake) -> AppResult<u64>;
+    /// Ids of up to `limit` members, lowest first.
+    async fn member_ids(&self, guild_id: Snowflake, limit: u32) -> AppResult<Vec<Snowflake>>;
     async fn ban(&self, guild_id: Snowflake, user_id: Snowflake) -> AppResult<Option<Ban>>;
     async fn bans(&self, guild_id: Snowflake) -> AppResult<Vec<Ban>>;
     async fn search(&self, query: Option<&str>, limit: u32) -> AppResult<Vec<Guild>>;
