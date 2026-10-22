@@ -17,6 +17,7 @@ pub mod permissions;
 pub mod relationship;
 pub mod snowflake;
 pub mod user;
+pub mod user_preferences;
 pub mod validation;
 
 pub use snowflake::Snowflake;
