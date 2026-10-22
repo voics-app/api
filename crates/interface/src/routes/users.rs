@@ -148,6 +148,8 @@ async fn update_settings_handler(
         guild_positions: body
             .guild_positions
             .map(|ids| ids.into_iter().map(|id| id.0).collect()),
+        message_display_compact: body.message_display_compact,
+        preferences: body.preferences,
     };
     let stored = update_settings::execute(&state.ports, &actor, input).await?;
     Ok(Json(UserSettingsDto::from(&stored)))

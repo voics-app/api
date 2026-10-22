@@ -150,6 +150,10 @@ pub struct ModifyUserSettingsRequest {
     pub guild_folders: Option<Vec<GuildFolderRequest>>,
     #[serde(default)]
     pub guild_positions: Option<Vec<Id>>,
+    #[serde(default)]
+    pub message_display_compact: Option<bool>,
+    #[serde(default)]
+    pub preferences: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Default, Deserialize)]

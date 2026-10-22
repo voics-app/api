@@ -139,6 +139,9 @@ pub struct UserSettings {
     pub accent_color: Option<u32>,
     pub guild_folders: Vec<GuildFolder>,
     pub guild_positions: Vec<Snowflake>,
+    pub message_display_compact: bool,
+    /// Sparse synced client preferences (see `user_preferences`).
+    pub preferences: crate::user_preferences::Preferences,
 }
 
 impl UserSettings {
@@ -155,6 +158,8 @@ impl UserSettings {
             accent_color: None,
             guild_folders: Vec::new(),
             guild_positions: Vec::new(),
+            message_display_compact: false,
+            preferences: crate::user_preferences::Preferences::new(),
         }
     }
 }

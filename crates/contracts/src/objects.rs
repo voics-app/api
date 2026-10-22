@@ -124,6 +124,7 @@ pub struct UserSettingsDto {
     pub accent_color: Option<u32>,
     pub guild_folders: Vec<GuildFolderDto>,
     pub guild_positions: Vec<Id>,
+    pub preferences: serde_json::Value,
 }
 
 impl From<&UserSettings> for UserSettingsDto {
@@ -136,7 +137,7 @@ impl From<&UserSettings> for UserSettingsDto {
             default_delivery_mode: settings.default_delivery_mode.as_str(),
             e2ee_calls_default: settings.e2ee_calls_default,
             developer_mode: settings.developer_mode,
-            message_display_compact: false,
+            message_display_compact: settings.message_display_compact,
             accent_color: settings.accent_color,
             guild_folders: settings
                 .guild_folders
@@ -154,6 +155,7 @@ impl From<&UserSettings> for UserSettingsDto {
                 .copied()
                 .map(Id::from)
                 .collect(),
+            preferences: serde_json::Value::Object(settings.preferences.clone()),
         }
     }
 }
