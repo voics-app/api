@@ -70,6 +70,15 @@ pub enum DomainEvent {
         guild_id: Snowflake,
         user: User,
     },
+    /// Bus-only: asks the messages service to delete `user_id`'s messages created at or after
+    /// `since_ms` in `channel_ids` (a ban with `delete_message_seconds`).
+    BanMessagePurge {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        channel_ids: Vec<Snowflake>,
+        since_ms: u64,
+        delete_message_seconds: u32,
+    },
     EmojisUpdate {
         guild_id: Snowflake,
         emojis: Vec<Emoji>,
