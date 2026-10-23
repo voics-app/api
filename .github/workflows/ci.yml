@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
     tags: ["v*"]
   schedule:
     - cron: "17 4 * * 1" # weekly full run: cargo audit picks up new advisories
@@ -15,8 +15,9 @@ concurrency:
 
 jobs:
   rust:
-    uses: discordy-voics/.github/.github/workflows/rust.yml@main
+    uses: discordy-voics/.github/.github/workflows/rust.yml@feature/59-ci-cache
     with:
+      runs-on: vm-ci2
       description: Discordy REST API (Rust)
       # RUSTSEC-2023-0071 (rsa Marvin attack) has no fixed release; the API never performs RSA decryption.
       audit-args: --ignore RUSTSEC-2023-0071
@@ -27,7 +28,9 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    uses: discordy-voics/.github/.github/workflows/docker.yml@main
+    uses: discordy-voics/.github/.github/workflows/docker.yml@feature/59-ci-cache
     with:
+      runs-on: vm-ci2
+      push: false
       image-name: api
       description: Discordy REST API
