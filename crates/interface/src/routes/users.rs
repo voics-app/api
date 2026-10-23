@@ -15,8 +15,8 @@ use application::use_cases::relationships::{
 use application::use_cases::users::update_current_user::UpdateCurrentUserInput;
 use application::use_cases::users::update_settings::UpdateSettingsInput;
 use application::use_cases::users::{
-    get_current_user, get_guild_notification_settings, get_note, get_settings, get_user,
-    list_private_channels, open_private_channel, set_delivery_override, set_note,
+    get_current_user, get_guild_notification_settings, get_note, get_profile, get_settings,
+    get_user, list_private_channels, open_private_channel, set_delivery_override, set_note,
     update_current_user, update_guild_notification_settings, update_settings,
 };
 use application::AppError;
@@ -98,6 +98,26 @@ async fn public_user(
 ) -> Result<Json<UserDto>, ApiError> {
     let user = get_user::execute(&state.ports, parse_id(&id)?).await?;
     Ok(Json(UserDto::public(&user)))
+}
+
+async fn user_profile(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<contracts::objects::UserProfileDto>, ApiError> {
+    let profile = get_profile::execute(&state.ports, &actor, parse_id(&id)?).await?;
+    Ok(Json(contracts::objects::UserProfileDto {
+        user: UserDto::public(&profile.user),
+        mutual_guilds: profile
+            .mutual_guilds
+            .into_iter()
+            .map(|(id, nick)| contracts::objects::MutualGuildDto {
+                id: contracts::wire::Id(id),
+                nick,
+            })
+            .collect(),
+        mutual_friends: profile.mutual_friends.iter().map(UserDto::public).collect(),
+    }))
 }
 
 async fn settings(
@@ -405,4 +425,5 @@ pub fn routes() -> Router<AppState> {
             put(put_relationship_handler).delete(delete_relationship),
         )
         .route("/users/{id}", get(public_user))
+        .route("/users/{id}/profile", get(user_profile))
 }
