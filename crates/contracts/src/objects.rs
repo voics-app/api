@@ -1048,3 +1048,61 @@ mod tests {
         assert_eq!(shown["url"], "https://api.test/api/v1/webhooks/5/tok");
     }
 }
+
+// --- discovery -------------------------------------------------------------
+
+/// `GET /guilds/{id}/discovery` and `PUT /guilds/{id}/discovery`.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscoverySettingsDto {
+    pub enabled: bool,
+    pub category: Option<String>,
+    pub tags: Vec<String>,
+    pub listed_at: Option<String>,
+    pub member_count: u64,
+    /// Codes of unmet listing rules; empty when the guild may be listed.
+    pub blockers: Vec<String>,
+}
+
+impl DiscoverySettingsDto {
+    pub fn new(
+        listing: Option<&domain::discovery::GuildDiscovery>,
+        blockers: &[domain::discovery::Ineligibility],
+        member_count: u64,
+    ) -> Self {
+        Self {
+            enabled: listing.is_some(),
+            category: listing.map(|l| l.category.clone()),
+            tags: listing.map(|l| l.tags.clone()).unwrap_or_default(),
+            listed_at: listing.map(|l| timestamp(l.listed_at)),
+            member_count,
+            blockers: blockers.iter().map(|b| b.code().to_owned()).collect(),
+        }
+    }
+}
+
+/// One server card in Discover.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscoveryGuildDto {
+    pub id: Id,
+    pub name: String,
+    pub icon: Option<String>,
+    pub description: Option<String>,
+    pub category: String,
+    pub tags: Vec<String>,
+    pub approximate_member_count: u64,
+    pub approximate_presence_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscoveryPageDto {
+    pub guilds: Vec<DiscoveryGuildDto>,
+    pub total: u64,
+    pub offset: u32,
+    pub limit: u32,
+}
+
+/// `GET /discovery/categories`.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiscoveryCategoriesDto {
+    pub categories: Vec<&'static str>,
+}

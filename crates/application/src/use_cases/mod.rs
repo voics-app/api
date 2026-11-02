@@ -7,6 +7,7 @@ pub mod bans;
 pub mod channels;
 pub mod commands;
 pub mod devices;
+pub mod discovery;
 pub mod emojis;
 pub mod guilds;
 pub mod interactions;

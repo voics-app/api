@@ -4,6 +4,7 @@ pub mod applications;
 pub mod auth;
 pub mod channels;
 pub mod devices;
+pub mod discovery;
 pub mod emojis;
 pub mod guilds;
 pub mod health;

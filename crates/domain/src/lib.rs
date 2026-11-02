@@ -8,6 +8,7 @@ pub mod audit;
 pub mod channel;
 pub mod delivery_mode;
 pub mod device;
+pub mod discovery;
 pub mod emoji;
 pub mod guild;
 pub mod invite;

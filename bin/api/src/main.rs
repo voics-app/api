@@ -140,6 +140,10 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
             account_deletion_retention: chrono::Duration::days(i64::from(
                 config.account_deletion_retention_days,
             )),
+            discovery_min_members: config.discovery_min_members,
+            discovery_min_guild_age: chrono::Duration::days(i64::from(
+                config.discovery_min_guild_age_days,
+            )),
             ..Settings::default()
         },
     };
