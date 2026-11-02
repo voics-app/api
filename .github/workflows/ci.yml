@@ -17,7 +17,7 @@ jobs:
   rust:
     uses: discordy-voics/.github/.github/workflows/rust.yml@feature/59-ci-cache
     with:
-      runs-on: vm-ci2
+      runs-on: vm-runner
       description: Discordy REST API (Rust)
       # RUSTSEC-2023-0071 (rsa Marvin attack) has no fixed release; the API never performs RSA decryption.
       audit-args: --ignore RUSTSEC-2023-0071
@@ -30,7 +30,7 @@ jobs:
       id-token: write
     uses: discordy-voics/.github/.github/workflows/docker.yml@feature/59-ci-cache
     with:
-      runs-on: vm-ci2
+      runs-on: vm-runner
       push: false
       image-name: api
       description: Discordy REST API
