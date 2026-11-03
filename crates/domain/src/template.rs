@@ -307,6 +307,9 @@ pub fn instantiate(
         afk_channel_id: channel_ref(source.afk_channel_id),
         afk_timeout: source.afk_timeout,
         system_channel_id: channel_ref(source.system_channel_id),
+        system_channel_flags: 0,
+        banner: None,
+        splash: None,
         created_at: now,
     };
     Ok(Instantiated {

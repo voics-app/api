@@ -8,6 +8,7 @@ use crate::error::{AppError, AppResult, Denial, Resource};
 use crate::events::DomainEvent;
 use crate::support::audit::AuditContext;
 use crate::support::guild_context::GuildContext;
+use crate::support::system_messages;
 use crate::support::views::{guild_snapshot, require_user};
 use crate::write_set::{Mutation, WriteSet};
 
@@ -85,6 +86,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: AuthorizeBotInput) -> 
         user: bot,
     };
     let mut snapshot = guild_snapshot(ports, guild_id).await?;
+    let guild = snapshot.guild.clone();
     snapshot.members.push(profile.clone());
     snapshot.member_count += 1;
     let audit = AuditContext {
@@ -99,5 +101,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: AuthorizeBotInput) -> 
             recipients: vec![bot_id],
         })
         .audit(audit.entry(ports, guild_id, AuditAction::BotAdd, Some(bot_id), vec![])?);
-    ports.unit_of_work.commit(writes).await
+    ports.unit_of_work.commit(writes).await?;
+    system_messages::announce_join(ports, &guild, bot_id).await;
+    Ok(())
 }

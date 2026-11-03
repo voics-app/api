@@ -17,14 +17,14 @@ pub(super) async fn upsert_guild(conn: &mut PgConnection, guild: &Guild) -> AppR
     sqlx::query(
         "INSERT INTO guilds (id, name, icon, description, owner_id, voice_region, verification_level, \
              default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, \
-             system_channel_id, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
+             system_channel_id, system_channel_flags, banner, splash, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) \
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, icon = EXCLUDED.icon, \
              description = EXCLUDED.description, owner_id = EXCLUDED.owner_id, \
              voice_region = EXCLUDED.voice_region, verification_level = EXCLUDED.verification_level, \
              default_message_notifications = EXCLUDED.default_message_notifications, \
              explicit_content_filter = EXCLUDED.explicit_content_filter, afk_channel_id = EXCLUDED.afk_channel_id, \
-             afk_timeout = EXCLUDED.afk_timeout, system_channel_id = EXCLUDED.system_channel_id",
+             afk_timeout = EXCLUDED.afk_timeout, system_channel_id = EXCLUDED.system_channel_id, \n             system_channel_flags = EXCLUDED.system_channel_flags, banner = EXCLUDED.banner, \n             splash = EXCLUDED.splash",
     )
     .bind(guild.id.as_i64())
     .bind(&guild.name)
@@ -38,6 +38,9 @@ pub(super) async fn upsert_guild(conn: &mut PgConnection, guild: &Guild) -> AppR
     .bind(guild.afk_channel_id.map(|id| id.as_i64()))
     .bind(guild.afk_timeout as i32)
     .bind(guild.system_channel_id.map(|id| id.as_i64()))
+    .bind(guild.system_channel_flags as i32)
+    .bind(&guild.banner)
+    .bind(&guild.splash)
     .bind(guild.created_at)
     .execute(conn)
     .await

@@ -10,6 +10,7 @@ use crate::error::{AppError, AppResult};
 use crate::events::DomainEvent;
 use crate::support::audit::AuditContext;
 use crate::support::channel_access::ChannelAccess;
+use crate::support::system_messages;
 use crate::use_cases::channels::channel_rules::{apply_name, apply_slowmode};
 use crate::write_set::{Mutation, WriteSet};
 
@@ -96,5 +97,6 @@ pub async fn execute(
             changes,
         )?);
     ports.unit_of_work.commit(writes).await?;
+    system_messages::announce_thread(ports, &thread, actor.user_id).await;
     Ok(thread)
 }

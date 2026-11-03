@@ -4,6 +4,7 @@ use domain::Snowflake;
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Denial, Resource};
 use crate::events::DomainEvent;
+use crate::support::system_messages;
 use crate::support::views::{guild_snapshot, require_user};
 use crate::use_cases::guilds::create_guild::MAX_GUILDS_PER_USER;
 use crate::write_set::{Mutation, WriteSet};
@@ -55,6 +56,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
         user,
     };
     let mut snapshot = guild_snapshot(ports, guild_id).await?;
+    let guild = snapshot.guild.clone();
     snapshot.members.push(profile.clone());
     snapshot.member_count += 1;
 
@@ -66,5 +68,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
             snapshot: Box::new(snapshot),
             recipients: vec![actor.user_id],
         });
-    ports.unit_of_work.commit(writes).await
+    ports.unit_of_work.commit(writes).await?;
+    system_messages::announce_join(ports, &guild, actor.user_id).await;
+    Ok(())
 }
