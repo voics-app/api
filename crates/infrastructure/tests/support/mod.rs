@@ -98,15 +98,18 @@ impl EventPublisher for DiscardEvents {
 #[derive(Default)]
 pub struct RecordingMessages {
     pub bodies: std::sync::Mutex<Vec<serde_json::Value>>,
+    /// The channel each recorded body was posted to.
+    pub channels: std::sync::Mutex<Vec<domain::Snowflake>>,
 }
 
 #[async_trait]
 impl MessageService for RecordingMessages {
     async fn create(
         &self,
-        _: domain::Snowflake,
+        channel_id: domain::Snowflake,
         message: serde_json::Value,
     ) -> AppResult<StoredMessage> {
+        self.channels.lock().unwrap().push(channel_id);
         self.bodies.lock().unwrap().push(message);
         Ok(StoredMessage {
             id: domain::Snowflake::new(555),

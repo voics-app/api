@@ -117,6 +117,8 @@ async fn fixture() -> Fixture {
         .expect("a text channel")
         .to_owned();
 
+    // Installing the bot already posted its member join message; the tests assert on later bodies.
+    messages.bodies.lock().unwrap().clear();
     Fixture {
         app,
         database,

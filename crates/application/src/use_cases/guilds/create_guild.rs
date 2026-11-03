@@ -144,6 +144,9 @@ fn default_layout(
         afk_channel_id: None,
         afk_timeout: 300,
         system_channel_id: Some(general.id),
+        system_channel_flags: 0,
+        banner: None,
+        splash: None,
         created_at: now,
     };
     let everyone = Role::everyone(guild_id, Permissions::DEFAULT_EVERYONE);

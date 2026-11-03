@@ -3,6 +3,7 @@ use domain::guild::{Member, MemberProfile};
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Denial, Resource};
 use crate::events::DomainEvent;
+use crate::support::system_messages;
 use crate::support::views::{guild_snapshot, require_user};
 use crate::use_cases::guilds::create_guild::MAX_GUILDS_PER_USER;
 use crate::use_cases::invites::get_invite::{view, InviteView};
@@ -46,6 +47,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, code: &str) -> AppResult<Invi
         user,
     };
     let mut snapshot = guild_snapshot(ports, guild_id).await?;
+    let guild = snapshot.guild.clone();
     snapshot.members.push(profile.clone());
     snapshot.member_count += 1;
 
@@ -68,6 +70,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, code: &str) -> AppResult<Invi
             });
     }
     ports.unit_of_work.commit(writes).await?;
+    system_messages::announce_join(ports, &guild, actor.user_id).await;
     let mut used = invite;
     used.uses += 1;
     view(ports, used).await

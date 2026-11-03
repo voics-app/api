@@ -68,11 +68,7 @@ async fn modify(
 ) -> Result<Json<GuildDto>, ApiError> {
     let input = UpdateGuildInput {
         name: body.name,
-        icon: match body.icon {
-            None => None,
-            Some(None) => Some(None),
-            Some(Some(uri)) => Some(Some(images::parse_data_uri(&uri)?)),
-        },
+        icon: images::patch(body.icon)?,
         description: body.description,
         voice_region: body.voice_region,
         verification_level: body.verification_level,
@@ -81,6 +77,9 @@ async fn modify(
         afk_channel_id: body.afk_channel_id.map(|inner| inner.map(|Id(id)| id)),
         afk_timeout: body.afk_timeout,
         system_channel_id: body.system_channel_id.map(|inner| inner.map(|Id(id)| id)),
+        system_channel_flags: body.system_channel_flags,
+        banner: images::patch(body.banner)?,
+        splash: images::patch(body.splash)?,
         owner_id: body.owner_id.map(|Id(id)| id),
     };
     let audit = AuditContext {
