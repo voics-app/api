@@ -1,0 +1,18 @@
+# Only Cargo.toml/lock, .cargo, bin, crates and migrations are needed to build the image; everything else
+# here would invalidate the source layer (a docs or CI change must not trigger a Rust recompile).
+.git
+.github
+target
+**/target
+.env
+.env.*
+*.pem
+*.md
+Makefile
+lefthook.yml
+Dockerfile
+.dockerignore
+.gitattributes
+.gitignore
+.release-please-manifest.json
+release-please-config.json
