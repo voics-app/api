@@ -20,10 +20,25 @@ pub struct Guild {
     pub afk_channel_id: Option<Snowflake>,
     pub afk_timeout: u32,
     pub system_channel_id: Option<Snowflake>,
+    /// Discord `system_channel_flags` bits (see [`SYSTEM_CHANNEL_FLAGS_MASK`]).
+    pub system_channel_flags: u32,
+    pub banner: Option<String>,
+    pub splash: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
+/// `system_channel_flags` bit: do not post a message when a member joins.
+pub const SUPPRESS_JOIN_NOTIFICATIONS: u32 = 1 << 0;
+/// Every defined `system_channel_flags` bit (Discord bits 0 to 5).
+pub const SYSTEM_CHANNEL_FLAGS_MASK: u32 = (1 << 6) - 1;
+
 impl Guild {
+    /// Whether a member joining should be announced in the system channel.
+    pub const fn announces_joins(&self) -> bool {
+        self.system_channel_id.is_some()
+            && self.system_channel_flags & SUPPRESS_JOIN_NOTIFICATIONS == 0
+    }
+
     /// The @everyone role shares the guild's id.
     pub const fn everyone_role_id(&self) -> Snowflake {
         self.id

@@ -2,7 +2,7 @@ use serde_json::json;
 
 use domain::audit::{AuditAction, AuditChange};
 use domain::channel::ChannelType;
-use domain::guild::Guild;
+use domain::guild::{Guild, SYSTEM_CHANNEL_FLAGS_MASK};
 use domain::permissions::Permissions;
 use domain::validation;
 use domain::Snowflake;
@@ -28,6 +28,9 @@ pub struct UpdateGuildInput {
     pub afk_channel_id: Option<Option<Snowflake>>,
     pub afk_timeout: Option<u32>,
     pub system_channel_id: Option<Option<Snowflake>>,
+    pub system_channel_flags: Option<u32>,
+    pub banner: Option<Option<ImageUpload>>,
+    pub splash: Option<Option<ImageUpload>>,
     pub owner_id: Option<Snowflake>,
 }
 
@@ -115,6 +118,16 @@ pub async fn execute(
         }
         guild.system_channel_id = system;
     }
+    if let Some(flags) = input.system_channel_flags {
+        if flags & !SYSTEM_CHANNEL_FLAGS_MASK != 0 {
+            return Err(AppError::invalid(
+                "system_channel_flags",
+                "BASE_TYPE_CHOICES",
+                "Unknown system channel flags.",
+            ));
+        }
+        guild.system_channel_flags = flags;
+    }
     if let Some(owner_id) = input.owner_id.filter(|id| *id != guild.owner_id) {
         if !ctx.is_owner() {
             return Err(AppError::missing_permissions());
@@ -133,6 +146,12 @@ pub async fn execute(
             Some(image) => Some(store_hashed(ports, &format!("icons/{guild_id}"), image).await?),
             None => None,
         };
+    }
+    if let Some(banner) = input.banner {
+        guild.banner = store_optional(ports, &format!("banners/{guild_id}"), banner).await?;
+    }
+    if let Some(splash) = input.splash {
+        guild.splash = store_optional(ports, &format!("splashes/{guild_id}"), splash).await?;
     }
 
     let changes: Vec<AuditChange> = [
@@ -163,6 +182,28 @@ pub async fn execute(
             json!(before.afk_timeout),
             json!(guild.afk_timeout),
         ),
+        AuditChange::if_changed(
+            "afk_channel_id",
+            json!(before.afk_channel_id.map(|id| id.to_string())),
+            json!(guild.afk_channel_id.map(|id| id.to_string())),
+        ),
+        AuditChange::if_changed(
+            "system_channel_id",
+            json!(before.system_channel_id.map(|id| id.to_string())),
+            json!(guild.system_channel_id.map(|id| id.to_string())),
+        ),
+        AuditChange::if_changed(
+            "system_channel_flags",
+            json!(before.system_channel_flags),
+            json!(guild.system_channel_flags),
+        ),
+        AuditChange::if_changed(
+            "default_message_notifications",
+            json!(before.default_message_notifications),
+            json!(guild.default_message_notifications),
+        ),
+        AuditChange::if_changed("banner_hash", json!(before.banner), json!(guild.banner)),
+        AuditChange::if_changed("splash_hash", json!(before.splash), json!(guild.splash)),
     ]
     .into_iter()
     .flatten()
@@ -183,6 +224,17 @@ pub async fn execute(
     }
     ports.unit_of_work.commit(writes).await?;
     Ok(guild)
+}
+
+async fn store_optional(
+    ports: &Ports,
+    prefix: &str,
+    image: Option<ImageUpload>,
+) -> AppResult<Option<String>> {
+    match image {
+        Some(image) => Ok(Some(store_hashed(ports, prefix, image).await?)),
+        None => Ok(None),
+    }
 }
 
 async fn ensure_channel_kind(

@@ -121,6 +121,9 @@ async fn guild_lifecycle_round_trips_through_postgres() {
         afk_channel_id: None,
         afk_timeout: 300,
         system_channel_id: None,
+        system_channel_flags: 0,
+        banner: None,
+        splash: None,
         created_at: now,
     };
     let everyone = Role {

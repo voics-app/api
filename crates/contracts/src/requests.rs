@@ -250,6 +250,12 @@ pub struct ModifyGuildRequest {
     #[serde(default, deserialize_with = "double_option")]
     pub system_channel_id: Option<Option<Id>>,
     #[serde(default)]
+    pub system_channel_flags: Option<u32>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub banner: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub splash: Option<Option<String>>,
+    #[serde(default)]
     pub owner_id: Option<Id>,
 }
 
