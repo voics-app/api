@@ -6,8 +6,6 @@ pub const BACKUP_CODE_COUNT: usize = 10;
 pub const BACKUP_CODE_LENGTH: usize = 10;
 /// Digits in a TOTP code.
 pub const TOTP_DIGITS: usize = 6;
-/// Shown in authenticator apps next to the account name.
-
 /// A stored backup code: only its hash is kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackupCodeRecord {
