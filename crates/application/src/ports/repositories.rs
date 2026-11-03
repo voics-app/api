@@ -18,6 +18,7 @@ use domain::invite::Invite;
 use domain::mfa::BackupCodeRecord;
 use domain::notification::GuildNotificationSettings;
 use domain::relationship::Relationship;
+use domain::template::GuildTemplate;
 use domain::user::{Credentials, User, UserSettings};
 use domain::Snowflake;
 
@@ -224,6 +225,14 @@ pub trait GuildRepository: Send + Sync {
     async fn has_nsfw_channel(&self, guild_id: Snowflake) -> AppResult<bool>;
     /// Listed guilds that still meet the rules, largest first.
     async fn search_discoverable(&self, query: &DiscoveryQuery) -> AppResult<DiscoveryPage>;
+    /// A shared (non built-in) template by code.
+    async fn template(&self, code: &str) -> AppResult<Option<GuildTemplate>>;
+    async fn templates_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<GuildTemplate>>;
+    async fn insert_template(&self, template: &GuildTemplate) -> AppResult<()>;
+    /// Replaces name, description, snapshot and `updated_at`.
+    async fn update_template(&self, template: &GuildTemplate) -> AppResult<()>;
+    async fn delete_template(&self, code: &str) -> AppResult<()>;
+    async fn bump_template_usage(&self, code: &str) -> AppResult<()>;
 }
 
 /// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,

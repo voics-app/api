@@ -17,6 +17,7 @@ pub mod notification;
 pub mod permissions;
 pub mod relationship;
 pub mod snowflake;
+pub mod template;
 pub mod user;
 pub mod user_preferences;
 pub mod validation;

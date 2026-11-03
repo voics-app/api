@@ -1106,3 +1106,39 @@ pub struct DiscoveryPageDto {
 pub struct DiscoveryCategoriesDto {
     pub categories: Vec<&'static str>,
 }
+
+// --- guild templates -------------------------------------------------------
+
+/// A server template (Discord guild template shape).
+#[derive(Debug, Clone, Serialize)]
+pub struct GuildTemplateDto {
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub usage_count: u32,
+    pub creator_id: Option<Id>,
+    pub creator: Option<UserDto>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub source_guild_id: Option<Id>,
+    pub serialized_source_guild: Value,
+    pub is_dirty: bool,
+}
+
+impl GuildTemplateDto {
+    pub fn new(template: &domain::template::GuildTemplate, creator: Option<&User>) -> Self {
+        Self {
+            code: template.code.clone(),
+            name: template.name.clone(),
+            description: template.description.clone(),
+            usage_count: template.usage_count,
+            creator_id: template.creator_id.map(Id),
+            creator: creator.map(UserDto::public),
+            created_at: timestamp(template.created_at),
+            updated_at: timestamp(template.updated_at),
+            source_guild_id: template.source_guild_id.map(Id),
+            serialized_source_guild: template.source.to_json(),
+            is_dirty: false,
+        }
+    }
+}
