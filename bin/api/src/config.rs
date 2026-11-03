@@ -64,6 +64,8 @@ pub struct Config {
     /// Seconds between two stale-device prune runs.
     pub device_prune_interval_secs: u64,
     pub mail: MailTransport,
+    /// Product name shown in emails and as the authenticator-app issuer.
+    pub brand_name: String,
     /// Prefix of the links in account emails.
     pub app_link_base: String,
     /// Days a deleted account stays recoverable by logging in.
@@ -260,6 +262,7 @@ impl Config {
                 DEFAULT_DEVICE_PRUNE_INTERVAL_SECS,
             )?,
             mail: mail_transport(&get)?,
+            brand_name: optional(&get, "BRAND_NAME", application::context::DEFAULT_BRAND_NAME),
             app_link_base: optional(&get, "APP_LINK_BASE", "discordy://"),
             account_deletion_retention_days: positive(
                 &get,
@@ -451,7 +454,7 @@ mod tests {
             Err(ConfigError::Missing("SMTP_HOST"))
         );
         values.insert("SMTP_HOST", "smtp.example.com".to_owned());
-        values.insert("MAIL_FROM", "Discordy <no-reply@example.com>".to_owned());
+        values.insert("MAIL_FROM", "Example <no-reply@example.com>".to_owned());
         values.insert("SMTP_PASSWORD", "  ".to_owned());
         let config = Config::from_lookup(lookup(values)).expect("valid");
         let MailTransport::Smtp(smtp) = config.mail else {

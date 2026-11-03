@@ -136,6 +136,7 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
                 .trim_end_matches('/')
                 .to_owned(),
             device_max_idle: chrono::Duration::days(i64::from(config.device_max_idle_days)),
+            brand_name: config.brand_name.clone(),
             app_link_base: config.app_link_base.clone(),
             account_deletion_retention: chrono::Duration::days(i64::from(
                 config.account_deletion_retention_days,

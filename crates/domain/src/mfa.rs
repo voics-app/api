@@ -7,7 +7,6 @@ pub const BACKUP_CODE_LENGTH: usize = 10;
 /// Digits in a TOTP code.
 pub const TOTP_DIGITS: usize = 6;
 /// Shown in authenticator apps next to the account name.
-pub const TOTP_ISSUER: &str = "Discordy";
 
 /// A stored backup code: only its hash is kept.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,10 +42,10 @@ pub fn looks_like_totp(input: &str) -> bool {
 }
 
 /// The `otpauth://` URI authenticator apps import from a QR code.
-pub fn otpauth_uri(account: &str, secret: &str) -> String {
+pub fn otpauth_uri(issuer: &str, account: &str, secret: &str) -> String {
     format!(
         "otpauth://totp/{issuer}:{account}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits={digits}&period=30",
-        issuer = TOTP_ISSUER,
+        issuer = percent_encode(issuer),
         account = percent_encode(account),
         digits = TOTP_DIGITS,
     )
@@ -104,10 +103,10 @@ mod tests {
 
     #[test]
     fn otpauth_uri_names_issuer_and_escapes_the_account() {
-        let uri = otpauth_uri("alice+test@example.com", "JBSWY3DPEHPK3PXP");
+        let uri = otpauth_uri("Example", "alice+test@example.com", "JBSWY3DPEHPK3PXP");
         assert_eq!(
             uri,
-            "otpauth://totp/Discordy:alice%2Btest%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Discordy&algorithm=SHA1&digits=6&period=30"
+            "otpauth://totp/Example:alice%2Btest%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&algorithm=SHA1&digits=6&period=30"
         );
     }
 }

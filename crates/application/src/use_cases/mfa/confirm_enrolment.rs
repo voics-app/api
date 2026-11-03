@@ -65,7 +65,10 @@ pub async fn execute(ports: &Ports, actor: &Actor, code: &str) -> AppResult<Vec<
             ports,
             address,
             "Two-factor authentication enabled",
-            "Two-factor authentication was turned on for your Discordy account.",
+            &format!(
+                "Two-factor authentication was turned on for your {} account.",
+                account_mail::brand(ports)
+            ),
         )
         .await;
     }

@@ -149,8 +149,11 @@ async fn after(ports: &Ports, actor: &Actor, user: &User, aftermath: Aftermath) 
             account_mail::notify(
                 ports,
                 old_address,
-                "Your Discordy email is changing",
-                "A change of the email address of your Discordy account was requested.",
+                &format!("Your {} email is changing", account_mail::brand(ports)),
+                &format!(
+                    "A change of the email address of your {} account was requested.",
+                    account_mail::brand(ports)
+                ),
             )
             .await;
         }
@@ -161,8 +164,11 @@ async fn after(ports: &Ports, actor: &Actor, user: &User, aftermath: Aftermath) 
             account_mail::notify(
                 ports,
                 address,
-                "Your Discordy password was changed",
-                "The password of your Discordy account was changed and your other sessions were signed out.",
+                &format!("Your {} password was changed", account_mail::brand(ports)),
+                &format!(
+                    "The password of your {} account was changed and your other sessions were signed out.",
+                    account_mail::brand(ports)
+                ),
             )
             .await;
         }
