@@ -28,7 +28,10 @@ pub async fn execute(ports: &Ports, actor: &Actor, password: &str, code: &str) -
             ports,
             address,
             "Two-factor authentication disabled",
-            "Two-factor authentication was turned off for your Discordy account.",
+            &format!(
+                "Two-factor authentication was turned off for your {} account.",
+                account_mail::brand(ports)
+            ),
         )
         .await;
     }

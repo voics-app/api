@@ -47,8 +47,11 @@ pub async fn execute(ports: &Ports, token: &str, new_password: &str) -> AppResul
         account_mail::notify(
             ports,
             address,
-            "Your Discordy password was reset",
-            "The password of your Discordy account was reset and every session was signed out.",
+            &format!("Your {} password was reset", account_mail::brand(ports)),
+            &format!(
+                "The password of your {} account was reset and every session was signed out.",
+                account_mail::brand(ports)
+            ),
         )
         .await;
     }
