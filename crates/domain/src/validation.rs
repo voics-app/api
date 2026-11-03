@@ -146,6 +146,14 @@ pub fn guild_name(value: &str) -> Result<(), FieldError> {
     length_between("name", value.trim(), 2, 100)
 }
 
+pub fn template_name(value: &str) -> Result<(), FieldError> {
+    length_between("name", value.trim(), 1, 100)
+}
+
+pub fn template_description(value: &str) -> Result<(), FieldError> {
+    length_between("description", value, 0, 120)
+}
+
 pub fn channel_name(value: &str) -> Result<(), FieldError> {
     length_between("name", value.trim(), 1, 100)
 }

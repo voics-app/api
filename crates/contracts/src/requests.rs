@@ -536,3 +536,28 @@ pub struct UpdateDiscoveryRequest {
     #[serde(default)]
     pub tags: Vec<String>,
 }
+
+/// `POST /guilds/{id}/templates`.
+#[derive(Debug, Deserialize)]
+pub struct CreateGuildTemplateRequest {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// `PATCH /guilds/{id}/templates/{code}`.
+#[derive(Debug, Default, Deserialize)]
+pub struct ModifyGuildTemplateRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub description: Option<Option<String>>,
+}
+
+/// `POST /guilds/templates/{code}`.
+#[derive(Debug, Deserialize)]
+pub struct CreateGuildFromTemplateRequest {
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
