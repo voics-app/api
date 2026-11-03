@@ -22,6 +22,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::users::routes())
         .merge(routes::devices::routes())
         .merge(routes::guilds::routes())
+        .merge(routes::discovery::routes())
         .merge(routes::channels::routes())
         .merge(routes::members::routes())
         .merge(routes::invites::routes())

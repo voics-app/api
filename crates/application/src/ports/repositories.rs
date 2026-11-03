@@ -11,6 +11,7 @@ use domain::audit::{AuditAction, AuditLogEntry};
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
 use domain::device::Device;
+use domain::discovery::GuildDiscovery;
 use domain::emoji::Emoji;
 use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
 use domain::invite::Invite;
@@ -212,6 +213,43 @@ pub trait GuildRepository: Send + Sync {
     async fn bans(&self, guild_id: Snowflake) -> AppResult<Vec<Ban>>;
     async fn search(&self, query: Option<&str>, limit: u32) -> AppResult<Vec<Guild>>;
     async fn count(&self) -> AppResult<u64>;
+    /// The guild's discovery listing, if it opted in.
+    async fn discovery(&self, guild_id: Snowflake) -> AppResult<Option<GuildDiscovery>>;
+    /// Lists (`Some`, replacing any previous listing) or delists (`None`) the guild.
+    async fn set_discovery(
+        &self,
+        guild_id: Snowflake,
+        listing: Option<&GuildDiscovery>,
+    ) -> AppResult<()>;
+    async fn has_nsfw_channel(&self, guild_id: Snowflake) -> AppResult<bool>;
+    /// Listed guilds that still meet the rules, largest first.
+    async fn search_discoverable(&self, query: &DiscoveryQuery) -> AppResult<DiscoveryPage>;
+}
+
+/// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,
+/// so a guild that stopped qualifying disappears without being delisted.
+#[derive(Debug, Clone)]
+pub struct DiscoveryQuery {
+    pub text: Option<String>,
+    pub category: Option<String>,
+    pub tag: Option<String>,
+    pub min_members: u64,
+    pub created_before: DateTime<Utc>,
+    pub limit: u32,
+    pub offset: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoveryEntry {
+    pub guild: Guild,
+    pub discovery: GuildDiscovery,
+    pub member_count: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoveryPage {
+    pub entries: Vec<DiscoveryEntry>,
+    pub total: u64,
 }
 
 #[async_trait]

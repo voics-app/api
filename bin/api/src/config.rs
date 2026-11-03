@@ -70,6 +70,10 @@ pub struct Config {
     pub account_deletion_retention_days: u32,
     /// Seconds between two runs that anonymize accounts past retention.
     pub account_purge_interval_secs: u64,
+    /// Members a guild needs before it can be listed in Discover.
+    pub discovery_min_members: u64,
+    /// Days a guild must exist before it can be listed in Discover.
+    pub discovery_min_guild_age_days: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -86,6 +90,8 @@ const DEFAULT_DEVICE_MAX_IDLE_DAYS: &str = "30";
 const DEFAULT_DEVICE_PRUNE_INTERVAL_SECS: &str = "3600";
 const DEFAULT_ACCOUNT_DELETION_DAYS: &str = "14";
 const DEFAULT_ACCOUNT_PURGE_INTERVAL_SECS: &str = "3600";
+const DEFAULT_DISCOVERY_MIN_MEMBERS: &str = "5";
+const DEFAULT_DISCOVERY_MIN_AGE_DAYS: &str = "7";
 const DEFAULT_SMTP_PORT: &str = "587";
 
 fn mail_transport(get: &impl Fn(&str) -> Option<String>) -> Result<MailTransport, ConfigError> {
@@ -260,6 +266,16 @@ impl Config {
                 "ACCOUNT_DELETION_RETENTION_DAYS",
                 DEFAULT_ACCOUNT_DELETION_DAYS,
             )?,
+            discovery_min_members: positive(
+                &get,
+                "DISCOVERY_MIN_MEMBERS",
+                DEFAULT_DISCOVERY_MIN_MEMBERS,
+            )?,
+            discovery_min_guild_age_days: positive(
+                &get,
+                "DISCOVERY_MIN_GUILD_AGE_DAYS",
+                DEFAULT_DISCOVERY_MIN_AGE_DAYS,
+            )?,
             account_purge_interval_secs: positive(
                 &get,
                 "ACCOUNT_PURGE_INTERVAL_SECS",
@@ -422,6 +438,8 @@ mod tests {
         let config = Config::from_lookup(lookup(complete())).expect("valid");
         assert_eq!(config.mail, MailTransport::Log);
         assert_eq!(config.account_deletion_retention_days, 14);
+        assert_eq!(config.discovery_min_members, 5);
+        assert_eq!(config.discovery_min_guild_age_days, 7);
     }
 
     #[test]
