@@ -58,7 +58,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `DEVICE_PRUNE_INTERVAL_SECS` | no | `3600` | Seconds between stale-device prune runs |
 | `CORS_ALLOWED_ORIGINS` | no | `null,http://localhost:5173` | Comma-separated origins allowed by CORS (`null` is the packaged `file://` client) |
 
-Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`.
+Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
 
 ## Pending owner actions
 
