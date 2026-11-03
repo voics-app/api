@@ -13,6 +13,7 @@ pub mod internal;
 pub mod invites;
 pub mod members;
 pub mod mfa;
+pub mod sessions;
 pub mod templates;
 pub mod users;
 pub mod webhooks;

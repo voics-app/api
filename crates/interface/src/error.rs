@@ -55,7 +55,7 @@ fn unknown_code(resource: Resource) -> u32 {
         Resource::Role => UNKNOWN_ROLE,
         Resource::User => UNKNOWN_USER,
         Resource::Webhook => UNKNOWN_WEBHOOK,
-        Resource::Device | Resource::KeyPackage => GENERAL_ERROR,
+        Resource::Device | Resource::KeyPackage | Resource::Session => GENERAL_ERROR,
     }
 }
 

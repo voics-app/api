@@ -1,4 +1,5 @@
 use domain::account::TokenPurpose;
+use domain::session::ClientInfo;
 use domain::Snowflake;
 
 use crate::context::Ports;
@@ -15,6 +16,7 @@ pub struct MfaLoginInput {
     /// A TOTP code or an unused backup code.
     pub code: String,
     pub device_id: Option<Snowflake>,
+    pub client: ClientInfo,
 }
 
 fn invalid_ticket() -> AppError {
@@ -50,5 +52,5 @@ pub async fn execute(ports: &Ports, input: MfaLoginInput) -> AppResult<AuthToken
         .consume(&ticket_hash, TokenPurpose::MfaLogin, now)
         .await?
         .ok_or_else(invalid_ticket)?;
-    complete(ports, user, input.device_id).await
+    complete(ports, user, input.device_id, input.client).await
 }

@@ -14,6 +14,7 @@ fn registration(email: &str, username: &str) -> register::RegisterInput {
         email: email.to_owned(),
         username: username.to_owned(),
         password: "a-long-enough-passphrase".to_owned(),
+        client: Default::default(),
     }
 }
 
@@ -38,6 +39,7 @@ async fn auth_lifecycle_rotates_and_revokes_sessions() {
             password: "not-the-password".into(),
             totp: None,
             device_id: None,
+            client: Default::default(),
         },
     )
     .await;
@@ -50,6 +52,7 @@ async fn auth_lifecycle_rotates_and_revokes_sessions() {
             password: "a-long-enough-passphrase".into(),
             totp: None,
             device_id: None,
+            client: Default::default(),
         },
     )
     .await
@@ -86,6 +89,7 @@ async fn auth_lifecycle_rotates_and_revokes_sessions() {
             password: "a-long-enough-passphrase".into(),
             totp: None,
             device_id: None,
+            client: Default::default(),
         },
     )
     .await
@@ -158,6 +162,7 @@ async fn totp_enrolment_gates_password_login() {
             password: "a-long-enough-passphrase".into(),
             totp: None,
             device_id: None,
+            client: Default::default(),
         },
     )
     .await;
@@ -170,6 +175,7 @@ async fn totp_enrolment_gates_password_login() {
             password: "a-long-enough-passphrase".into(),
             totp: Some("000000".into()),
             device_id: None,
+            client: Default::default(),
         },
     )
     .await;
@@ -182,6 +188,7 @@ async fn totp_enrolment_gates_password_login() {
             password: "a-long-enough-passphrase".into(),
             totp: Some(code),
             device_id: None,
+            client: Default::default(),
         },
     )
     .await;

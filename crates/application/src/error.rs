@@ -22,6 +22,7 @@ pub enum Resource {
     Message,
     Overwrite,
     Role,
+    Session,
     User,
     Webhook,
 }

@@ -279,6 +279,19 @@ impl From<&Device> for DeviceDto {
     }
 }
 
+/// A login session of the current user (`GET /users/@me/sessions`).
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthSessionDto {
+    pub id: String,
+    pub client: String,
+    pub os: String,
+    pub device_name: Option<String>,
+    pub location: Option<String>,
+    pub created_at: String,
+    pub last_used_at: String,
+    pub current: bool,
+}
+
 // --- channels --------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]

@@ -5,6 +5,7 @@ use domain::Snowflake;
 
 use crate::context::Ports;
 use crate::error::{AppError, AppResult, Resource};
+use crate::support::sessions::announce_revoked;
 use crate::write_set::{Mutation, WriteSet};
 
 /// `POST /internal/v1/admin/users/{id}/suspend`: blocks logins and revokes
@@ -42,5 +43,6 @@ pub async fn execute(
         suspension: Suspension { reason, until },
     });
     ports.unit_of_work.commit(writes).await?;
-    ports.sessions.revoke_all_for_user(user_id, now).await
+    let revoked = ports.sessions.revoke_all_for_user(user_id, now).await?;
+    announce_revoked(ports, user_id, revoked).await
 }

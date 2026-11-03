@@ -3,6 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+use uuid::Uuid;
 
 use domain::application::Interaction;
 use domain::audit::AuditLogEntry;
@@ -146,6 +147,13 @@ pub enum DomainEvent {
         user_id: Snowflake,
         devices: Vec<Device>,
         target_user_ids: Vec<Snowflake>,
+    },
+
+    /// Bus-only: login sessions were revoked. The gateway closes the live connections of
+    /// `session_ids` and never dispatches it.
+    SessionsRevoke {
+        user_id: Snowflake,
+        session_ids: Vec<Uuid>,
     },
 
     // discordy.message.v1
