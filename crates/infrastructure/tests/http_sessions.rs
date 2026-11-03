@@ -131,7 +131,7 @@ async fn lists_live_sessions_with_client_details_and_marks_the_current_one() {
     assert_eq!(list[0]["location"], Value::Null);
     let desktop_session = list
         .iter()
-        .find(|s| s["client"] == "Discordy Desktop")
+        .find(|s| s["client"] == "Desktop app")
         .expect("desktop session");
     assert_eq!(desktop_session["os"], "Windows");
     assert_eq!(desktop_session["location"], "NL");

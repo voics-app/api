@@ -45,12 +45,15 @@ impl ClientInfo {
     }
 }
 
+/// Client name for the desktop app (Electron user agents).
+pub const DESKTOP_APP: &str = "Desktop app";
+
 fn client_of(user_agent: &str) -> &'static str {
     let contains = |needle: &str| user_agent.contains(needle);
-    if contains("Discordy") && contains("Electron/") {
-        "Discordy Desktop"
-    } else if contains("Discordy") {
-        "Discordy"
+    // The desktop app is Electron; its product token follows the configured brand, so the
+    // client is named generically and the UI shows it with the brand name.
+    if contains("Electron/") {
+        DESKTOP_APP
     } else if contains("Edg/") {
         "Edge"
     } else if contains("OPR/") || contains("Opera") {
@@ -96,7 +99,7 @@ fn country_code(country: Option<&str>) -> Option<String> {
 mod tests {
     use super::*;
 
-    const DESKTOP: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Discordy/0.9.0 Chrome/130.0.0.0 Electron/33.0.0 Safari/537.36";
+    const DESKTOP: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) App/0.9.0 Chrome/130.0.0.0 Electron/33.0.0 Safari/537.36";
     const FIREFOX_LINUX: &str =
         "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0";
     const SAFARI_IPHONE: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
@@ -109,7 +112,7 @@ mod tests {
 
     #[test]
     fn recognises_the_desktop_app_before_its_chromium_tokens() {
-        assert_eq!(info(DESKTOP), ("Discordy Desktop".into(), "Windows".into()));
+        assert_eq!(info(DESKTOP), (DESKTOP_APP.into(), "Windows".into()));
     }
 
     #[test]
