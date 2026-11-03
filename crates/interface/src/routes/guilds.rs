@@ -40,6 +40,7 @@ async fn create(
         name: body.name,
         icon: images::optional(body.icon)?,
         voice_region: body.voice_region,
+        template: None,
     };
     let snapshot = create_guild::execute(&state.ports, &actor, input).await?;
     Ok((

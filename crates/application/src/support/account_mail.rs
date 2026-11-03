@@ -57,6 +57,11 @@ async fn issue(
     Ok(token)
 }
 
+/// The configured product name (`BRAND_NAME`).
+pub fn brand(ports: &Ports) -> &str {
+    &ports.settings.brand_name
+}
+
 fn link(ports: &Ports, action: &str, token: &str) -> String {
     format!("{}{action}?token={token}", ports.settings.app_link_base)
 }
@@ -85,13 +90,14 @@ pub async fn send_verification(
         expires_at,
     )
     .await?;
+    let brand = brand(ports);
     let body = format!(
-        "Hi {username},\n\nConfirm this email address for your Discordy account:\n{}\n\n\
-         If the link does not open, paste this code into Discordy: {token}\n\n\
+        "Hi {username},\n\nConfirm this email address for your {brand} account:\n{}\n\n\
+         If the link does not open, paste this code into {brand}: {token}\n\n\
          It expires in {VERIFY_TTL_HOURS} hours. If you did not ask for this, ignore this email.\n",
         link(ports, "verify-email", &token),
     );
-    deliver(ports, address, "Verify your Discordy email", body).await
+    deliver(ports, address, &format!("Verify your {brand} email"), body).await
 }
 
 pub async fn send_password_reset(
@@ -114,14 +120,21 @@ pub async fn send_password_reset(
         expires_at,
     )
     .await?;
+    let brand = brand(ports);
     let body = format!(
-        "Hi {username},\n\nSomeone asked to reset the password of your Discordy account:\n{}\n\n\
-         If the link does not open, paste this code into Discordy: {token}\n\n\
+        "Hi {username},\n\nSomeone asked to reset the password of your {brand} account:\n{}\n\n\
+         If the link does not open, paste this code into {brand}: {token}\n\n\
          It expires in {RESET_TTL_HOURS} hour and signs you out everywhere. \
          If this was not you, ignore this email; your password is unchanged.\n",
         link(ports, "reset-password", &token),
     );
-    deliver(ports, address, "Reset your Discordy password", body).await
+    deliver(
+        ports,
+        address,
+        &format!("Reset your {brand} password"),
+        body,
+    )
+    .await
 }
 
 /// Single-use proof of a passed password step, valid for [`MFA_TICKET_MINUTES`].

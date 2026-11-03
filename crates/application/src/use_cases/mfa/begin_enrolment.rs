@@ -28,7 +28,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, password: &str) -> AppResult<
     let secret = ports.totp.generate_secret();
     let label = user.email.as_deref().unwrap_or(&user.username);
     let enrolment = TotpEnrolment {
-        otpauth_uri: otpauth_uri(label, &secret),
+        otpauth_uri: otpauth_uri(&ports.settings.brand_name, label, &secret),
         secret: secret.clone(),
     };
     let mut writes = WriteSet::new();

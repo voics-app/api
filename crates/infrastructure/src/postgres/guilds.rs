@@ -8,6 +8,7 @@ use application::ports::{DiscoveryEntry, DiscoveryPage, DiscoveryQuery, GuildRep
 use application::AppResult;
 use domain::discovery::GuildDiscovery;
 use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
+use domain::template::{GuildTemplate, TemplateSource};
 use domain::Snowflake;
 
 use super::convert::{like_pattern, permissions, sf, sf_opt, sfs};
@@ -410,6 +411,115 @@ impl GuildRepository for PgStore {
             })
             .collect();
         Ok(DiscoveryPage { entries, total })
+    }
+
+    async fn template(&self, code: &str) -> AppResult<Option<GuildTemplate>> {
+        let sql = format!("SELECT {TEMPLATE_COLUMNS} FROM guild_templates WHERE code = $1");
+        let row: Option<TemplateRow> = sqlx::query_as(&sql)
+            .bind(code)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?;
+        row.map(GuildTemplate::try_from).transpose()
+    }
+
+    async fn templates_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<GuildTemplate>> {
+        let sql = format!(
+            "SELECT {TEMPLATE_COLUMNS} FROM guild_templates WHERE guild_id = $1 ORDER BY created_at, code"
+        );
+        let rows: Vec<TemplateRow> = sqlx::query_as(&sql)
+            .bind(guild_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        rows.into_iter().map(GuildTemplate::try_from).collect()
+    }
+
+    async fn insert_template(&self, template: &GuildTemplate) -> AppResult<()> {
+        sqlx::query(
+            "INSERT INTO guild_templates (code, guild_id, name, description, usage_count, creator_id,              serialized_source_guild, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(&template.code)
+        .bind(template.source_guild_id.map(Snowflake::as_i64))
+        .bind(&template.name)
+        .bind(&template.description)
+        .bind(template.usage_count as i32)
+        .bind(template.creator_id.map(Snowflake::as_i64))
+        .bind(template.source.to_json())
+        .bind(template.created_at)
+        .bind(template.updated_at)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(db)
+    }
+
+    async fn update_template(&self, template: &GuildTemplate) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE guild_templates SET name = $2, description = $3, serialized_source_guild = $4,              updated_at = $5 WHERE code = $1",
+        )
+        .bind(&template.code)
+        .bind(&template.name)
+        .bind(&template.description)
+        .bind(template.source.to_json())
+        .bind(template.updated_at)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(db)
+    }
+
+    async fn delete_template(&self, code: &str) -> AppResult<()> {
+        sqlx::query("DELETE FROM guild_templates WHERE code = $1")
+            .bind(code)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(db)
+    }
+
+    async fn bump_template_usage(&self, code: &str) -> AppResult<()> {
+        sqlx::query("UPDATE guild_templates SET usage_count = usage_count + 1 WHERE code = $1")
+            .bind(code)
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(db)
+    }
+}
+
+const TEMPLATE_COLUMNS: &str = "code, guild_id, name, description, usage_count, creator_id,      serialized_source_guild, created_at, updated_at";
+
+#[derive(FromRow)]
+struct TemplateRow {
+    code: String,
+    guild_id: i64,
+    name: String,
+    description: Option<String>,
+    usage_count: i32,
+    creator_id: Option<i64>,
+    serialized_source_guild: serde_json::Value,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl TryFrom<TemplateRow> for GuildTemplate {
+    type Error = application::AppError;
+
+    fn try_from(row: TemplateRow) -> Result<Self, Self::Error> {
+        let source = TemplateSource::from_json(&row.serialized_source_guild)
+            .map_err(application::AppError::internal)?;
+        Ok(GuildTemplate {
+            code: row.code,
+            name: row.name,
+            description: row.description,
+            usage_count: row.usage_count.max(0) as u32,
+            creator_id: sf_opt(row.creator_id),
+            source_guild_id: Some(sf(row.guild_id)),
+            source,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
     }
 }
 
