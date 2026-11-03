@@ -20,6 +20,12 @@ pub struct VoiceRegion {
 /// Default for `Settings::device_max_idle`, in days.
 pub const DEFAULT_DEVICE_MAX_IDLE_DAYS: i64 = 30;
 
+/// Default for `Settings::discovery_min_members`.
+pub const DEFAULT_DISCOVERY_MIN_MEMBERS: u64 = 5;
+
+/// Default for `Settings::discovery_min_guild_age`, in days.
+pub const DEFAULT_DISCOVERY_MIN_AGE_DAYS: i64 = 7;
+
 /// Default for `Settings::account_deletion_retention`, in days.
 pub const DEFAULT_ACCOUNT_DELETION_DAYS: i64 = 14;
 
@@ -37,6 +43,19 @@ pub struct Settings {
     pub app_link_base: String,
     /// How long a deleted account stays recoverable by logging in.
     pub account_deletion_retention: Duration,
+    /// Members a guild needs before it can be listed in Discover.
+    pub discovery_min_members: u64,
+    /// How old a guild must be before it can be listed in Discover.
+    pub discovery_min_guild_age: Duration,
+}
+
+impl Settings {
+    pub fn discovery_rules(&self) -> domain::discovery::DiscoveryRules {
+        domain::discovery::DiscoveryRules {
+            min_members: self.discovery_min_members,
+            min_age: self.discovery_min_guild_age,
+        }
+    }
 }
 
 impl Default for Settings {
@@ -53,6 +72,8 @@ impl Default for Settings {
             public_api_base: "http://localhost:8080".into(),
             app_link_base: "discordy://".into(),
             account_deletion_retention: Duration::days(DEFAULT_ACCOUNT_DELETION_DAYS),
+            discovery_min_members: DEFAULT_DISCOVERY_MIN_MEMBERS,
+            discovery_min_guild_age: Duration::days(DEFAULT_DISCOVERY_MIN_AGE_DAYS),
         }
     }
 }

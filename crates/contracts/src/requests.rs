@@ -526,3 +526,13 @@ pub struct ModifyWebhookRequest {
     #[serde(default)]
     pub channel_id: Option<Id>,
 }
+
+/// `PUT /guilds/{id}/discovery`.
+#[derive(Debug, Deserialize)]
+pub struct UpdateDiscoveryRequest {
+    pub enabled: bool,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}

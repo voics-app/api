@@ -4,8 +4,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::FromRow;
 
-use application::ports::GuildRepository;
+use application::ports::{DiscoveryEntry, DiscoveryPage, DiscoveryQuery, GuildRepository};
 use application::AppResult;
+use domain::discovery::GuildDiscovery;
 use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
 use domain::Snowflake;
 
@@ -325,6 +326,102 @@ impl GuildRepository for PgStore {
             .map_err(db)?;
         Ok(count as u64)
     }
+    async fn discovery(&self, guild_id: Snowflake) -> AppResult<Option<GuildDiscovery>> {
+        let row: Option<(String, Vec<String>, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT category, tags, listed_at FROM guild_discovery WHERE guild_id = $1",
+        )
+        .bind(guild_id.as_i64())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|(category, tags, listed_at)| GuildDiscovery {
+            category,
+            tags,
+            listed_at,
+        }))
+    }
+
+    async fn set_discovery(
+        &self,
+        guild_id: Snowflake,
+        listing: Option<&GuildDiscovery>,
+    ) -> AppResult<()> {
+        match listing {
+            Some(listing) => sqlx::query(
+                "INSERT INTO guild_discovery (guild_id, category, tags, listed_at) VALUES ($1, $2, $3, $4)                  ON CONFLICT (guild_id) DO UPDATE SET category = EXCLUDED.category, tags = EXCLUDED.tags",
+            )
+            .bind(guild_id.as_i64())
+            .bind(&listing.category)
+            .bind(&listing.tags)
+            .bind(listing.listed_at)
+            .execute(&self.pool)
+            .await
+            .map(|_| ()),
+            None => sqlx::query("DELETE FROM guild_discovery WHERE guild_id = $1")
+                .bind(guild_id.as_i64())
+                .execute(&self.pool)
+                .await
+                .map(|_| ()),
+        }
+        .map_err(db)
+    }
+
+    async fn has_nsfw_channel(&self, guild_id: Snowflake) -> AppResult<bool> {
+        let (found,): (bool,) =
+            sqlx::query_as("SELECT EXISTS (SELECT 1 FROM channels WHERE guild_id = $1 AND nsfw)")
+                .bind(guild_id.as_i64())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(found)
+    }
+
+    async fn search_discoverable(&self, query: &DiscoveryQuery) -> AppResult<DiscoveryPage> {
+        let columns = GUILD_COLUMNS
+            .split(", ")
+            .map(|c| format!("g.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT {columns}, d.category, d.tags, d.listed_at, c.member_count, count(*) OVER () AS total              FROM guild_discovery d              JOIN guilds g ON g.id = d.guild_id              CROSS JOIN LATERAL (SELECT count(*) AS member_count FROM members m WHERE m.guild_id = g.id) c              WHERE c.member_count >= $1                AND g.created_at <= $2                AND g.description IS NOT NULL AND btrim(g.description) <> ''                AND NOT EXISTS (SELECT 1 FROM channels ch WHERE ch.guild_id = g.id AND ch.nsfw)                AND ($3::text IS NULL OR d.category = $3)                AND ($4::text IS NULL OR $4 = ANY (d.tags))                AND ($5::text IS NULL OR g.name ILIKE $5 OR g.description ILIKE $5 OR EXISTS (                     SELECT 1 FROM unnest(d.tags) t WHERE t ILIKE $5))              ORDER BY c.member_count DESC, g.id              LIMIT $6 OFFSET $7"
+        );
+        let rows: Vec<DiscoveryRow> = sqlx::query_as(&sql)
+            .bind(query.min_members as i64)
+            .bind(query.created_before)
+            .bind(query.category.as_deref())
+            .bind(query.tag.as_deref())
+            .bind(query.text.as_deref().map(like_pattern))
+            .bind(i64::from(query.limit))
+            .bind(i64::from(query.offset))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        let total = rows.first().map_or(0, |row| row.total as u64);
+        let entries = rows
+            .into_iter()
+            .map(|row| DiscoveryEntry {
+                discovery: GuildDiscovery {
+                    category: row.category.clone(),
+                    tags: row.tags.clone(),
+                    listed_at: row.listed_at,
+                },
+                member_count: row.member_count as u64,
+                guild: row.guild.into(),
+            })
+            .collect();
+        Ok(DiscoveryPage { entries, total })
+    }
+}
+
+#[derive(FromRow)]
+struct DiscoveryRow {
+    #[sqlx(flatten)]
+    guild: GuildRow,
+    category: String,
+    tags: Vec<String>,
+    listed_at: DateTime<Utc>,
+    member_count: i64,
+    total: i64,
 }
 
 fn prefixed_user_columns() -> String {
