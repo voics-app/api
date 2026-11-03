@@ -1,3 +1,4 @@
+use domain::session::ClientInfo;
 use domain::user::{Credentials, User, UserSettings};
 use domain::validation::{self, ValidationErrors};
 
@@ -12,6 +13,7 @@ pub struct RegisterInput {
     pub email: String,
     pub username: String,
     pub password: String,
+    pub client: ClientInfo,
 }
 
 pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthTokens> {
@@ -75,5 +77,5 @@ pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthToken
             tracing::warn!(%error, "verification email not sent at registration");
         }
     }
-    start_session(ports, user, None).await
+    start_session(ports, user, None, input.client).await
 }

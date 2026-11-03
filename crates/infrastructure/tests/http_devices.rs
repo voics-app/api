@@ -391,6 +391,7 @@ async fn logout_keeps_a_device_that_another_live_session_still_holds() {
             password: "a-long-enough-passphrase".into(),
             totp: None,
             device_id: Some(device_id.parse().expect("snowflake")),
+            client: Default::default(),
         },
     )
     .await
