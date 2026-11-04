@@ -231,6 +231,14 @@ pub trait GuildRepository: Send + Sync {
     ) -> AppResult<Vec<MemberProfile>>;
     async fn members(&self, guild_id: Snowflake) -> AppResult<Vec<Member>>;
     async fn member_count(&self, guild_id: Snowflake) -> AppResult<u64>;
+    /// Members a prune would remove: joined before `cutoff`, no login session used since
+    /// `cutoff`, and no role besides `include_roles`. The owner is never a candidate.
+    async fn prune_candidates(
+        &self,
+        guild_id: Snowflake,
+        cutoff: DateTime<Utc>,
+        include_roles: &[Snowflake],
+    ) -> AppResult<Vec<Snowflake>>;
     /// Ids of up to `limit` members, lowest first.
     async fn member_ids(&self, guild_id: Snowflake, limit: u32) -> AppResult<Vec<Snowflake>>;
     async fn ban(&self, guild_id: Snowflake, user_id: Snowflake) -> AppResult<Option<Ban>>;

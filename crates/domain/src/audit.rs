@@ -14,6 +14,7 @@ pub enum AuditAction {
     ChannelOverwriteUpdate,
     ChannelOverwriteDelete,
     MemberKick,
+    MemberPrune,
     MemberBanAdd,
     MemberBanRemove,
     MemberUpdate,
@@ -49,6 +50,7 @@ impl AuditAction {
             ChannelOverwriteUpdate => 14,
             ChannelOverwriteDelete => 15,
             MemberKick => 20,
+            MemberPrune => 21,
             MemberBanAdd => 22,
             MemberBanRemove => 23,
             MemberUpdate => 24,
@@ -73,7 +75,7 @@ impl AuditAction {
         }
     }
 
-    pub const ALL: [AuditAction; 29] = {
+    pub const ALL: [AuditAction; 30] = {
         use AuditAction::*;
         [
             GuildUpdate,
@@ -84,6 +86,7 @@ impl AuditAction {
             ChannelOverwriteUpdate,
             ChannelOverwriteDelete,
             MemberKick,
+            MemberPrune,
             MemberBanAdd,
             MemberBanRemove,
             MemberUpdate,
@@ -158,6 +161,7 @@ mod tests {
             assert_eq!(AuditAction::from_code(action.code()), Some(action));
         }
         assert_eq!(AuditAction::from_code(999), None);
+        assert_eq!(AuditAction::MemberPrune.code(), 21);
         assert_eq!(AuditAction::MemberBanAdd.code(), 22);
         assert_eq!(AuditAction::MemberMove.code(), 26);
         assert_eq!(AuditAction::MemberDisconnect.code(), 27);
