@@ -434,6 +434,15 @@ pub struct CreateBanRequest {
     pub delete_message_seconds: Option<u32>,
 }
 
+/// Body of `POST /guilds/{id}/prune`; `days` defaults to 7.
+#[derive(Debug, Default, Deserialize)]
+pub struct PruneRequest {
+    #[serde(default)]
+    pub days: Option<u32>,
+    #[serde(default)]
+    pub include_roles: Vec<Id>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateEmojiRequest {
     pub name: String,

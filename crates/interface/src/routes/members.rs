@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use application::support::audit::AuditContext;
 use application::use_cases::bans::{create_ban, get_ban, list_bans, remove_ban};
+use application::use_cases::members::prune_members::{self, PruneInput};
 use application::use_cases::members::update_member::UpdateMemberInput;
 use application::use_cases::members::{
     add_member_role, get_member, list_members, remove_member, remove_member_role, update_member,
@@ -18,9 +19,9 @@ use application::use_cases::roles::{
     create_role, delete_role, duplicate_role, list_roles, reorder_roles, update_role,
 };
 use application::{AppError, Resource};
-use contracts::objects::{BanDto, MemberDto, RoleDto};
+use contracts::objects::{BanDto, MemberDto, PruneDto, RoleDto};
 use contracts::requests::{
-    CreateBanRequest, ModifyMemberRequest, RolePositionRequest, RoleRequest,
+    CreateBanRequest, ModifyMemberRequest, PruneRequest, RolePositionRequest, RoleRequest,
 };
 use contracts::wire::Id;
 
@@ -124,6 +125,75 @@ async fn kick(
     )
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+const DEFAULT_PRUNE_DAYS: u32 = 7;
+
+#[derive(Deserialize)]
+struct PruneQuery {
+    days: Option<u32>,
+    /// Comma separated role ids.
+    include_roles: Option<String>,
+}
+
+async fn prune_preview(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+    Query(params): Query<PruneQuery>,
+) -> Result<Json<PruneDto>, ApiError> {
+    let include_roles = params
+        .include_roles
+        .as_deref()
+        .unwrap_or_default()
+        .split(',')
+        .filter(|raw| !raw.is_empty())
+        .map(|raw| snowflake(raw, Resource::Role))
+        .collect::<Result<Vec<_>, _>>()?;
+    let input = PruneInput {
+        days: params.days.unwrap_or(DEFAULT_PRUNE_DAYS),
+        include_roles,
+    };
+    let pruned = prune_members::count(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        input,
+    )
+    .await?;
+    Ok(Json(PruneDto { pruned }))
+}
+
+async fn prune(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
+    Path(guild): Path<String>,
+    body: Bytes,
+) -> Result<Json<PruneDto>, ApiError> {
+    let body = if body.is_empty() {
+        PruneRequest::default()
+    } else {
+        serde_json::from_slice::<PruneRequest>(&body)
+            .map_err(|error| AppError::invalid("body", "INVALID_BODY", error.to_string()))?
+    };
+    let input = PruneInput {
+        days: body.days.unwrap_or(DEFAULT_PRUNE_DAYS),
+        include_roles: body.include_roles.into_iter().map(|Id(id)| id).collect(),
+    };
+    let audit = AuditContext {
+        actor_id: actor.user_id,
+        reason: reason.as_deref(),
+    };
+    let pruned = prune_members::execute(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        input,
+        audit,
+    )
+    .await?;
+    Ok(Json(PruneDto { pruned }))
 }
 
 async fn grant_role(
@@ -381,6 +451,7 @@ pub fn routes() -> Router<AppState> {
             "/guilds/{id}/members/{user_id}",
             get(fetch_member).patch(modify_member).delete(kick),
         )
+        .route("/guilds/{id}/prune", get(prune_preview).post(prune))
         .route(
             "/guilds/{id}/members/{user_id}/roles/{role_id}",
             put(grant_role).delete(revoke_role),

@@ -677,6 +677,12 @@ impl From<&Ban> for BanDto {
     }
 }
 
+/// Result of both prune endpoints: members to be removed (GET) or removed (POST).
+#[derive(Debug, Clone, Serialize)]
+pub struct PruneDto {
+    pub pruned: usize,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PartialChannelDto {
     pub id: Id,

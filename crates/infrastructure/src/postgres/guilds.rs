@@ -277,6 +277,27 @@ impl GuildRepository for PgStore {
             .collect())
     }
 
+    async fn prune_candidates(
+        &self,
+        guild_id: Snowflake,
+        cutoff: DateTime<Utc>,
+        include_roles: &[Snowflake],
+    ) -> AppResult<Vec<Snowflake>> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT m.user_id FROM members m JOIN guilds g ON g.id = m.guild_id JOIN users u ON u.id = m.user_id              WHERE m.guild_id = $1 AND m.user_id <> g.owner_id AND NOT u.bot AND m.joined_at < $2                AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = m.user_id AND s.last_used_at >= $2)                AND NOT EXISTS (SELECT 1 FROM member_roles mr WHERE mr.guild_id = m.guild_id                                AND mr.user_id = m.user_id AND mr.role_id <> ALL($3))              ORDER BY m.user_id",
+        )
+        .bind(guild_id.as_i64())
+        .bind(cutoff)
+        .bind(include_roles.iter().map(|id| id.as_i64()).collect::<Vec<_>>())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id,)| Snowflake::from_i64(id))
+            .collect())
+    }
+
     async fn member_count(&self, guild_id: Snowflake) -> AppResult<u64> {
         let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM members WHERE guild_id = $1")
             .bind(guild_id.as_i64())

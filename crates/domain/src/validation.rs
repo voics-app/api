@@ -184,6 +184,19 @@ pub fn audit_reason(value: &str) -> Result<(), FieldError> {
     length_between("reason", value, 0, 512)
 }
 
+/// A prune looks back 1 to 30 days.
+pub fn prune_days(days: u32) -> Result<(), FieldError> {
+    if (1..=30).contains(&days) {
+        Ok(())
+    } else {
+        Err(error(
+            "days",
+            "PRUNE_DAYS_INVALID",
+            "days must be between 1 and 30.",
+        ))
+    }
+}
+
 /// Letters, digits and `_`; 2–32 characters.
 pub fn emoji_name(value: &str) -> Result<(), FieldError> {
     length_between("name", value, 2, 32)?;
@@ -210,6 +223,14 @@ pub fn normalize_text_channel_name(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prune_days_range() {
+        assert!(prune_days(0).is_err());
+        assert!(prune_days(1).is_ok());
+        assert!(prune_days(30).is_ok());
+        assert!(prune_days(31).is_err());
+    }
 
     #[test]
     fn username_table() {
