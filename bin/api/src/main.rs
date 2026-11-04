@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
+use application::support::fallback_limiter::FallbackRateLimiter;
 use application::use_cases::account::purge_deleted;
 use application::use_cases::devices::prune_stale;
 use application::{Ports, Settings, VoiceRegion};
@@ -68,7 +69,9 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let region = config.default_voice_region.clone();
     let publisher = Arc::new(KafkaPublisher::connect(config.kafka_brokers.clone()).await?);
     let store = Arc::new(PgStore::new(pool.clone()));
-    let rate_limiter = Arc::new(ValkeyRateLimiter::connect(&config.valkey_url).await?);
+    let rate_limiter = Arc::new(FallbackRateLimiter::new(Arc::new(
+        ValkeyRateLimiter::connect(&config.valkey_url).await?,
+    )));
     let mailer: Arc<dyn application::ports::Mailer> = match &config.mail {
         MailTransport::Log => Arc::new(LogMailer {
             include_body: config.environment == Environment::Local,
