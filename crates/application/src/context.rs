@@ -51,6 +51,8 @@ pub struct Settings {
     pub discovery_min_members: u64,
     /// How old a guild must be before it can be listed in Discover.
     pub discovery_min_guild_age: Duration,
+    /// Most members a group DM can have, the creator included.
+    pub group_dm_max_participants: usize,
 }
 
 impl Settings {
@@ -79,6 +81,7 @@ impl Default for Settings {
             account_deletion_retention: Duration::days(DEFAULT_ACCOUNT_DELETION_DAYS),
             discovery_min_members: DEFAULT_DISCOVERY_MIN_MEMBERS,
             discovery_min_guild_age: Duration::days(DEFAULT_DISCOVERY_MIN_AGE_DAYS),
+            group_dm_max_participants: domain::channel::DEFAULT_MAX_GROUP_DM_PARTICIPANTS,
         }
     }
 }

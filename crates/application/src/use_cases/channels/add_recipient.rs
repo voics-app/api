@@ -1,4 +1,4 @@
-use domain::channel::{ChannelType, MAX_GROUP_DM_PARTICIPANTS};
+use domain::channel::ChannelType;
 use domain::relationship::RelationshipType;
 use domain::Snowflake;
 
@@ -10,7 +10,7 @@ use crate::support::system_messages::{self, RECIPIENT_ADD};
 use crate::support::views::{private_view, require_user};
 use crate::write_set::{Mutation, WriteSet};
 
-/// Any member adds a user to a group DM, up to `MAX_GROUP_DM_PARTICIPANTS` members.
+/// Any member adds a user to a group DM, up to `Settings::group_dm_max_participants` members.
 /// Adding an existing member is a no-op.
 pub async fn execute(
     ports: &Ports,
@@ -31,11 +31,12 @@ pub async fn execute(
     if channel.recipient_ids.contains(&user_id) {
         return Ok(());
     }
-    if channel.recipient_ids.len() >= MAX_GROUP_DM_PARTICIPANTS {
+    let max = ports.settings.group_dm_max_participants;
+    if channel.recipient_ids.len() >= max {
         return Err(AppError::invalid(
             "user_id",
             "MAX_GROUP_DM_RECIPIENTS",
-            format!("A group DM has at most {MAX_GROUP_DM_PARTICIPANTS} members."),
+            format!("A group DM has at most {max} members."),
         ));
     }
     let added = require_user(ports, user_id)
