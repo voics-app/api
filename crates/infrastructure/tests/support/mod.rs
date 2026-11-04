@@ -266,11 +266,11 @@ pub struct RecordingMail {
 }
 
 impl RecordingMail {
-    /// The token in the latest mail to `to`: the text after `paste this code into Discordy: `.
+    /// The token in the latest mail to `to`: the text after `paste this code into Voics: `.
     pub fn latest_token(&self, to: &str) -> Option<String> {
         let sent = self.sent.lock().unwrap();
         let mail = sent.iter().rev().find(|mail| mail.to == to)?;
-        let marker = "paste this code into Discordy: ";
+        let marker = "paste this code into Voics: ";
         let start = mail.body.find(marker)? + marker.len();
         Some(mail.body[start..].lines().next()?.trim().to_owned())
     }
