@@ -17,8 +17,8 @@ pub const MAIL_PER_RECIPIENT: u32 = 5;
 pub const MAIL_WINDOW: Duration = Duration::from_secs(60 * 60);
 
 /// Spends one attempt on `key`, failing with [`AppError::RateLimited`] when
-/// the bucket is empty. A limiter outage lets the call through, as the HTTP
-/// limiter does: availability matters more than throttling while it is down.
+/// the bucket is empty. The limiter falls back to per-pod memory buckets when its store fails
+/// (`FallbackRateLimiter`), so only a limiter without that fallback lets the call through.
 pub async fn hit(ports: &Ports, key: &str, limit: u32, window: Duration) -> AppResult<()> {
     match ports.limiter.hit(key, limit, window).await {
         Ok(decision) if !decision.allowed => Err(AppError::RateLimited {
