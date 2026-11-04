@@ -1,5 +1,7 @@
 //! Discord-shaped response objects (P9), built from domain entities.
 
+use std::collections::BTreeMap;
+
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde::Serialize;
@@ -124,6 +126,8 @@ pub struct UserSettingsDto {
     pub accent_color: Option<u32>,
     pub guild_folders: Vec<GuildFolderDto>,
     pub guild_positions: Vec<Id>,
+    pub pinned_dm_channel_ids: Vec<Id>,
+    pub pinned_channel_ids: BTreeMap<Id, Vec<Id>>,
     pub preferences: serde_json::Value,
 }
 
@@ -154,6 +158,22 @@ impl From<&UserSettings> for UserSettingsDto {
                 .iter()
                 .copied()
                 .map(Id::from)
+                .collect(),
+            pinned_dm_channel_ids: settings
+                .pinned_dm_channel_ids
+                .iter()
+                .copied()
+                .map(Id::from)
+                .collect(),
+            pinned_channel_ids: settings
+                .pinned_channel_ids
+                .iter()
+                .map(|(guild, channels)| {
+                    (
+                        Id::from(*guild),
+                        channels.iter().copied().map(Id::from).collect(),
+                    )
+                })
                 .collect(),
             preferences: serde_json::Value::Object(settings.preferences.clone()),
         }

@@ -85,12 +85,12 @@ async fn guild_lifecycle_round_trips_through_postgres() {
     users.mutate(Mutation::InsertUser {
         user: user(10, "alice"),
         credentials: None,
-        settings: UserSettings::defaults_for(alice),
+        settings: Box::new(UserSettings::defaults_for(alice)),
     });
     users.mutate(Mutation::InsertUser {
         user: user(11, "bob"),
         credentials: None,
-        settings: UserSettings::defaults_for(bob),
+        settings: Box::new(UserSettings::defaults_for(bob)),
     });
     uow.commit(users).await.expect("users committed");
 

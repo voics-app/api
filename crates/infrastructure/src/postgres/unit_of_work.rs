@@ -66,7 +66,7 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             if let Some(credentials) = credentials {
                 identity::insert_credentials(&mut *conn, credentials).await?;
             }
-            identity::upsert_settings(conn, settings).await
+            identity::upsert_settings(conn, settings.as_ref()).await
         }
         Mutation::UpdateUser(user) => identity::upsert_user(conn, user).await,
         Mutation::SetTotpSecret { user_id, secret } => {

@@ -26,7 +26,7 @@ pub enum Mutation {
     InsertUser {
         user: User,
         credentials: Option<Credentials>,
-        settings: UserSettings,
+        settings: Box<UserSettings>,
     },
     UpdateUser(User),
     /// Activates (`Some`) or removes (`None`) TOTP, clearing any pending

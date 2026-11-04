@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use domain::channel::ThreadMetadata;
 use domain::delivery_mode::DeliveryMode;
 use domain::permissions::Permissions;
+use domain::pinned::PinnedChannels;
 use domain::user::CustomStatus;
 use domain::Snowflake;
 
@@ -150,9 +151,64 @@ pub fn guild_folders_from_json(value: &Value) -> Vec<domain::user::GuildFolder> 
         .unwrap_or_default()
 }
 
+pub fn pinned_channels_json(pinned: &PinnedChannels) -> Value {
+    Value::Object(
+        pinned
+            .iter()
+            .map(|(guild, channels)| {
+                (
+                    guild.to_string(),
+                    Value::Array(channels.iter().map(|c| json!(c.to_string())).collect()),
+                )
+            })
+            .collect(),
+    )
+}
+
+pub fn pinned_channels_from_json(value: &Value) -> PinnedChannels {
+    value
+        .as_object()
+        .map(|guilds| {
+            guilds
+                .iter()
+                .filter_map(|(guild, channels)| {
+                    let guild = guild.parse().ok()?;
+                    let channels = channels
+                        .as_array()?
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter_map(|id| id.parse().ok())
+                        .collect();
+                    Some((guild, channels))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pinned_channels_round_trip_through_json() {
+        let pinned = PinnedChannels::from([
+            (
+                Snowflake::new(10),
+                vec![Snowflake::new(3), Snowflake::new(1)],
+            ),
+            (Snowflake::new(20), vec![Snowflake::new(2)]),
+        ]);
+        let json = pinned_channels_json(&pinned);
+        assert_eq!(json["10"], json!(["3", "1"]));
+        assert_eq!(pinned_channels_from_json(&json), pinned);
+    }
+
+    #[test]
+    fn malformed_pinned_channels_json_yields_an_empty_map() {
+        assert!(pinned_channels_from_json(&json!([1, 2])).is_empty());
+        assert!(pinned_channels_from_json(&json!({"x": ["1"], "5": "no"})).is_empty());
+    }
 
     #[test]
     fn like_patterns_escape_wildcards() {

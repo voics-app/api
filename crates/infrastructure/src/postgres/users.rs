@@ -75,6 +75,8 @@ struct SettingsRow {
     guild_positions: Vec<i64>,
     message_display_compact: bool,
     preferences: serde_json::Value,
+    pinned_dm_channel_ids: Vec<i64>,
+    pinned_channel_ids: serde_json::Value,
 }
 
 impl From<SettingsRow> for UserSettings {
@@ -93,12 +95,14 @@ impl From<SettingsRow> for UserSettings {
             guild_positions: row.guild_positions.into_iter().map(sf).collect(),
             message_display_compact: row.message_display_compact,
             preferences: row.preferences.as_object().cloned().unwrap_or_default(),
+            pinned_dm_channel_ids: row.pinned_dm_channel_ids.into_iter().map(sf).collect(),
+            pinned_channel_ids: super::convert::pinned_channels_from_json(&row.pinned_channel_ids),
         }
     }
 }
 
 const SETTINGS_COLUMNS: &str =
-    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences";
+    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids";
 
 #[async_trait]
 impl UserRepository for PgStore {

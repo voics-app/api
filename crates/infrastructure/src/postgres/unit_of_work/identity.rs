@@ -110,14 +110,14 @@ pub(super) async fn upsert_settings(
     sqlx::query(
         "INSERT INTO user_settings (user_id, default_delivery_mode, e2ee_calls_default, theme, locale, \
              status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, \
-             message_display_compact, preferences) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
+             message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
          ON CONFLICT (user_id) DO UPDATE SET default_delivery_mode = EXCLUDED.default_delivery_mode, \
              e2ee_calls_default = EXCLUDED.e2ee_calls_default, theme = EXCLUDED.theme, locale = EXCLUDED.locale, status = EXCLUDED.status, \
              custom_status = EXCLUDED.custom_status, developer_mode = EXCLUDED.developer_mode, \
              accent_color = EXCLUDED.accent_color, guild_folders = EXCLUDED.guild_folders, \
              guild_positions = EXCLUDED.guild_positions, \
-             message_display_compact = EXCLUDED.message_display_compact, preferences = EXCLUDED.preferences",
+             message_display_compact = EXCLUDED.message_display_compact, preferences = EXCLUDED.preferences, \n             pinned_dm_channel_ids = EXCLUDED.pinned_dm_channel_ids, pinned_channel_ids = EXCLUDED.pinned_channel_ids",
     )
     .bind(settings.user_id.as_i64())
     .bind(settings.default_delivery_mode.as_str())
@@ -138,6 +138,16 @@ pub(super) async fn upsert_settings(
     )
     .bind(settings.message_display_compact)
     .bind(serde_json::Value::Object(settings.preferences.clone()))
+    .bind(
+        settings
+            .pinned_dm_channel_ids
+            .iter()
+            .map(|id| id.as_i64())
+            .collect::<Vec<_>>(),
+    )
+    .bind(super::super::convert::pinned_channels_json(
+        &settings.pinned_channel_ids,
+    ))
     .execute(conn)
     .await
     .map_err(db)?;

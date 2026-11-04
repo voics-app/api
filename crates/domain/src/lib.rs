@@ -15,6 +15,7 @@ pub mod invite;
 pub mod mfa;
 pub mod notification;
 pub mod permissions;
+pub mod pinned;
 pub mod relationship;
 pub mod session;
 pub mod snowflake;
