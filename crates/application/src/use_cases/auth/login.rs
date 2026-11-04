@@ -1,4 +1,5 @@
 use domain::account::AccountState;
+use domain::session::ClientInfo;
 use domain::user::User;
 use domain::Snowflake;
 
@@ -17,6 +18,7 @@ pub struct LoginInput {
     pub totp: Option<String>,
     /// Binds the session to one of the caller's registered devices.
     pub device_id: Option<Snowflake>,
+    pub client: ClientInfo,
 }
 
 fn invalid_login() -> AppError {
@@ -52,7 +54,7 @@ pub async fn execute(ports: &Ports, input: LoginInput) -> AppResult<AuthTokens> 
         };
         verify_second_factor(ports, user.id, &credentials, code, "totp").await?;
     }
-    complete(ports, user, input.device_id).await
+    complete(ports, user, input.device_id, input.client).await
 }
 
 /// Final step shared by every login path once the caller is authenticated:
@@ -62,6 +64,7 @@ pub(super) async fn complete(
     ports: &Ports,
     user: User,
     device_id: Option<Snowflake>,
+    client: ClientInfo,
 ) -> AppResult<AuthTokens> {
     if let Some(device_id) = device_id {
         let owned = ports
@@ -85,5 +88,5 @@ pub(super) async fn complete(
         });
         ports.unit_of_work.commit(writes).await?;
     }
-    start_session(ports, user, device_id).await
+    start_session(ports, user, device_id, client).await
 }

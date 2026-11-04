@@ -2,6 +2,7 @@
 
 use uuid::Uuid;
 
+use domain::session::ClientInfo;
 use domain::user::User;
 use domain::Snowflake;
 
@@ -40,13 +41,16 @@ pub async fn start_session(
     ports: &Ports,
     user: User,
     device_id: Option<Snowflake>,
+    client: ClientInfo,
 ) -> AppResult<AuthTokens> {
     let now = ports.clock.now();
     let session = Session {
         id: Uuid::new_v4(),
         user_id: user.id,
         device_id,
+        client,
         created_at: now,
+        last_used_at: now,
         revoked_at: None,
     };
     let refresh_token = ports.secrets.token(REFRESH_TOKEN_BYTES);

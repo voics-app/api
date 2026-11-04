@@ -2,6 +2,7 @@
 //! once, here; nothing downstream reads the environment.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use url::Url;
 
@@ -76,6 +77,10 @@ pub struct Config {
     pub discovery_min_members: u64,
     /// Days a guild must exist before it can be listed in Discover.
     pub discovery_min_guild_age_days: u32,
+    /// Password hashes (argon2) allowed to run at once; each costs tens of MB.
+    pub password_hash_concurrency: usize,
+    /// How long a password operation waits for a free hash slot before a 429.
+    pub password_hash_queue_timeout: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -94,6 +99,8 @@ const DEFAULT_ACCOUNT_DELETION_DAYS: &str = "14";
 const DEFAULT_ACCOUNT_PURGE_INTERVAL_SECS: &str = "3600";
 const DEFAULT_DISCOVERY_MIN_MEMBERS: &str = "5";
 const DEFAULT_DISCOVERY_MIN_AGE_DAYS: &str = "7";
+const DEFAULT_PASSWORD_HASH_CONCURRENCY: &str = "2";
+const DEFAULT_PASSWORD_HASH_QUEUE_TIMEOUT_MS: &str = "5000";
 const DEFAULT_SMTP_PORT: &str = "587";
 
 fn mail_transport(get: &impl Fn(&str) -> Option<String>) -> Result<MailTransport, ConfigError> {
@@ -284,6 +291,16 @@ impl Config {
                 "ACCOUNT_PURGE_INTERVAL_SECS",
                 DEFAULT_ACCOUNT_PURGE_INTERVAL_SECS,
             )?,
+            password_hash_concurrency: positive(
+                &get,
+                "PASSWORD_HASH_CONCURRENCY",
+                DEFAULT_PASSWORD_HASH_CONCURRENCY,
+            )?,
+            password_hash_queue_timeout: Duration::from_millis(positive(
+                &get,
+                "PASSWORD_HASH_QUEUE_TIMEOUT_MS",
+                DEFAULT_PASSWORD_HASH_QUEUE_TIMEOUT_MS,
+            )?),
         })
     }
 }
@@ -433,6 +450,35 @@ mod tests {
                 ),
                 "{name}={bad}"
             );
+        }
+    }
+
+    #[test]
+    fn password_hashing_is_bounded_by_default_and_configurable() {
+        let config = Config::from_lookup(lookup(complete())).expect("valid");
+        assert_eq!(config.password_hash_concurrency, 2);
+        assert_eq!(config.password_hash_queue_timeout, Duration::from_secs(5));
+
+        let mut values = complete();
+        values.insert("PASSWORD_HASH_CONCURRENCY", "3".to_owned());
+        values.insert("PASSWORD_HASH_QUEUE_TIMEOUT_MS", "1500".to_owned());
+        let config = Config::from_lookup(lookup(values)).expect("valid");
+        assert_eq!(config.password_hash_concurrency, 3);
+        assert_eq!(
+            config.password_hash_queue_timeout,
+            Duration::from_millis(1500)
+        );
+
+        for name in [
+            "PASSWORD_HASH_CONCURRENCY",
+            "PASSWORD_HASH_QUEUE_TIMEOUT_MS",
+        ] {
+            let mut values = complete();
+            values.insert(name, "0".to_owned());
+            assert!(matches!(
+                Config::from_lookup(lookup(values)),
+                Err(ConfigError::Invalid { name: n, .. }) if n == name
+            ));
         }
     }
 

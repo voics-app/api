@@ -201,7 +201,7 @@ pub fn ports_with_messages(
         webhooks: store,
         unit_of_work: Arc::new(PgUnitOfWork::new(pool.clone(), "nl-home".into())),
         events: Arc::new(DiscardEvents),
-        passwords: Arc::new(Argon2Passwords),
+        passwords: Arc::new(Argon2Passwords::default()),
         tokens: Arc::new(Ed25519Tokens::from_pem(private_pem, public_pem).expect("jwt keys")),
         clock: Arc::new(SystemClock),
         ids: Arc::new(SnowflakeIds::new(1).expect("worker id")),

@@ -385,6 +385,18 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             Some(notify.clone()),
             json!({ "channel_id": channel_id.to_string(), "user": UserDto::public(user) }),
         ),
+        DomainEvent::SessionsRevoke {
+            user_id,
+            session_ids,
+        } => emit(
+            TOPIC_USER,
+            *user_id,
+            "SESSION_REVOKE",
+            None,
+            None,
+            Some(vec![*user_id]),
+            json!({ "session_ids": session_ids.iter().map(ToString::to_string).collect::<Vec<_>>() }),
+        ),
         DomainEvent::UserDevicesUpdate {
             user_id,
             devices,
@@ -662,6 +674,28 @@ mod tests {
             Some(vec![Id(Snowflake::new(10))])
         );
         assert_eq!(routed[0].envelope.kind, "GUILD_CREATE");
+    }
+
+    #[test]
+    fn sessions_revoke_targets_the_user_with_the_revoked_ids() {
+        let session = uuid::Uuid::from_u128(0xabc);
+        let event = DomainEvent::SessionsRevoke {
+            user_id: Snowflake::new(10),
+            session_ids: vec![session],
+        };
+        let routed = route(&event, "nl-home", at());
+        assert_eq!(routed.len(), 1);
+        assert_eq!(routed[0].topic, TOPIC_USER);
+        assert_eq!(routed[0].key, "10");
+        assert_eq!(routed[0].envelope.kind, "SESSION_REVOKE");
+        assert_eq!(
+            routed[0].envelope.target_user_ids,
+            Some(vec![Id(Snowflake::new(10))])
+        );
+        assert_eq!(
+            routed[0].envelope.data["session_ids"],
+            serde_json::json!([session.to_string()])
+        );
     }
 
     #[test]

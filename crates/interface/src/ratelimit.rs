@@ -106,6 +106,13 @@ fn throttled(decision: &RateLimitDecision, bucket: &str) -> Response {
     response
 }
 
+/// `rate_limit_decisions_total{scope,result}`: `result` is `allowed`, `limited` or `error` (limiter
+/// outage, request let through).
+fn record_decision(scope: &'static str, result: &'static str) {
+    metrics::counter!("rate_limit_decisions_total", "scope" => scope, "result" => result)
+        .increment(1);
+}
+
 /// Middleware for the public API. A limiter outage fails open: availability
 /// of the API matters more than throttling while the store is down.
 pub async fn enforce(
@@ -121,13 +128,18 @@ pub async fn enforce(
         .hit(&key, policy.limit, policy.window)
         .await
     {
-        Ok(decision) if !decision.allowed => throttled(&decision, &bucket),
+        Ok(decision) if !decision.allowed => {
+            record_decision("general", "limited");
+            throttled(&decision, &bucket)
+        }
         Ok(decision) => {
+            record_decision("general", "allowed");
             let mut response = next.run(request).await;
             apply_headers(response.headers_mut(), &decision, &bucket);
             response
         }
         Err(error) => {
+            record_decision("general", "error");
             tracing::warn!(%error, "rate limiter unavailable; request allowed");
             next.run(request).await
         }
@@ -145,12 +157,19 @@ pub async fn strict(
 ) -> Result<(), crate::error::ApiError> {
     let key = format!("rl-strict:{}:{name}", identity_of(headers));
     match state.rate_limiter.hit(&key, limit, window).await {
-        Ok(decision) if !decision.allowed => Err(application::AppError::RateLimited {
-            retry_after_secs: decision.retry_after.as_secs().max(1),
+        Ok(decision) if !decision.allowed => {
+            record_decision("strict", "limited");
+            Err(application::AppError::RateLimited {
+                retry_after_secs: decision.retry_after.as_secs().max(1),
+            }
+            .into())
         }
-        .into()),
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            record_decision("strict", "allowed");
+            Ok(())
+        }
         Err(error) => {
+            record_decision("strict", "error");
             tracing::warn!(%error, "rate limiter unavailable; request allowed");
             Ok(())
         }
@@ -160,6 +179,18 @@ pub async fn strict(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decisions_are_counted_by_scope_and_result() {
+        let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+        let handle = recorder.handle();
+        let _guard = metrics::set_default_local_recorder(&recorder);
+        record_decision("general", "limited");
+        record_decision("general", "limited");
+        assert!(handle
+            .render()
+            .contains(r#"rate_limit_decisions_total{scope="general",result="limited"} 2"#));
+    }
 
     #[test]
     fn numeric_and_long_segments_share_a_bucket() {

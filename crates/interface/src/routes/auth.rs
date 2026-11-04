@@ -25,11 +25,19 @@ use contracts::requests::{
     ForgotPasswordRequest, LoginRequest, MfaLoginRequest, RefreshRequest, RegisterRequest,
     ResetPasswordRequest, VerifyEmailRequest,
 };
+use domain::session::ClientInfo;
 
 use crate::error::ApiError;
 use crate::extract::{Body, Caller};
 use crate::ratelimit::strict;
 use crate::state::AppState;
+
+/// Client details of a login request: its User-Agent and, behind Cloudflare, the
+/// visitor's country.
+fn client_info(headers: &HeaderMap) -> ClientInfo {
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    ClientInfo::from_headers(header("user-agent"), header("cf-ipcountry"))
+}
 
 const HOUR: Duration = Duration::from_secs(3600);
 const TEN_MINUTES: Duration = Duration::from_secs(600);
@@ -52,6 +60,7 @@ async fn to_response(state: &AppState, tokens: AuthTokens) -> AppResult<AuthResp
 
 async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Body(body): Body<RegisterRequest>,
 ) -> Result<(StatusCode, Json<AuthResponse>), ApiError> {
     let tokens = register::execute(
@@ -60,6 +69,7 @@ async fn register(
             email: body.email,
             username: body.username,
             password: body.password,
+            client: client_info(&headers),
         },
     )
     .await?;
@@ -71,6 +81,7 @@ async fn register(
 
 async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Body(body): Body<LoginRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
     let tokens = login::execute(
@@ -80,6 +91,7 @@ async fn login(
             password: body.password,
             totp: body.totp,
             device_id: None,
+            client: client_info(&headers),
         },
     )
     .await?;
@@ -114,6 +126,7 @@ async fn login_totp(
             ticket: body.ticket,
             code: body.code,
             device_id: None,
+            client: client_info(&headers),
         },
     )
     .await?;

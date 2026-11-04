@@ -18,6 +18,7 @@ use domain::invite::Invite;
 use domain::mfa::BackupCodeRecord;
 use domain::notification::GuildNotificationSettings;
 use domain::relationship::Relationship;
+use domain::session::ClientInfo;
 use domain::template::GuildTemplate;
 use domain::user::{Credentials, User, UserSettings};
 use domain::Snowflake;
@@ -81,8 +82,18 @@ pub struct Session {
     pub id: Uuid,
     pub user_id: Snowflake,
     pub device_id: Option<Snowflake>,
+    pub client: ClientInfo,
     pub created_at: DateTime<Utc>,
+    /// Last login or token refresh.
+    pub last_used_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
+}
+
+/// A live session with the name of the device it is bound to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveSession {
+    pub session: Session,
+    pub device_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,14 +123,26 @@ pub trait SessionRepository: Send + Sync {
     ) -> AppResult<RotateOutcome>;
     async fn find(&self, id: Uuid) -> AppResult<Option<Session>>;
     async fn revoke(&self, id: Uuid, now: DateTime<Utc>) -> AppResult<()>;
-    async fn revoke_all_for_user(&self, user_id: Snowflake, now: DateTime<Utc>) -> AppResult<()>;
-    /// Revokes every live session of the user except `keep`.
+    /// Revokes every live session of the user and returns their ids.
+    async fn revoke_all_for_user(
+        &self,
+        user_id: Snowflake,
+        now: DateTime<Utc>,
+    ) -> AppResult<Vec<Uuid>>;
+    /// Revokes every live session of the user except `keep` and returns their ids.
     async fn revoke_others(
         &self,
         user_id: Snowflake,
         keep: Uuid,
         now: DateTime<Utc>,
-    ) -> AppResult<()>;
+    ) -> AppResult<Vec<Uuid>>;
+    /// The user's live sessions, most recently used first: not revoked, and
+    /// with an unrotated refresh token that has not expired.
+    async fn list_active(
+        &self,
+        user_id: Snowflake,
+        now: DateTime<Utc>,
+    ) -> AppResult<Vec<ActiveSession>>;
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()>;
     /// Devices of `user_id` that a session bound to them still holds: not
     /// revoked, and with an unrotated refresh token that has not expired.
