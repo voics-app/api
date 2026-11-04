@@ -104,7 +104,10 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         webhooks: store,
         unit_of_work: Arc::new(PgUnitOfWork::new(pool.clone(), region.clone())),
         events: Arc::new(KafkaEvents::new(publisher.clone(), region.clone())),
-        passwords: Arc::new(Argon2Passwords),
+        passwords: Arc::new(Argon2Passwords::new(
+            config.password_hash_concurrency,
+            config.password_hash_queue_timeout,
+        )),
         tokens: Arc::new(Ed25519Tokens::from_pem(
             config.jwt_private_pem.as_bytes(),
             config.jwt_public_pem.as_bytes(),
