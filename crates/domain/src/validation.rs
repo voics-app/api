@@ -162,8 +162,10 @@ pub fn channel_topic(value: &str) -> Result<(), FieldError> {
     length_between("topic", value, 0, 1024)
 }
 
+pub const ROLE_NAME_MAX: usize = 100;
+
 pub fn role_name(value: &str) -> Result<(), FieldError> {
-    length_between("name", value.trim(), 1, 100)
+    length_between("name", value.trim(), 1, ROLE_NAME_MAX)
 }
 
 pub fn nickname(value: &str) -> Result<(), FieldError> {

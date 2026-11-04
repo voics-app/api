@@ -24,6 +24,8 @@ pub struct Guild {
     pub system_channel_flags: u32,
     pub banner: Option<String>,
     pub splash: Option<String>,
+    /// Only administrators may prune inactive members while this is set.
+    pub prune_admin_only: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -81,6 +83,26 @@ impl Role {
             managed: false,
             mentionable: false,
             bot_id: None,
+        }
+    }
+
+    /// A user-editable copy named "<name> (copy)" (cut to the 100 character limit) that
+    /// takes this role's position; the caller shifts this role and those above it up by one.
+    /// The copy is never managed, so it can be edited and deleted like any custom role.
+    pub fn duplicate(&self, id: Snowflake) -> Self {
+        const SUFFIX: &str = " (copy)";
+        let stem: String = self
+            .name
+            .trim()
+            .chars()
+            .take(crate::validation::ROLE_NAME_MAX - SUFFIX.chars().count())
+            .collect();
+        Self {
+            id,
+            name: format!("{}{SUFFIX}", stem.trim_end()),
+            managed: false,
+            bot_id: None,
+            ..self.clone()
         }
     }
 }
@@ -144,4 +166,51 @@ pub struct GuildSnapshot {
     pub members: Vec<MemberProfile>,
     pub emojis: Vec<Emoji>,
     pub member_count: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn role(name: &str) -> Role {
+        Role {
+            id: Snowflake::new(5),
+            guild_id: Snowflake::new(1),
+            name: name.to_owned(),
+            color: 0x12_34_56,
+            hoist: true,
+            icon: Some("hash".into()),
+            unicode_emoji: Some("x".into()),
+            position: 4,
+            permissions: Permissions::from_bits_truncate(0b1010),
+            managed: true,
+            mentionable: true,
+            bot_id: Some(Snowflake::new(9)),
+        }
+    }
+
+    #[test]
+    fn duplicate_copies_settings_under_a_new_id() {
+        let source = role("Moderators");
+        let copy = source.duplicate(Snowflake::new(6));
+        assert_eq!(copy.id, Snowflake::new(6));
+        assert_eq!(copy.name, "Moderators (copy)");
+        assert_eq!(copy.position, source.position);
+        assert_eq!(copy.permissions, source.permissions);
+        assert_eq!(copy.color, source.color);
+        assert_eq!(copy.hoist, source.hoist);
+        assert_eq!(copy.mentionable, source.mentionable);
+        assert_eq!(copy.icon, source.icon);
+        assert_eq!(copy.unicode_emoji, source.unicode_emoji);
+        assert!(!copy.managed, "a copy is a custom role");
+        assert_eq!(copy.bot_id, None);
+    }
+
+    #[test]
+    fn duplicate_name_stays_within_the_role_name_limit() {
+        let copy = role(&"a".repeat(100)).duplicate(Snowflake::new(6));
+        assert_eq!(copy.name.chars().count(), 100);
+        assert!(copy.name.ends_with(" (copy)"));
+        assert!(crate::validation::role_name(&copy.name).is_ok());
+    }
 }

@@ -15,7 +15,7 @@ use application::use_cases::members::{
 };
 use application::use_cases::roles::create_role::RoleInput;
 use application::use_cases::roles::{
-    create_role, delete_role, list_roles, reorder_roles, update_role,
+    create_role, delete_role, duplicate_role, list_roles, reorder_roles, update_role,
 };
 use application::{AppError, Resource};
 use contracts::objects::{BanDto, MemberDto, RoleDto};
@@ -213,6 +213,27 @@ async fn add_role(
     Ok((StatusCode::CREATED, Json(RoleDto::from(&role))))
 }
 
+async fn copy_role(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
+    Path((guild, role)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<RoleDto>), ApiError> {
+    let audit = AuditContext {
+        actor_id: actor.user_id,
+        reason: reason.as_deref(),
+    };
+    let copy = duplicate_role::execute(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        snowflake(&role, Resource::Role)?,
+        audit,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(RoleDto::from(&copy))))
+}
+
 async fn modify_role(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -371,6 +392,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/guilds/{id}/roles/{role_id}",
             axum::routing::patch(modify_role).delete(remove_role),
+        )
+        .route(
+            "/guilds/{id}/roles/{role_id}/duplicate",
+            axum::routing::post(copy_role),
         )
         .route("/guilds/{id}/bans", get(bans))
         .route(
