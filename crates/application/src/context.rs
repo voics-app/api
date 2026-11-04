@@ -28,7 +28,7 @@ pub const DEFAULT_DISCOVERY_MIN_AGE_DAYS: i64 = 7;
 
 /// Default for `Settings::account_deletion_retention`, in days.
 /// Product name used when `BRAND_NAME` is unset.
-pub const DEFAULT_BRAND_NAME: &str = "Discordy"; // brand-check: allow (the brand source)
+pub const DEFAULT_BRAND_NAME: &str = "Voics"; // brand-check: allow (the brand source)
 pub const DEFAULT_ACCOUNT_DELETION_DAYS: i64 = 14;
 
 #[derive(Debug, Clone)]

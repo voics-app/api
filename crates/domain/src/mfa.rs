@@ -107,4 +107,13 @@ mod tests {
             "otpauth://totp/Example:alice%2Btest%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example&algorithm=SHA1&digits=6&period=30"
         );
     }
+
+    #[test]
+    fn the_issuer_only_changes_the_label_never_the_secret() {
+        let old = otpauth_uri("OldName", "alice", "JBSWY3DPEHPK3PXP");
+        let new = otpauth_uri("NewName", "alice", "JBSWY3DPEHPK3PXP");
+        assert!(old.contains("secret=JBSWY3DPEHPK3PXP"));
+        assert!(new.contains("secret=JBSWY3DPEHPK3PXP"));
+        assert_eq!(old.replace("OldName", "NewName"), new);
+    }
 }
