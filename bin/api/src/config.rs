@@ -283,7 +283,7 @@ impl Config {
             )?,
             mail: mail_transport(&get)?,
             brand_name: optional(&get, "BRAND_NAME", application::context::DEFAULT_BRAND_NAME),
-            app_link_base: optional(&get, "APP_LINK_BASE", "discordy://"),
+            app_link_base: optional(&get, "APP_LINK_BASE", "voics://"),
             account_deletion_retention_days: positive(
                 &get,
                 "ACCOUNT_DELETION_RETENTION_DAYS",
