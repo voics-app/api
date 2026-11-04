@@ -232,7 +232,7 @@ pub trait GuildRepository: Send + Sync {
     async fn members(&self, guild_id: Snowflake) -> AppResult<Vec<Member>>;
     async fn member_count(&self, guild_id: Snowflake) -> AppResult<u64>;
     /// Members a prune would remove: joined before `cutoff`, no login session used since
-    /// `cutoff`, and no role besides `include_roles`. The owner is never a candidate.
+    /// `cutoff`, and no role besides `include_roles`. The owner and bots are never candidates.
     async fn prune_candidates(
         &self,
         guild_id: Snowflake,

@@ -342,3 +342,90 @@ async fn prune_needs_kick_members_or_administrator_when_admin_only() {
     let (status, _) = call(&app, Method::GET, &url, &owner, None).await;
     assert_eq!(status, StatusCode::OK, "so can the owner");
 }
+
+#[tokio::test]
+async fn prune_never_removes_bots_which_have_no_login_sessions() {
+    let database = start_database().await;
+    let app = app_for(&database);
+    let (owner, _) = register(&app, "owner").await;
+    let (bot_token, bot_id) = register(&app, "bot").await;
+    let (guild_id, channel_id) = make_guild(&app, &owner).await;
+    join(&app, &owner, &channel_id, &bot_token).await;
+    age(&database, &bot_id, 60).await;
+    sqlx::query("UPDATE users SET bot = TRUE WHERE id = $1")
+        .bind(bot_id.parse::<i64>().expect("snowflake"))
+        .execute(&database.pool)
+        .await
+        .expect("mark bot");
+
+    let (status, body) = call(
+        &app,
+        Method::POST,
+        &prune_url(&guild_id),
+        &owner,
+        Some(json!({"days": 7})),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["pruned"], 0);
+    assert!(is_member(&app, &owner, &guild_id, &bot_id).await);
+}
+
+#[tokio::test]
+async fn prune_skips_members_the_caller_does_not_outrank() {
+    let database = start_database().await;
+    let app = app_for(&database);
+    let (owner, _) = register(&app, "owner").await;
+    let (mod_token, mod_id) = register(&app, "moderator").await;
+    let (peer_token, peer_id) = register(&app, "peer").await;
+    let (guild_id, channel_id) = make_guild(&app, &owner).await;
+    join(&app, &owner, &channel_id, &mod_token).await;
+    join(&app, &owner, &channel_id, &peer_token).await;
+    let kick = make_role(
+        &app,
+        &owner,
+        &guild_id,
+        json!({"name": "kick", "permissions": KICK_MEMBERS}),
+    )
+    .await;
+    let role_id = kick["id"].as_str().unwrap();
+    grant(&app, &owner, &guild_id, &mod_id, role_id).await;
+    grant(&app, &owner, &guild_id, &peer_id, role_id).await;
+    age(&database, &peer_id, 60).await;
+    let body = json!({"days": 7, "include_roles": [role_id]});
+
+    let (status, count) = call(
+        &app,
+        Method::GET,
+        &format!("{}?days=7&include_roles={role_id}", prune_url(&guild_id)),
+        &mod_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(count["pruned"], 0, "the dry run matches what prune removes");
+
+    let (status, removed) = call(
+        &app,
+        Method::POST,
+        &prune_url(&guild_id),
+        &mod_token,
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(removed["pruned"], 0);
+    assert!(is_member(&app, &owner, &guild_id, &peer_id).await);
+
+    let (status, removed) = call(
+        &app,
+        Method::POST,
+        &prune_url(&guild_id),
+        &owner,
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(removed["pruned"], 1, "the owner outranks everyone");
+}

@@ -284,7 +284,7 @@ impl GuildRepository for PgStore {
         include_roles: &[Snowflake],
     ) -> AppResult<Vec<Snowflake>> {
         let rows: Vec<(i64,)> = sqlx::query_as(
-            "SELECT m.user_id FROM members m JOIN guilds g ON g.id = m.guild_id              WHERE m.guild_id = $1 AND m.user_id <> g.owner_id AND m.joined_at < $2                AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = m.user_id AND s.last_used_at >= $2)                AND NOT EXISTS (SELECT 1 FROM member_roles mr WHERE mr.guild_id = m.guild_id                                AND mr.user_id = m.user_id AND mr.role_id <> ALL($3))              ORDER BY m.user_id",
+            "SELECT m.user_id FROM members m JOIN guilds g ON g.id = m.guild_id JOIN users u ON u.id = m.user_id              WHERE m.guild_id = $1 AND m.user_id <> g.owner_id AND NOT u.bot AND m.joined_at < $2                AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = m.user_id AND s.last_used_at >= $2)                AND NOT EXISTS (SELECT 1 FROM member_roles mr WHERE mr.guild_id = m.guild_id                                AND mr.user_id = m.user_id AND mr.role_id <> ALL($3))              ORDER BY m.user_id",
         )
         .bind(guild_id.as_i64())
         .bind(cutoff)

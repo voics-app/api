@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::Duration;
 use serde_json::json;
 
@@ -29,6 +31,7 @@ fn authorize(ctx: &GuildContext) -> AppResult<()> {
     })
 }
 
+/// Inactive members the caller outranks, so a prune cannot reach past what a kick could.
 async fn candidates(
     ports: &Ports,
     ctx: &GuildContext,
@@ -36,10 +39,22 @@ async fn candidates(
 ) -> AppResult<Vec<Snowflake>> {
     validation::prune_days(input.days)?;
     let cutoff = ctx.now - Duration::days(i64::from(input.days));
-    ports
+    let inactive: HashSet<Snowflake> = ports
         .guilds
         .prune_candidates(ctx.guild.id, cutoff, &input.include_roles)
-        .await
+        .await?
+        .into_iter()
+        .collect();
+    let access = ctx.access();
+    Ok(ports
+        .guilds
+        .members(ctx.guild.id)
+        .await?
+        .iter()
+        .filter(|member| inactive.contains(&member.user_id))
+        .filter(|member| access.outranks(&ctx.member, member))
+        .map(|member| member.user_id)
+        .collect())
 }
 
 /// `GET /guilds/{id}/prune`: how many members a prune would remove.
