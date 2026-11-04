@@ -18,11 +18,11 @@ use crate::postgres::notifications;
 pub(super) async fn upsert_user(conn: &mut PgConnection, user: &User) -> AppResult<()> {
     let (suspended, reason, until) = suspension_columns(user.suspension.as_ref());
     sqlx::query(
-        "INSERT INTO users (id, username, email, global_name, avatar, bot, system, verified, mfa_enabled, flags, \
+        "INSERT INTO users (id, username, email, global_name, avatar, bio, bot, system, verified, mfa_enabled, flags, \
              platform_admin, suspended, suspension_reason, suspended_until, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) \
          ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, email = EXCLUDED.email, \
-             global_name = EXCLUDED.global_name, avatar = EXCLUDED.avatar, verified = EXCLUDED.verified, \
+             global_name = EXCLUDED.global_name, avatar = EXCLUDED.avatar, bio = EXCLUDED.bio, verified = EXCLUDED.verified, \
              mfa_enabled = EXCLUDED.mfa_enabled, flags = EXCLUDED.flags, platform_admin = EXCLUDED.platform_admin, \
              suspended = EXCLUDED.suspended, suspension_reason = EXCLUDED.suspension_reason, \
              suspended_until = EXCLUDED.suspended_until",
@@ -32,6 +32,7 @@ pub(super) async fn upsert_user(conn: &mut PgConnection, user: &User) -> AppResu
     .bind(&user.email)
     .bind(&user.global_name)
     .bind(&user.avatar)
+    .bind(&user.bio)
     .bind(user.bot)
     .bind(user.system)
     .bind(user.verified)
@@ -453,7 +454,7 @@ pub(super) async fn anonymize_user(
     username: &str,
 ) -> AppResult<()> {
     sqlx::query(
-        "UPDATE users SET username = $2, email = NULL, global_name = NULL, avatar = NULL, \
+        "UPDATE users SET username = $2, email = NULL, global_name = NULL, avatar = NULL, bio = NULL, \
              verified = FALSE, mfa_enabled = FALSE, delete_after = NULL, \
              disabled_at = COALESCE(disabled_at, now()) WHERE id = $1",
     )

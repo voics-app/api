@@ -29,6 +29,7 @@ fn user(id: u64, name: &str) -> User {
         username: name.to_owned(),
         global_name: None,
         avatar: None,
+        bio: None,
         bot: false,
         system: false,
         email: Some(format!("{name}@example.com")),

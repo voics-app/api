@@ -48,6 +48,7 @@ pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthToken
         username,
         global_name: None,
         avatar: None,
+        bio: None,
         bot: false,
         system: false,
         email: Some(email),

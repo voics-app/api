@@ -111,6 +111,13 @@ pub fn global_name(value: &str) -> Result<(), FieldError> {
     length_between("global_name", value.trim(), 1, 32)
 }
 
+/// Longest profile "About me" text, in characters.
+pub const BIO_MAX_LENGTH: usize = 300;
+
+pub fn bio(value: &str) -> Result<(), FieldError> {
+    length_between("bio", value.trim(), 0, BIO_MAX_LENGTH)
+}
+
 pub fn email(value: &str) -> Result<(), FieldError> {
     let valid = value.len() <= 254
         && value.split_once('@').is_some_and(|(local, domain)| {
@@ -230,6 +237,14 @@ mod tests {
         assert!(prune_days(1).is_ok());
         assert!(prune_days(30).is_ok());
         assert!(prune_days(31).is_err());
+    }
+
+    #[test]
+    fn bio_allows_up_to_300_characters_and_blank() {
+        assert!(bio("").is_ok());
+        assert!(bio(&"é".repeat(BIO_MAX_LENGTH)).is_ok());
+        assert!(bio(&"x".repeat(BIO_MAX_LENGTH + 1)).is_err());
+        assert!(bio(&format!("  {}  ", "x".repeat(BIO_MAX_LENGTH))).is_ok());
     }
 
     #[test]

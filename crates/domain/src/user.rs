@@ -9,6 +9,8 @@ pub struct User {
     pub username: String,
     pub global_name: Option<String>,
     pub avatar: Option<String>,
+    /// Profile "About me"; at most `validation::BIO_MAX_LENGTH` characters.
+    pub bio: Option<String>,
     pub bot: bool,
     pub system: bool,
     pub email: Option<String>,
@@ -181,6 +183,7 @@ mod tests {
             username: "alice".into(),
             global_name: None,
             avatar: None,
+            bio: None,
             bot: false,
             system: false,
             email: Some("a@example.com".into()),

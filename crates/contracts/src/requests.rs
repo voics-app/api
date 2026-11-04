@@ -100,6 +100,9 @@ pub struct ModifyCurrentUserRequest {
     pub global_name: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub avatar: Option<Option<String>>,
+    /// `null` or an empty string clears the "About me" text.
+    #[serde(default, deserialize_with = "double_option")]
+    pub bio: Option<Option<String>>,
     /// Current password; required with `username`, `email` or `new_password`.
     #[serde(default)]
     pub password: Option<String>,
