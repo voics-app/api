@@ -515,7 +515,7 @@ pub struct InteractionResponseRequest {
     pub data: Option<Value>,
 }
 
-/// Discordy extension: how a user client invokes a command or component.
+/// Voics extension: how a user client invokes a command or component.
 #[derive(Debug, Deserialize)]
 pub struct CreateInteractionRequest {
     pub application_id: Id,
