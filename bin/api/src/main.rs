@@ -148,6 +148,7 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
             discovery_min_guild_age: chrono::Duration::days(i64::from(
                 config.discovery_min_guild_age_days,
             )),
+            group_dm_max_participants: config.group_dm_max_participants,
             ..Settings::default()
         },
     };

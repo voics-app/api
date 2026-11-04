@@ -185,16 +185,18 @@ async fn group_dm_membership_lifecycle() {
 }
 
 #[tokio::test]
-async fn group_dm_is_capped_at_ten_members() {
+async fn group_dm_cap_follows_the_setting() {
     let database = start_database().await;
     let (private, public) = jwt_keys();
+    let mut ports = ports_with_messages(
+        &database.pool,
+        &public,
+        &private,
+        Arc::new(RecordingMessages::default()),
+    );
+    ports.settings.group_dm_max_participants = 10;
     let app = interface::router(AppState {
-        ports: ports_with_messages(
-            &database.pool,
-            &public,
-            &private,
-            Arc::new(RecordingMessages::default()),
-        ),
+        ports,
         internal_token: support::http::INTERNAL_TOKEN.into(),
         rate_limiter: Arc::new(support::AllowAll),
         rate_policy: interface::state::RatePolicy::default(),

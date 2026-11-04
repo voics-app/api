@@ -2,7 +2,7 @@
 
 The api service owns accounts, guilds, channels, roles, members, invites, emojis, the audit log, applications, bots, commands, interactions and webhooks. Messages, gateway and voice are other services; api reaches the messages service over its internal API and publishes P6 events that the gateway fans out.
 
-System messages are posted best effort through the messages internal API: group DM changes (types 1, 2, 4, 5), a member joining a guild (type 7, into `system_channel_id` unless `system_channel_flags` bit 0 suppresses it) and a thread being created (type 18, in the parent channel). A failed post is logged and never fails the join or the thread.
+System messages are posted best effort through the messages internal API: group DM changes (types 1, 2, 4, 5), a member joining a guild (type 7, into `system_channel_id` unless `system_channel_flags` bit 0 suppresses it) and a thread being created (type 18, in the parent channel). A failed post is logged and never fails the join or the thread. Group DMs hold at most `GROUP_DM_MAX_PARTICIPANTS` members (default 25), enforced when a group is created and when a recipient is added.
 
 ## Layers
 
