@@ -1,6 +1,8 @@
 //! Request bodies (P9). Unknown fields are ignored; `Option<Option<T>>`
 //! distinguishes an absent field from an explicit `null`.
 
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
@@ -150,6 +152,10 @@ pub struct ModifyUserSettingsRequest {
     pub guild_folders: Option<Vec<GuildFolderRequest>>,
     #[serde(default)]
     pub guild_positions: Option<Vec<Id>>,
+    #[serde(default)]
+    pub pinned_dm_channel_ids: Option<Vec<Id>>,
+    #[serde(default)]
+    pub pinned_channel_ids: Option<BTreeMap<Id, Vec<Id>>>,
     #[serde(default)]
     pub message_display_compact: Option<bool>,
     #[serde(default)]

@@ -15,7 +15,7 @@ pub fn timestamp(at: DateTime<Utc>) -> String {
 }
 
 /// A Snowflake as a decimal string. Deserializes from a string or an integer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Id(pub Snowflake);
 
 impl From<Snowflake> for Id {

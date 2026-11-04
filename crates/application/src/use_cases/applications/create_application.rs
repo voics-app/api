@@ -111,7 +111,7 @@ pub async fn execute(
         .mutate(Mutation::InsertUser {
             user: bot.clone(),
             credentials: None,
-            settings: UserSettings::defaults_for(bot_id),
+            settings: Box::new(UserSettings::defaults_for(bot_id)),
         })
         .mutate(Mutation::InsertApplication(application.clone()));
     ports.unit_of_work.commit(writes).await?;

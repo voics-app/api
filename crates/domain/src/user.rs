@@ -139,6 +139,10 @@ pub struct UserSettings {
     pub accent_color: Option<u32>,
     pub guild_folders: Vec<GuildFolder>,
     pub guild_positions: Vec<Snowflake>,
+    /// DMs and group DMs pinned to the top of the DM list (client#222).
+    pub pinned_dm_channel_ids: Vec<Snowflake>,
+    /// Personal pinned channels per server (client#223).
+    pub pinned_channel_ids: crate::pinned::PinnedChannels,
     pub message_display_compact: bool,
     /// Sparse synced client preferences (see `user_preferences`).
     pub preferences: crate::user_preferences::Preferences,
@@ -158,6 +162,8 @@ impl UserSettings {
             accent_color: None,
             guild_folders: Vec::new(),
             guild_positions: Vec::new(),
+            pinned_dm_channel_ids: Vec::new(),
+            pinned_channel_ids: crate::pinned::PinnedChannels::new(),
             message_display_compact: false,
             preferences: crate::user_preferences::Preferences::new(),
         }
