@@ -147,6 +147,7 @@ fn default_layout(
         system_channel_flags: 0,
         banner: None,
         splash: None,
+        prune_admin_only: false,
         created_at: now,
     };
     let everyone = Role::everyone(guild_id, Permissions::DEFAULT_EVERYONE);

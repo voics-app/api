@@ -299,6 +299,8 @@ pub trait EmojiRepository: Send + Sync {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AuditLogQuery {
     pub user_id: Option<Snowflake>,
+    /// Entries about this user, so the history of a banned or kicked member can be pulled up.
+    pub target_id: Option<Snowflake>,
     pub action: Option<AuditAction>,
     pub before: Option<Snowflake>,
     pub limit: u32,

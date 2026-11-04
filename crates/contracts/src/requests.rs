@@ -263,6 +263,8 @@ pub struct ModifyGuildRequest {
     pub splash: Option<Option<String>>,
     #[serde(default)]
     pub owner_id: Option<Id>,
+    #[serde(default)]
+    pub prune_admin_only: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

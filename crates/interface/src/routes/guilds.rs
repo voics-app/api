@@ -81,6 +81,7 @@ async fn modify(
         banner: images::patch(body.banner)?,
         splash: images::patch(body.splash)?,
         owner_id: body.owner_id.map(|Id(id)| id),
+        prune_admin_only: body.prune_admin_only,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,
@@ -126,6 +127,7 @@ async fn leave(
 #[derive(Deserialize)]
 struct AuditQuery {
     user_id: Option<String>,
+    target_id: Option<String>,
     action_type: Option<u16>,
     before: Option<String>,
     limit: Option<u32>,
@@ -150,6 +152,11 @@ async fn audit_logs(
     let query = AuditLogQuery {
         user_id: params
             .user_id
+            .as_deref()
+            .map(|raw| snowflake(raw, Resource::User))
+            .transpose()?,
+        target_id: params
+            .target_id
             .as_deref()
             .map(|raw| snowflake(raw, Resource::User))
             .transpose()?,

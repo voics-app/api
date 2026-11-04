@@ -310,6 +310,7 @@ pub fn instantiate(
         system_channel_flags: 0,
         banner: None,
         splash: None,
+        prune_admin_only: false,
         created_at: now,
     };
     Ok(Instantiated {

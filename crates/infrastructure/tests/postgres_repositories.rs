@@ -124,6 +124,7 @@ async fn guild_lifecycle_round_trips_through_postgres() {
         system_channel_flags: 0,
         banner: None,
         splash: None,
+        prune_admin_only: false,
         created_at: now,
     };
     let everyone = Role {
