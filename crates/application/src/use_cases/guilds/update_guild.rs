@@ -32,6 +32,7 @@ pub struct UpdateGuildInput {
     pub banner: Option<Option<ImageUpload>>,
     pub splash: Option<Option<ImageUpload>>,
     pub owner_id: Option<Snowflake>,
+    pub prune_admin_only: Option<bool>,
 }
 
 fn bounded(field: &str, value: u8, max: u8) -> AppResult<u8> {
@@ -88,6 +89,9 @@ pub async fn execute(
     }
     if let Some(level) = input.explicit_content_filter {
         guild.explicit_content_filter = bounded("explicit_content_filter", level, 2)?;
+    }
+    if let Some(admin_only) = input.prune_admin_only {
+        guild.prune_admin_only = admin_only;
     }
     if let Some(timeout) = input.afk_timeout {
         if ![60, 300, 900, 1800, 3600].contains(&timeout) {
@@ -201,6 +205,11 @@ pub async fn execute(
             "default_message_notifications",
             json!(before.default_message_notifications),
             json!(guild.default_message_notifications),
+        ),
+        AuditChange::if_changed(
+            "prune_admin_only",
+            json!(before.prune_admin_only),
+            json!(guild.prune_admin_only),
         ),
         AuditChange::if_changed("banner_hash", json!(before.banner), json!(guild.banner)),
         AuditChange::if_changed("splash_hash", json!(before.splash), json!(guild.splash)),

@@ -263,6 +263,8 @@ pub struct ModifyGuildRequest {
     pub splash: Option<Option<String>>,
     #[serde(default)]
     pub owner_id: Option<Id>,
+    #[serde(default)]
+    pub prune_admin_only: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -430,6 +432,15 @@ pub struct ModifyMemberRequest {
 pub struct CreateBanRequest {
     #[serde(default)]
     pub delete_message_seconds: Option<u32>,
+}
+
+/// Body of `POST /guilds/{id}/prune`; `days` defaults to 7.
+#[derive(Debug, Default, Deserialize)]
+pub struct PruneRequest {
+    #[serde(default)]
+    pub days: Option<u32>,
+    #[serde(default)]
+    pub include_roles: Vec<Id>,
 }
 
 #[derive(Debug, Deserialize)]

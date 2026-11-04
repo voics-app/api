@@ -17,7 +17,7 @@ use super::users::{UserRow, USER_COLUMNS};
 use super::PgStore;
 
 const GUILD_COLUMNS: &str = "id, name, icon, description, owner_id, voice_region, verification_level, \
-     default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, system_channel_flags, banner, splash, created_at";
+     default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, system_channel_flags, banner, splash, prune_admin_only, created_at";
 
 const ROLE_COLUMNS: &str =
     "id, guild_id, name, color, hoist, icon, unicode_emoji, position, permissions, \
@@ -46,6 +46,7 @@ pub(super) struct GuildRow {
     system_channel_flags: i32,
     banner: Option<String>,
     splash: Option<String>,
+    prune_admin_only: bool,
     created_at: DateTime<Utc>,
 }
 
@@ -67,6 +68,7 @@ impl From<GuildRow> for Guild {
             system_channel_flags: row.system_channel_flags as u32,
             banner: row.banner,
             splash: row.splash,
+            prune_admin_only: row.prune_admin_only,
             created_at: row.created_at,
         }
     }
@@ -266,6 +268,27 @@ impl GuildRepository for PgStore {
         )
         .bind(guild_id.as_i64())
         .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id,)| Snowflake::from_i64(id))
+            .collect())
+    }
+
+    async fn prune_candidates(
+        &self,
+        guild_id: Snowflake,
+        cutoff: DateTime<Utc>,
+        include_roles: &[Snowflake],
+    ) -> AppResult<Vec<Snowflake>> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT m.user_id FROM members m JOIN guilds g ON g.id = m.guild_id JOIN users u ON u.id = m.user_id              WHERE m.guild_id = $1 AND m.user_id <> g.owner_id AND NOT u.bot AND m.joined_at < $2                AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = m.user_id AND s.last_used_at >= $2)                AND NOT EXISTS (SELECT 1 FROM member_roles mr WHERE mr.guild_id = m.guild_id                                AND mr.user_id = m.user_id AND mr.role_id <> ALL($3))              ORDER BY m.user_id",
+        )
+        .bind(guild_id.as_i64())
+        .bind(cutoff)
+        .bind(include_roles.iter().map(|id| id.as_i64()).collect::<Vec<_>>())
         .fetch_all(&self.pool)
         .await
         .map_err(db)?;

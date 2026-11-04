@@ -543,6 +543,7 @@ pub struct GuildDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approximate_member_count: Option<u64>,
     pub voice_region: String,
+    pub prune_admin_only: bool,
 }
 
 impl GuildDto {
@@ -576,6 +577,7 @@ impl GuildDto {
                 .voice_region
                 .clone()
                 .unwrap_or_else(|| default_region.to_owned()),
+            prune_admin_only: guild.prune_admin_only,
         }
     }
 
@@ -673,6 +675,12 @@ impl From<&Ban> for BanDto {
             user: UserDto::public(&ban.user),
         }
     }
+}
+
+/// Result of both prune endpoints: members to be removed (GET) or removed (POST).
+#[derive(Debug, Clone, Serialize)]
+pub struct PruneDto {
+    pub pruned: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

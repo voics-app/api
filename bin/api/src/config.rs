@@ -77,6 +77,8 @@ pub struct Config {
     pub discovery_min_members: u64,
     /// Days a guild must exist before it can be listed in Discover.
     pub discovery_min_guild_age_days: u32,
+    /// Most members a group DM can have, the creator included.
+    pub group_dm_max_participants: usize,
     /// Password hashes (argon2) allowed to run at once; each costs tens of MB.
     pub password_hash_concurrency: usize,
     /// How long a password operation waits for a free hash slot before a 429.
@@ -99,6 +101,7 @@ const DEFAULT_ACCOUNT_DELETION_DAYS: &str = "14";
 const DEFAULT_ACCOUNT_PURGE_INTERVAL_SECS: &str = "3600";
 const DEFAULT_DISCOVERY_MIN_MEMBERS: &str = "5";
 const DEFAULT_DISCOVERY_MIN_AGE_DAYS: &str = "7";
+const DEFAULT_GROUP_DM_MAX_PARTICIPANTS: &str = "25";
 const DEFAULT_PASSWORD_HASH_CONCURRENCY: &str = "2";
 const DEFAULT_PASSWORD_HASH_QUEUE_TIMEOUT_MS: &str = "5000";
 const DEFAULT_SMTP_PORT: &str = "587";
@@ -143,6 +146,16 @@ fn positive<T: std::str::FromStr + PartialOrd + From<u8>>(
         .ok()
         .filter(|value| *value >= T::from(1))
         .ok_or_else(|| invalid(name, "expected a positive integer"))
+}
+
+/// A group DM needs room for its creator and one other member.
+fn group_dm_max_participants(get: &impl Fn(&str) -> Option<String>) -> Result<usize, ConfigError> {
+    const NAME: &str = "GROUP_DM_MAX_PARTICIPANTS";
+    let value: usize = positive(get, NAME, DEFAULT_GROUP_DM_MAX_PARTICIPANTS)?;
+    if value < 2 {
+        return Err(invalid(NAME, "expected at least 2"));
+    }
+    Ok(value)
 }
 
 /// Splits a comma-separated list, trimming blanks and dropping empty entries.
@@ -286,6 +299,7 @@ impl Config {
                 "DISCOVERY_MIN_GUILD_AGE_DAYS",
                 DEFAULT_DISCOVERY_MIN_AGE_DAYS,
             )?,
+            group_dm_max_participants: group_dm_max_participants(&get)?,
             account_purge_interval_secs: positive(
                 &get,
                 "ACCOUNT_PURGE_INTERVAL_SECS",
@@ -489,6 +503,29 @@ mod tests {
         assert_eq!(config.account_deletion_retention_days, 14);
         assert_eq!(config.discovery_min_members, 5);
         assert_eq!(config.discovery_min_guild_age_days, 7);
+    }
+
+    #[test]
+    fn group_dm_cap_defaults_to_25_and_is_configurable() {
+        let config = Config::from_lookup(lookup(complete())).expect("valid");
+        assert_eq!(config.group_dm_max_participants, 25);
+
+        let mut values = complete();
+        values.insert("GROUP_DM_MAX_PARTICIPANTS", "40".to_owned());
+        let config = Config::from_lookup(lookup(values)).expect("valid");
+        assert_eq!(config.group_dm_max_participants, 40);
+
+        for bad in ["0", "1", "many"] {
+            let mut values = complete();
+            values.insert("GROUP_DM_MAX_PARTICIPANTS", bad.to_owned());
+            assert!(matches!(
+                Config::from_lookup(lookup(values)),
+                Err(ConfigError::Invalid {
+                    name: "GROUP_DM_MAX_PARTICIPANTS",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

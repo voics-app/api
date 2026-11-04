@@ -75,12 +75,14 @@ impl AuditLogRepository for PgStore {
                AND ($2::bigint IS NULL OR user_id = $2) \
                AND ($3::smallint IS NULL OR action = $3) \
                AND ($4::bigint IS NULL OR id < $4) \
-             ORDER BY id DESC LIMIT $5",
+               AND ($5::bigint IS NULL OR target_id = $5) \
+             ORDER BY id DESC LIMIT $6",
         )
         .bind(guild_id.as_i64())
         .bind(query.user_id.map(|id| id.as_i64()))
         .bind(query.action.map(|a| a.code() as i16))
         .bind(query.before.map(|id| id.as_i64()))
+        .bind(query.target_id.map(|id| id.as_i64()))
         .bind(i64::from(query.limit))
         .fetch_all(&self.pool)
         .await
