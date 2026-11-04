@@ -306,7 +306,7 @@ async fn totp_enrolment_login_step_and_backup_codes() {
     assert!(enrolment["otpauth_uri"]
         .as_str()
         .unwrap()
-        .starts_with("otpauth://totp/Discordy:"));
+        .starts_with("otpauth://totp/Voics:"));
     let (_, me) = call(&app, Method::GET, "/api/v1/users/@me", &token, None).await;
     assert_eq!(me["mfa_enabled"], false, "not active before verification");
 

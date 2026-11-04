@@ -28,7 +28,7 @@ pub const DEFAULT_DISCOVERY_MIN_AGE_DAYS: i64 = 7;
 
 /// Default for `Settings::account_deletion_retention`, in days.
 /// Product name used when `BRAND_NAME` is unset.
-pub const DEFAULT_BRAND_NAME: &str = "Discordy"; // brand-check: allow (the brand source)
+pub const DEFAULT_BRAND_NAME: &str = "Voics"; // brand-check: allow (the brand source)
 pub const DEFAULT_ACCOUNT_DELETION_DAYS: i64 = 14;
 
 #[derive(Debug, Clone)]
@@ -43,7 +43,7 @@ pub struct Settings {
     pub public_api_base: String,
     /// Product name shown in emails and as the authenticator-app issuer (env `BRAND_NAME`).
     pub brand_name: String,
-    /// Prefix of the links in account emails, e.g. `discordy://`.
+    /// Prefix of the links in account emails, e.g. `voics://`.
     pub app_link_base: String,
     /// How long a deleted account stays recoverable by logging in.
     pub account_deletion_retention: Duration,
@@ -77,7 +77,7 @@ impl Default for Settings {
             default_voice_region: "nl-home".into(),
             public_api_base: "http://localhost:8080".into(),
             brand_name: DEFAULT_BRAND_NAME.into(),
-            app_link_base: "discordy://".into(),
+            app_link_base: "voics://".into(),
             account_deletion_retention: Duration::days(DEFAULT_ACCOUNT_DELETION_DAYS),
             discovery_min_members: DEFAULT_DISCOVERY_MIN_MEMBERS,
             discovery_min_guild_age: Duration::days(DEFAULT_DISCOVERY_MIN_AGE_DAYS),
