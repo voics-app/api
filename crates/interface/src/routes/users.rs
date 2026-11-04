@@ -63,6 +63,7 @@ async fn update_me(
     let input = UpdateCurrentUserInput {
         username: body.username,
         global_name: body.global_name,
+        bio: body.bio,
         avatar: images::patch(body.avatar)?,
         password: body.password,
         new_password: body.new_password,

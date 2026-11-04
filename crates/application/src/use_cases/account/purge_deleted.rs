@@ -21,6 +21,7 @@ pub async fn execute(ports: &Ports) -> AppResult<usize> {
         user.username.clone_from(&username);
         user.global_name = None;
         user.avatar = None;
+        user.bio = None;
         user.email = None;
         user.verified = false;
         user.mfa_enabled = false;

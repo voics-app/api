@@ -113,8 +113,8 @@ fn record_decision(scope: &'static str, result: &'static str) {
         .increment(1);
 }
 
-/// Middleware for the public API. A limiter outage fails open: availability
-/// of the API matters more than throttling while the store is down.
+/// Middleware for the public API. The limiter falls back to per-pod memory buckets when its store fails
+/// (`FallbackRateLimiter`); the error arm below is only reached by a limiter without that fallback.
 pub async fn enforce(
     State(state): State<AppState>,
     request: Request<Body>,
@@ -147,7 +147,7 @@ pub async fn enforce(
 }
 
 /// A stricter per-caller bucket on top of the general limiter, for endpoints
-/// that send mail or accept guessable secrets. Fails open like [`enforce`].
+/// that send mail or accept guessable secrets. Falls back like [`enforce`].
 pub async fn strict(
     state: &AppState,
     headers: &HeaderMap,

@@ -16,6 +16,8 @@ pub struct UpdateCurrentUserInput {
     pub username: Option<String>,
     /// `Some(None)` clears the display name.
     pub global_name: Option<Option<String>>,
+    /// `Some(None)` clears the "About me" text.
+    pub bio: Option<Option<String>>,
     /// `Some(None)` removes the avatar.
     pub avatar: Option<Option<ImageUpload>>,
     /// The current password; required with a new username, email or password.
@@ -85,6 +87,9 @@ pub async fn execute(
     if let Some(global_name) = input.global_name {
         user.global_name = global_name.map(|n| n.trim().to_owned());
     }
+    if let Some(bio) = input.bio {
+        user.bio = bio.map(|b| b.trim().to_owned()).filter(|b| !b.is_empty());
+    }
     if let Some(avatar) = input.avatar {
         user.avatar = match avatar {
             Some(image) => Some(store_hashed(ports, &format!("avatars/{}", user.id), image).await?),
@@ -123,6 +128,9 @@ fn validate(input: &UpdateCurrentUserInput, email: Option<&str>) -> Result<(), V
     }
     if let Some(Some(name)) = &input.global_name {
         errors.check(validation::global_name(name));
+    }
+    if let Some(Some(bio)) = &input.bio {
+        errors.check(validation::bio(bio));
     }
     if let Some(email) = email {
         errors.check(validation::email(email));

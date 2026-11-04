@@ -121,6 +121,61 @@ async fn accounts_devices_and_internal_endpoints_follow_the_contract() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["global_name"], "Alice A.");
 
+    let (status, updated) = send(
+        &app,
+        patch(
+            "/api/v1/users/@me",
+            &alice_token,
+            json!({"bio": "  Hello there  "}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        updated["bio"], "Hello there",
+        "the About me text is trimmed"
+    );
+    let (_, seen_by_bob) = send(
+        &app,
+        get(
+            &format!("/api/v1/users/{alice_id}"),
+            bob["access_token"].as_str(),
+        ),
+    )
+    .await;
+    assert_eq!(seen_by_bob["bio"], "Hello there");
+
+    let longest = "x".repeat(300);
+    let (status, updated) = send(
+        &app,
+        patch("/api/v1/users/@me", &alice_token, json!({"bio": longest})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "300 characters fit");
+    assert_eq!(updated["bio"].as_str().map(str::len), Some(300));
+    let (status, body) = send(
+        &app,
+        patch(
+            "/api/v1/users/@me",
+            &alice_token,
+            json!({"bio": "x".repeat(301)}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "301 characters do not");
+    assert_eq!(body["code"], 50035);
+
+    let (status, updated) = send(
+        &app,
+        patch("/api/v1/users/@me", &alice_token, json!({"bio": null})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        updated.get("bio").is_none(),
+        "null clears the About me text"
+    );
+
     let (status, public_view) = send(
         &app,
         get(&format!("/api/v1/users/{bob_id}"), Some(&alice_token)),
