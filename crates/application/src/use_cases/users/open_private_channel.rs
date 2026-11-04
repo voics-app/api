@@ -1,4 +1,4 @@
-use domain::channel::{Channel, ChannelType, MAX_GROUP_DM_PARTICIPANTS};
+use domain::channel::{Channel, ChannelType};
 use domain::relationship::RelationshipType;
 use domain::Snowflake;
 
@@ -20,14 +20,12 @@ pub async fn execute(
         .collect();
     others.sort();
     others.dedup();
-    if others.is_empty() || others.len() + 1 > MAX_GROUP_DM_PARTICIPANTS {
+    let max = ports.settings.group_dm_max_participants;
+    if others.is_empty() || others.len() + 1 > max {
         return Err(AppError::invalid(
             "recipient_ids",
             "BASE_TYPE_BAD_LENGTH",
-            format!(
-                "Must contain between 1 and {} other users.",
-                MAX_GROUP_DM_PARTICIPANTS - 1
-            ),
+            format!("Must contain between 1 and {} other users.", max - 1),
         ));
     }
     if others.len() > 1 {
