@@ -29,7 +29,7 @@ impl Snowflake {
         self.0
     }
 
-    /// Milliseconds since the Discordy epoch.
+    /// Milliseconds since the Voics epoch.
     pub const fn epoch_ms(self) -> u64 {
         self.0 >> TIMESTAMP_SHIFT
     }

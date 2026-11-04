@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::snowflake::Snowflake;
 
-/// Discord audit log event codes used by Discordy.
+/// Discord audit log event codes used by Voics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AuditAction {
     GuildUpdate,
