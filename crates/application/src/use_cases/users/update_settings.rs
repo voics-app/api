@@ -1,4 +1,5 @@
 use domain::delivery_mode::DeliveryMode;
+use domain::pinned::{self, PinnedChannels};
 use domain::snowflake::Snowflake;
 use domain::user::{CustomStatus, GuildFolder, PresenceStatus, Theme, UserSettings};
 
@@ -19,6 +20,8 @@ pub struct UpdateSettingsInput {
     pub accent_color: Option<Option<u32>>,
     pub guild_folders: Option<Vec<GuildFolder>>,
     pub guild_positions: Option<Vec<Snowflake>>,
+    pub pinned_dm_channel_ids: Option<Vec<Snowflake>>,
+    pub pinned_channel_ids: Option<PinnedChannels>,
     pub message_display_compact: Option<bool>,
     /// Partial preferences object, merged key by key.
     pub preferences: Option<serde_json::Value>,
@@ -134,6 +137,18 @@ pub async fn execute(
             ));
         }
         settings.guild_positions = positions;
+    }
+    if let Some(pinned_dms) = input.pinned_dm_channel_ids {
+        pinned::validate_pinned_dms(&pinned_dms).map_err(|e| {
+            AppError::invalid("pinned_dm_channel_ids", "BASE_TYPE_BAD_LENGTH", e.message())
+        })?;
+        settings.pinned_dm_channel_ids = pinned_dms;
+    }
+    if let Some(pinned_channels) = input.pinned_channel_ids {
+        settings.pinned_channel_ids =
+            pinned::normalize_pinned_channels(pinned_channels).map_err(|e| {
+                AppError::invalid("pinned_channel_ids", "BASE_TYPE_BAD_LENGTH", e.message())
+            })?;
     }
     if let Some(compact) = input.message_display_compact {
         settings.message_display_compact = compact;

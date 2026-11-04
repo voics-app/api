@@ -68,7 +68,7 @@ pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthToken
     writes.mutate(Mutation::InsertUser {
         user: user.clone(),
         credentials: Some(credentials),
-        settings: UserSettings::defaults_for(user.id),
+        settings: Box::new(UserSettings::defaults_for(user.id)),
     });
     ports.unit_of_work.commit(writes).await?;
     if let Some(address) = &user.email {

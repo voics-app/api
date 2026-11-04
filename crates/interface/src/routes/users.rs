@@ -168,6 +168,15 @@ async fn update_settings_handler(
         guild_positions: body
             .guild_positions
             .map(|ids| ids.into_iter().map(|id| id.0).collect()),
+        pinned_dm_channel_ids: body
+            .pinned_dm_channel_ids
+            .map(|ids| ids.into_iter().map(|id| id.0).collect()),
+        pinned_channel_ids: body.pinned_channel_ids.map(|pinned| {
+            pinned
+                .into_iter()
+                .map(|(guild, channels)| (guild.0, channels.into_iter().map(|id| id.0).collect()))
+                .collect()
+        }),
         message_display_compact: body.message_display_compact,
         preferences: body.preferences,
     };
