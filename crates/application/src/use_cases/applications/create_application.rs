@@ -82,6 +82,7 @@ pub async fn execute(
         username,
         global_name: Some(input.name.trim().to_owned()),
         avatar: None,
+        bio: None,
         bot: true,
         system: false,
         email: None,

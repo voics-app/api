@@ -577,6 +577,7 @@ mod tests {
             username: format!("user{id}"),
             global_name: None,
             avatar: None,
+            bio: None,
             bot: false,
             system: false,
             email: None,
