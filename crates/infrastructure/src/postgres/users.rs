@@ -267,6 +267,27 @@ impl UserRepository for PgStore {
         Ok(row.map(GuildNotificationSettings::from))
     }
 
+    async fn guild_notification_settings_many(
+        &self,
+        user_ids: &[Snowflake],
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<GuildNotificationSettings>> {
+        let sql = format!(
+            "SELECT {} FROM user_guild_settings WHERE user_id = ANY($1) AND guild_id = $2",
+            super::notifications::COLUMNS
+        );
+        let rows: Vec<super::notifications::Row> = sqlx::query_as(&sql)
+            .bind(super::convert::raw_ids(user_ids))
+            .bind(guild_id.as_i64())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(GuildNotificationSettings::from)
+            .collect())
+    }
+
     async fn list_guild_notification_settings(
         &self,
         user_id: Snowflake,

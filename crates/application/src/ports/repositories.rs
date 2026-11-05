@@ -17,6 +17,7 @@ use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
 use domain::invite::Invite;
 use domain::mfa::BackupCodeRecord;
 use domain::notification::GuildNotificationSettings;
+use domain::push_token::{PushPlatform, PushToken};
 use domain::relationship::Relationship;
 use domain::session::ClientInfo;
 use domain::template::GuildTemplate;
@@ -57,6 +58,12 @@ pub trait UserRepository: Send + Sync {
         user_id: Snowflake,
         guild_id: Snowflake,
     ) -> AppResult<Option<GuildNotificationSettings>>;
+    /// Stored notification settings of several users for one guild (`DIRECT_MESSAGES` for DMs).
+    async fn guild_notification_settings_many(
+        &self,
+        user_ids: &[Snowflake],
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<GuildNotificationSettings>>;
     /// Every stored notification settings row of the user.
     async fn list_guild_notification_settings(
         &self,
@@ -363,4 +370,22 @@ pub trait InteractionRepository: Send + Sync {
 pub trait WebhookRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Webhook>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Webhook>>;
+}
+
+/// Push tokens of the mobile app, one per login session.
+#[async_trait]
+pub trait PushTokenRepository: Send + Sync {
+    /// Stores the session's token. It replaces the session's previous token and any other row
+    /// holding the same provider token (the installation moved to this session), and the
+    /// user's least recently refreshed tokens beyond the per-user limit are dropped.
+    async fn upsert(&self, token: &PushToken) -> AppResult<()>;
+    /// Removes the session's token; `false` when it had none.
+    async fn delete_for_session(&self, session_id: Uuid) -> AppResult<bool>;
+    async fn delete_for_sessions(&self, session_ids: &[Uuid]) -> AppResult<()>;
+    /// Removes a token the provider rejected; `false` when it was already gone.
+    async fn delete_by_token(&self, platform: PushPlatform, token: &str) -> AppResult<bool>;
+    /// Removes tokens not refreshed since `cutoff`; returns how many.
+    async fn delete_stale(&self, cutoff: DateTime<Utc>) -> AppResult<u64>;
+    /// The tokens of these users whose session is still live, ordered by user and session.
+    async fn list_live_for_users(&self, user_ids: &[Snowflake]) -> AppResult<Vec<PushToken>>;
 }

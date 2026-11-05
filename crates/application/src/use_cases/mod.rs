@@ -15,6 +15,7 @@ pub mod internal;
 pub mod invites;
 pub mod members;
 pub mod mfa;
+pub mod push;
 pub mod relationships;
 pub mod roles;
 pub mod sessions;
