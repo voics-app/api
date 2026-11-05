@@ -196,6 +196,28 @@ async fn a_session_keeps_one_token_that_a_refresh_replaces_and_a_delete_removes(
 
     let (status, _) = call(
         &app,
+        Method::POST,
+        "/api/v1/users/@me/devices/push",
+        &alice,
+        Some(
+            json!({"platform": "apns", "token": TOKEN_B, "previews": false, "only_mentions": true}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let flags: (bool, bool, String) =
+        sqlx::query_as("SELECT previews, only_mentions, environment FROM push_tokens")
+            .fetch_one(&database.pool)
+            .await
+            .expect("flags");
+    assert_eq!(
+        flags,
+        (false, true, "production".into()),
+        "the device flags and the default environment are stored"
+    );
+
+    let (status, _) = call(
+        &app,
         Method::DELETE,
         "/api/v1/users/@me/devices/push",
         &alice,
@@ -444,7 +466,7 @@ async fn dm_push_targets_list_the_recipient_with_tokens_settings_and_presence() 
     assert_eq!(list[0]["muted"], false);
     assert_eq!(
         list[0]["tokens"],
-        json!([{"platform": "apns", "token": TOKEN_B, "environment": "sandbox", "previews": true}])
+        json!([{"platform": "apns", "token": TOKEN_B, "environment": "sandbox", "previews": true, "only_mentions": false}])
     );
 
     // A DM mute and level 2 show up in the same call.

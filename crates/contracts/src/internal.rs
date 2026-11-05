@@ -108,6 +108,7 @@ pub struct PushTokenDto {
     pub token: String,
     pub environment: String,
     pub previews: bool,
+    pub only_mentions: bool,
 }
 
 /// A member the notifier may push to, with the facts its notification rules need.

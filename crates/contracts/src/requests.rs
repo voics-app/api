@@ -600,4 +600,7 @@ pub struct RegisterPushTokenRequest {
     /// Whether standard messages may show a text preview. Defaults to true.
     #[serde(default)]
     pub previews: Option<bool>,
+    /// Whether this device wants pushes for mentions and direct messages only. Defaults to false.
+    #[serde(default)]
+    pub only_mentions: Option<bool>,
 }

@@ -21,6 +21,7 @@ struct PushTokenRow {
     token: String,
     environment: String,
     previews: bool,
+    only_mentions: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -39,6 +40,7 @@ impl TryFrom<PushTokenRow> for PushToken {
             environment: PushEnvironment::parse(&row.environment)
                 .ok_or_else(|| AppError::internal("stored push environment is unknown"))?,
             previews: row.previews,
+            only_mentions: row.only_mentions,
             created_at: row.created_at,
             updated_at: row.updated_at,
         })
@@ -61,11 +63,13 @@ impl PushTokenRepository for PgStore {
         .map_err(db)?;
         sqlx::query(
             "INSERT INTO push_tokens \
-                 (session_id, user_id, device_id, platform, token, environment, previews, created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) \
+                 (session_id, user_id, device_id, platform, token, environment, previews, only_mentions, \
+                  created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9) \
              ON CONFLICT (session_id) DO UPDATE SET \
                  device_id = EXCLUDED.device_id, platform = EXCLUDED.platform, token = EXCLUDED.token, \
-                 environment = EXCLUDED.environment, previews = EXCLUDED.previews, updated_at = EXCLUDED.updated_at",
+                 environment = EXCLUDED.environment, previews = EXCLUDED.previews, \
+                 only_mentions = EXCLUDED.only_mentions, updated_at = EXCLUDED.updated_at",
         )
         .bind(token.session_id)
         .bind(token.user_id.as_i64())
@@ -74,6 +78,7 @@ impl PushTokenRepository for PgStore {
         .bind(&token.token)
         .bind(token.environment.as_str())
         .bind(token.previews)
+        .bind(token.only_mentions)
         .bind(token.updated_at)
         .execute(&mut *tx)
         .await
@@ -131,7 +136,7 @@ impl PushTokenRepository for PgStore {
     async fn list_live_for_users(&self, user_ids: &[Snowflake]) -> AppResult<Vec<PushToken>> {
         let rows: Vec<PushTokenRow> = sqlx::query_as(
             "SELECT p.session_id, p.user_id, p.device_id, p.platform, p.token, p.environment, \
-                    p.previews, p.created_at, p.updated_at \
+                    p.previews, p.only_mentions, p.created_at, p.updated_at \
              FROM push_tokens p JOIN sessions s ON s.id = p.session_id \
              WHERE p.user_id = ANY($1) AND s.revoked_at IS NULL \
              ORDER BY p.user_id, p.session_id",

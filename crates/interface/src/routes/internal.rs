@@ -197,6 +197,7 @@ async fn push_targets(
                         token: token.token,
                         environment: token.environment.as_str().to_owned(),
                         previews: token.previews,
+                        only_mentions: token.only_mentions,
                     })
                     .collect(),
             })

@@ -10,6 +10,8 @@ CREATE TABLE push_tokens (
     token       TEXT        NOT NULL,
     environment TEXT        NOT NULL CHECK (environment IN ('production', 'sandbox')),
     previews    BOOLEAN     NOT NULL DEFAULT TRUE,
+    -- The device-only "only mentions" preference of the app: pushes for this token need a mention.
+    only_mentions BOOLEAN   NOT NULL DEFAULT FALSE,
     created_at  TIMESTAMPTZ NOT NULL,
     updated_at  TIMESTAMPTZ NOT NULL
 );

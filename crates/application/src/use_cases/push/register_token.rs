@@ -11,6 +11,7 @@ pub struct RegisterPushTokenInput {
     pub token: String,
     pub environment: PushEnvironment,
     pub previews: bool,
+    pub only_mentions: bool,
 }
 
 /// Stores the push token of the caller's session, replacing the one it registered before. The
@@ -47,6 +48,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: RegisterPushTokenInput
             token: input.token,
             environment: input.environment,
             previews: input.previews,
+            only_mentions: input.only_mentions,
             created_at: now,
             updated_at: now,
         })

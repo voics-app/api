@@ -94,6 +94,7 @@ async fn register_push(
             token: body.token,
             environment,
             previews: body.previews.unwrap_or(true),
+            only_mentions: body.only_mentions.unwrap_or(false),
         },
     )
     .await?;

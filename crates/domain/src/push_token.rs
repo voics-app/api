@@ -69,6 +69,8 @@ pub struct PushToken {
     pub environment: PushEnvironment,
     /// Whether pushes of standard messages may carry a text preview.
     pub previews: bool,
+    /// The device wants pushes for mentions and direct messages only, whatever the server settings say.
+    pub only_mentions: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
