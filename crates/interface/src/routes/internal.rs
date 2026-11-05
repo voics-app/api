@@ -2,7 +2,7 @@
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
@@ -10,10 +10,12 @@ use application::use_cases::admin::{list_guilds, list_users, stats, suspend_user
 use application::use_cases::internal::{
     channel_access, channel_routing, guild_state, introspect, user_ready, users_lookup,
 };
+use application::use_cases::push::{forget_token, targets};
 use application::{AppError, Resource};
 use contracts::internal::{
     AdminGuildDto, AdminUserDto, AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto,
-    ChannelRoutingDto, IntrospectRequest, IntrospectResponse, SuspendUserRequest, UserReadyDto,
+    ChannelRoutingDto, ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse,
+    PushTargetDto, PushTargetsDto, PushTokenDto, SuspendUserRequest, UserReadyDto,
     UsersLookupRequest,
 };
 use contracts::objects::{
@@ -21,6 +23,7 @@ use contracts::objects::{
     UserSettingsDto,
 };
 use contracts::wire::{timestamp, Id, Perm};
+use domain::push_token::PushPlatform;
 use domain::Snowflake;
 
 use crate::error::ApiError;
@@ -153,6 +156,67 @@ async fn channel_access_info(
     }))
 }
 
+#[derive(Deserialize)]
+struct PushTargetsQuery {
+    author_id: String,
+}
+
+async fn push_targets(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(channel_id): Path<String>,
+    Query(params): Query<PushTargetsQuery>,
+) -> Result<Json<PushTargetsDto>, ApiError> {
+    let found = targets::execute(
+        &state.ports,
+        parse_id(&channel_id)?,
+        parse_id(&params.author_id)?,
+    )
+    .await?;
+    Ok(Json(PushTargetsDto {
+        guild_id: found.guild_id.map(Id),
+        guild_name: found.guild_name,
+        channel_name: found.channel_name,
+        delivery_mode: found.delivery_mode.as_str().to_owned(),
+        targets: found
+            .targets
+            .into_iter()
+            .map(|target| PushTargetDto {
+                user_id: Id(target.user_id),
+                role_ids: target.role_ids.into_iter().map(Id).collect(),
+                online: target.online,
+                level: target.level.code(),
+                muted: target.muted,
+                suppress_everyone: target.suppress_everyone,
+                suppress_roles: target.suppress_roles,
+                tokens: target
+                    .tokens
+                    .into_iter()
+                    .map(|token| PushTokenDto {
+                        platform: token.platform.as_str().to_owned(),
+                        token: token.token,
+                        environment: token.environment.as_str().to_owned(),
+                        previews: token.previews,
+                        only_mentions: token.only_mentions,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }))
+}
+
+async fn forget_push_token(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Body(body): Body<ForgetPushTokenRequest>,
+) -> Result<StatusCode, ApiError> {
+    let platform = PushPlatform::parse(&body.platform).ok_or_else(|| {
+        AppError::invalid("platform", "PUSH_PLATFORM_INVALID", "Must be apns or fcm.")
+    })?;
+    forget_token::execute(&state.ports, platform, &body.token).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn admin_stats(
     State(state): State<AppState>,
     _internal: Internal,
@@ -252,6 +316,8 @@ pub fn routes() -> Router<AppState> {
             get(channel_access_info),
         )
         .route("/internal/v1/channels/{id}/delivery", get(channel_delivery))
+        .route("/internal/v1/channels/{id}/push-targets", get(push_targets))
+        .route("/internal/v1/push-tokens", delete(forget_push_token))
         .route("/internal/v1/admin/stats", get(admin_stats))
         .route("/internal/v1/admin/users", get(admin_users))
         .route("/internal/v1/admin/users/{id}/suspend", post(admin_suspend))

@@ -12,9 +12,14 @@ use application::use_cases::devices::register_device::RegisterDeviceInput;
 use application::use_cases::devices::{
     claim_key_package, delete_device, list_user_devices, register_device, upload_key_packages,
 };
+use application::use_cases::push::register_token::RegisterPushTokenInput;
+use application::use_cases::push::{register_token, remove_token};
 use application::{AppError, Resource};
 use contracts::objects::DeviceDto;
-use contracts::requests::{CreateDeviceRequest, UploadKeyPackagesRequest};
+use contracts::requests::{
+    CreateDeviceRequest, RegisterPushTokenRequest, UploadKeyPackagesRequest,
+};
+use domain::push_token::{PushEnvironment, PushPlatform};
 use domain::Snowflake;
 
 use crate::error::ApiError;
@@ -61,6 +66,47 @@ async fn register(
             access_token: registered.access_token,
         }),
     ))
+}
+
+async fn register_push(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Body(body): Body<RegisterPushTokenRequest>,
+) -> Result<StatusCode, ApiError> {
+    let platform = PushPlatform::parse(&body.platform).ok_or_else(|| {
+        AppError::invalid("platform", "PUSH_PLATFORM_INVALID", "Must be apns or fcm.")
+    })?;
+    let environment = match body.environment.as_deref() {
+        None => PushEnvironment::Production,
+        Some(raw) => PushEnvironment::parse(raw).ok_or_else(|| {
+            AppError::invalid(
+                "environment",
+                "PUSH_ENVIRONMENT_INVALID",
+                "Must be production or sandbox.",
+            )
+        })?,
+    };
+    register_token::execute(
+        &state.ports,
+        &actor,
+        RegisterPushTokenInput {
+            platform,
+            token: body.token,
+            environment,
+            previews: body.previews.unwrap_or(true),
+            only_mentions: body.only_mentions.unwrap_or(false),
+        },
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_push(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+) -> Result<StatusCode, ApiError> {
+    remove_token::execute(&state.ports, &actor).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn upload_packages(
@@ -121,6 +167,10 @@ async fn claim_package(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/devices", post(register))
+        .route(
+            "/users/@me/devices/push",
+            post(register_push).delete(remove_push),
+        )
         .route("/devices/{id}", delete(remove))
         .route("/devices/{id}/key-packages", post(upload_packages))
         .route("/users/{id}/devices", get(user_devices))

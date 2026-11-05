@@ -30,6 +30,7 @@ pub async fn execute(ports: &Ports, refresh_token: &str) -> AppResult<AuthTokens
     let user = require_user(ports, session.user_id).await?;
     if user.is_suspended(now) {
         ports.sessions.revoke(session.id, now).await?;
+        ports.push_tokens.delete_for_session(session.id).await?;
         delete_device::remove_if_unheld(ports, user.id, session.device_id, now).await?;
         return Err(AppError::Forbidden(Denial::Suspended));
     }

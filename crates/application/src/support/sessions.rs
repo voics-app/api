@@ -31,8 +31,8 @@ pub async fn revoke(ports: &Ports, user_id: Snowflake, keep: Option<Uuid>) -> Ap
     announce_revoked(ports, user_id, revoked).await
 }
 
-/// Publishes SESSION_REVOKE so the gateway closes the connections of
-/// `session_ids`. Nothing is published for an empty list.
+/// Drops the push tokens of `session_ids` and publishes SESSION_REVOKE so the gateway
+/// closes their connections. Nothing is published for an empty list.
 pub async fn announce_revoked(
     ports: &Ports,
     user_id: Snowflake,
@@ -41,6 +41,7 @@ pub async fn announce_revoked(
     if session_ids.is_empty() {
         return Ok(());
     }
+    ports.push_tokens.delete_for_sessions(&session_ids).await?;
     let mut writes = WriteSet::new();
     writes.emit(DomainEvent::SessionsRevoke {
         user_id,

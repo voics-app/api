@@ -14,6 +14,7 @@ const BATCH: u32 = 200;
 /// packages go with them; sessions bound to them are unbound, as with eviction.
 pub async fn execute(ports: &Ports) -> AppResult<usize> {
     let cutoff = ports.clock.now() - ports.settings.device_max_idle;
+    ports.push_tokens.delete_stale(cutoff).await?;
     let mut pruned = 0;
     loop {
         let stale = ports.devices.list_stale(cutoff, BATCH).await?;
