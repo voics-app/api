@@ -1,4 +1,4 @@
-//! Discordy core domain: entities, value objects and pure business rules.
+//! Voics core domain: entities, value objects and pure business rules.
 //! No framework or IO dependencies.
 
 pub mod access;

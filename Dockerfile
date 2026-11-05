@@ -31,7 +31,7 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 ARG VERSION=0.1.0
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="discordy-api" \
-      org.opencontainers.image.description="Discordy REST API: accounts, guilds, channels, bots and webhooks" \
+      org.opencontainers.image.description="Voics REST API: accounts, guilds, channels, bots and webhooks" \
       org.opencontainers.image.source="https://github.com/discordy-voics/api" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \

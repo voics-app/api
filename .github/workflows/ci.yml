@@ -31,7 +31,7 @@ jobs:
       actions: read   # shared workflow: tag builds look up the main run of this commit
     uses: discordy-voics/.github/.github/workflows/rust.yml@main
     with:
-      description: Discordy REST API (Rust)
+      description: Voics REST API (Rust)
       # RUSTSEC-2023-0071 (rsa Marvin attack) has no fixed release; the API never performs RSA decryption.
       audit-args: --ignore RUSTSEC-2023-0071
 
@@ -44,4 +44,4 @@ jobs:
     uses: discordy-voics/.github/.github/workflows/docker.yml@main
     with:
       image-name: api
-      description: Discordy REST API
+      description: Voics REST API
