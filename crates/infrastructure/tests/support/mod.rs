@@ -190,6 +190,7 @@ pub fn ports_with_messages(
         sessions: store.clone(),
         account_tokens: store.clone(),
         devices: store.clone(),
+        push_tokens: store.clone(),
         relationships: store.clone(),
         channels: store.clone(),
         guilds: store.clone(),
@@ -224,6 +225,10 @@ pub struct NoPresence;
 impl application::ports::PresenceDirectory for NoPresence {
     async fn online_count(&self, _user_ids: &[domain::Snowflake]) -> AppResult<u64> {
         Ok(0)
+    }
+
+    async fn live_ids(&self, _user_ids: &[domain::Snowflake]) -> AppResult<Vec<domain::Snowflake>> {
+        Ok(Vec::new())
     }
 }
 

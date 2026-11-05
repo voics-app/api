@@ -100,3 +100,44 @@ pub struct SuspendUserRequest {
     #[serde(default)]
     pub until: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+/// One push token of a target user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PushTokenDto {
+    pub platform: String,
+    pub token: String,
+    pub environment: String,
+    pub previews: bool,
+}
+
+/// A member the notifier may push to, with the facts its notification rules need.
+#[derive(Debug, Clone, Serialize)]
+pub struct PushTargetDto {
+    pub user_id: Id,
+    pub role_ids: Vec<Id>,
+    /// The user holds a live gateway session.
+    pub online: bool,
+    /// Effective notification level for the channel: 0 all, 1 mentions, 2 nothing.
+    pub level: u8,
+    pub muted: bool,
+    pub suppress_everyone: bool,
+    pub suppress_roles: bool,
+    pub tokens: Vec<PushTokenDto>,
+}
+
+/// `GET /internal/v1/channels/{id}/push-targets?author_id=`.
+#[derive(Debug, Clone, Serialize)]
+pub struct PushTargetsDto {
+    pub guild_id: Option<Id>,
+    pub guild_name: Option<String>,
+    pub channel_name: Option<String>,
+    pub delivery_mode: String,
+    pub targets: Vec<PushTargetDto>,
+}
+
+/// `DELETE /internal/v1/push-tokens`: a token the provider rejected.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ForgetPushTokenRequest {
+    pub platform: String,
+    pub token: String,
+}

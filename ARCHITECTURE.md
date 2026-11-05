@@ -48,6 +48,10 @@ Every state change is a `WriteSet`: mutations and the events they produce are co
 
 Ephemeral events that need no durability (typing) are published directly through `KafkaEvents`.
 
+## Push tokens
+
+The mobile app registers one APNs or FCM token per login session (`POST|DELETE /users/@me/devices/push`, table `push_tokens`). A token is removed with its session (logout, remote revoke, logout-all, suspension), with its E2EE device, when the provider rejects it (`DELETE /internal/v1/push-tokens`, called by the `notifier` in the messages repo) and when it was not refreshed for `DEVICE_MAX_IDLE_DAYS` (the stale-device prune). The app re-registers on every start, which is the refresh. `GET /internal/v1/channels/{id}/push-targets?author_id=` gives the notifier the members who can view the channel, are not the author and hold a token on a live session, with their effective level and mute (channel, category, guild, default), suppression flags, roles and whether a gateway session is live (`PresenceDirectory::live_ids`). Deciding who is pinged stays in the notifier.
+
 ## Rate limiting
 
 Per identity (hash of the credential, or the forwarded address) and per route bucket, a token bucket in Valkey is checked and updated by a single Lua script. Responses carry `X-RateLimit-*`; exhausted callers get `429` with `Retry-After`. A Valkey outage fails open.

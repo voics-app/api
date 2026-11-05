@@ -241,6 +241,36 @@ impl GuildNotificationSettings {
                 .is_some_and(|o| o.mute.is_active(now))
     }
 
+    /// Like [`Self::effective_level`], with the channel's category (or thread parent) override
+    /// between the channel's own and the guild's, as the clients resolve it.
+    pub fn effective_level_in(
+        &self,
+        channel_id: Snowflake,
+        parent_id: Option<Snowflake>,
+        guild_default: NotifyLevel,
+    ) -> NotifyLevel {
+        self.channel_override(channel_id)
+            .and_then(|o| o.level)
+            .or_else(|| {
+                parent_id
+                    .and_then(|parent| self.channel_override(parent))
+                    .and_then(|o| o.level)
+            })
+            .or(self.level)
+            .unwrap_or(guild_default)
+    }
+
+    /// Whether the channel is muted at `now` by the guild, by itself or by its category.
+    pub fn is_muted_in(
+        &self,
+        channel_id: Snowflake,
+        parent_id: Option<Snowflake>,
+        now: DateTime<Utc>,
+    ) -> bool {
+        self.is_channel_muted(channel_id, now)
+            || parent_id.is_some_and(|parent| self.is_channel_muted(parent, now))
+    }
+
     /// Applies `patch`. Override entries must already have been checked to belong to the guild.
     pub fn apply(
         &mut self,
@@ -575,5 +605,49 @@ mod tests {
         assert!(validate_note(&"\u{e9}".repeat(256)).is_ok());
         assert!(validate_note(&"\u{e9}".repeat(257)).is_err());
         assert!(validate_note("").is_ok());
+    }
+
+    #[test]
+    fn category_override_sits_between_channel_and_guild_level() {
+        let mut s = settings();
+        s.level = Some(NotifyLevel::AllMessages);
+        s.channel_overrides.push(ChannelOverride {
+            channel_id: sf(500),
+            level: Some(NotifyLevel::OnlyMentions),
+            mute: Mute::OFF,
+        });
+        let default = NotifyLevel::AllMessages;
+        assert_eq!(
+            s.effective_level_in(sf(7), Some(sf(500)), default),
+            NotifyLevel::OnlyMentions
+        );
+        s.channel_overrides.push(ChannelOverride {
+            channel_id: sf(7),
+            level: Some(NotifyLevel::NoMessages),
+            mute: Mute::OFF,
+        });
+        assert_eq!(
+            s.effective_level_in(sf(7), Some(sf(500)), default),
+            NotifyLevel::NoMessages
+        );
+        assert_eq!(
+            s.effective_level_in(sf(8), None, default),
+            NotifyLevel::AllMessages
+        );
+    }
+
+    #[test]
+    fn a_muted_category_mutes_its_channels() {
+        let mut s = settings();
+        s.channel_overrides.push(ChannelOverride {
+            channel_id: sf(500),
+            level: None,
+            mute: Mute {
+                muted: true,
+                end_time: None,
+            },
+        });
+        assert!(s.is_muted_in(sf(7), Some(sf(500)), now()));
+        assert!(!s.is_muted_in(sf(7), None, now()));
     }
 }

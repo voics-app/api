@@ -587,3 +587,17 @@ pub struct CreateGuildFromTemplateRequest {
     #[serde(default)]
     pub icon: Option<String>,
 }
+
+/// `POST /users/@me/devices/push`: the push token of the calling session.
+#[derive(Debug, Deserialize)]
+pub struct RegisterPushTokenRequest {
+    /// `apns` or `fcm`.
+    pub platform: String,
+    pub token: String,
+    /// `production` (default) or `sandbox`, the APNs host the token was issued for.
+    #[serde(default)]
+    pub environment: Option<String>,
+    /// Whether standard messages may show a text preview. Defaults to true.
+    #[serde(default)]
+    pub previews: Option<bool>,
+}

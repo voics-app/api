@@ -77,6 +77,29 @@ impl PresenceDirectory for ValkeyPresence {
         }
         Ok(online)
     }
+
+    async fn live_ids(&self, user_ids: &[Snowflake]) -> AppResult<Vec<Snowflake>> {
+        let mut connection = self.connection.clone();
+        let mut live = Vec::new();
+        for chunk in user_ids.chunks(CHUNK) {
+            let mut pipe = redis::pipe();
+            for id in chunk {
+                pipe.cmd("EXISTS").arg(format!("presence:sessions:{id}"));
+            }
+            let counts: Vec<i64> = pipe
+                .query_async(&mut connection)
+                .await
+                .map_err(unavailable)?;
+            live.extend(
+                chunk
+                    .iter()
+                    .zip(counts)
+                    .filter(|(_, count)| *count > 0)
+                    .map(|(id, _)| *id),
+            );
+        }
+        Ok(live)
+    }
 }
 
 #[cfg(test)]

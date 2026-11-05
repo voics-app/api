@@ -116,6 +116,8 @@ pub struct RateLimitDecision {
 pub trait PresenceDirectory: Send + Sync {
     /// How many of `user_ids` are currently online (any status but offline/invisible).
     async fn online_count(&self, user_ids: &[Snowflake]) -> AppResult<u64>;
+    /// Which of `user_ids` hold at least one live gateway session, whatever their status.
+    async fn live_ids(&self, user_ids: &[Snowflake]) -> AppResult<Vec<Snowflake>>;
 }
 
 #[async_trait]
