@@ -1,15 +1,15 @@
 //! `GET /internal/v1/channels/{id}/push-targets`: the members the notifier may push a new message
 //! to, with the facts its rules need. Only members who can view the channel, who are not the
-//! author and who hold a push token on a live session are listed.
+//! author and who hold a push token (notification or PushKit) on a live session are listed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use domain::access::GuildAccess;
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
 use domain::notification::{GuildNotificationSettings, NotifyLevel, DIRECT_MESSAGES};
 use domain::permissions::Permissions;
-use domain::push_token::PushToken;
+use domain::push_token::{PushToken, VoipToken};
 use domain::Snowflake;
 
 use crate::context::Ports;
@@ -33,6 +33,8 @@ pub struct PushTarget {
     pub suppress_everyone: bool,
     pub suppress_roles: bool,
     pub tokens: Vec<PushToken>,
+    /// PushKit tokens, which ring the phone for a call; they need no notification permission.
+    pub voip_tokens: Vec<VoipToken>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,8 +114,22 @@ pub async fn execute(
     for token in ports.push_tokens.list_live_for_users(&candidates).await? {
         tokens.entry(token.user_id).or_default().push(token);
     }
+    let mut voip_tokens: HashMap<Snowflake, Vec<VoipToken>> = HashMap::new();
+    for token in ports
+        .push_tokens
+        .list_live_voip_for_users(&candidates)
+        .await?
+    {
+        voip_tokens.entry(token.user_id).or_default().push(token);
+    }
     let mut roles: HashMap<Snowflake, Vec<Snowflake>> = users.into_iter().collect();
-    let mut with_tokens: Vec<Snowflake> = tokens.keys().copied().collect();
+    let mut with_tokens: Vec<Snowflake> = tokens
+        .keys()
+        .chain(voip_tokens.keys())
+        .copied()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
     with_tokens.sort();
     with_tokens.truncate(MAX_TARGETS);
     let live = ports.presence.live_ids(&with_tokens).await?;
@@ -145,6 +161,7 @@ pub async fn execute(
                 suppress_everyone: own.suppress_everyone,
                 suppress_roles: own.suppress_roles,
                 tokens: tokens.remove(&user_id).unwrap_or_default(),
+                voip_tokens: voip_tokens.remove(&user_id).unwrap_or_default(),
             }
         })
         .collect();
