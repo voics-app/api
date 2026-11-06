@@ -17,6 +17,7 @@ pub mod members;
 pub mod mfa;
 pub mod push;
 pub mod relationships;
+pub mod reports;
 pub mod roles;
 pub mod sessions;
 pub mod templates;

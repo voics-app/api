@@ -99,6 +99,13 @@ pub trait MessageService: Send + Sync {
         patch: Value,
     ) -> AppResult<StoredMessage>;
     async fn delete(&self, channel_id: Snowflake, message_id: Snowflake) -> AppResult<()>;
+    /// One stored message; `None` when it does not exist (or is not stored, as for ephemeral
+    /// and P2P chats).
+    async fn get(
+        &self,
+        channel_id: Snowflake,
+        message_id: Snowflake,
+    ) -> AppResult<Option<StoredMessage>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

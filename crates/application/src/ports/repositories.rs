@@ -19,6 +19,7 @@ use domain::mfa::BackupCodeRecord;
 use domain::notification::GuildNotificationSettings;
 use domain::push_token::{PushPlatform, PushToken, VoipToken};
 use domain::relationship::Relationship;
+use domain::report::{Report, ReportStatus};
 use domain::session::ClientInfo;
 use domain::template::GuildTemplate;
 use domain::user::{Credentials, User, UserSettings};
@@ -400,4 +401,29 @@ pub trait PushTokenRepository: Send + Sync {
     async fn delete_voip_for_session(&self, session_id: Uuid) -> AppResult<bool>;
     /// The VoIP tokens of these users whose session is still live, ordered by user and session.
     async fn list_live_voip_for_users(&self, user_ids: &[Snowflake]) -> AppResult<Vec<VoipToken>>;
+}
+
+/// Reports of messages and users, read only by the admin portal.
+#[async_trait]
+pub trait ReportRepository: Send + Sync {
+    /// Stores the report. `false` when the reporter already has an open report on the same
+    /// target, which makes repeating a report a silent no-op.
+    async fn insert(&self, report: &Report) -> AppResult<bool>;
+    async fn find(&self, id: Snowflake) -> AppResult<Option<Report>>;
+    /// Reports in `status`, newest first, strictly older than the `after` id when given.
+    async fn list(
+        &self,
+        status: ReportStatus,
+        limit: u32,
+        after: Option<Snowflake>,
+    ) -> AppResult<Vec<Report>>;
+    /// Closes an open report; `false` when it is not open (already closed or unknown).
+    async fn close(
+        &self,
+        id: Snowflake,
+        status: ReportStatus,
+        by: &str,
+        note: Option<&str>,
+        at: DateTime<Utc>,
+    ) -> AppResult<bool>;
 }

@@ -18,6 +18,7 @@ pub mod permissions;
 pub mod pinned;
 pub mod push_token;
 pub mod relationship;
+pub mod report;
 pub mod session;
 pub mod snowflake;
 pub mod template;

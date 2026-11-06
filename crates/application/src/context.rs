@@ -94,6 +94,7 @@ pub struct Ports {
     pub devices: Arc<dyn DeviceRepository>,
     pub push_tokens: Arc<dyn PushTokenRepository>,
     pub relationships: Arc<dyn RelationshipRepository>,
+    pub reports: Arc<dyn ReportRepository>,
     pub channels: Arc<dyn ChannelRepository>,
     pub guilds: Arc<dyn GuildRepository>,
     pub invites: Arc<dyn InviteRepository>,

@@ -100,6 +100,10 @@ pub struct RecordingMessages {
     pub bodies: std::sync::Mutex<Vec<serde_json::Value>>,
     /// The channel each recorded body was posted to.
     pub channels: std::sync::Mutex<Vec<domain::Snowflake>>,
+    /// Messages `get` serves, keyed by channel and message id.
+    pub stored: std::sync::Mutex<
+        std::collections::HashMap<(domain::Snowflake, domain::Snowflake), serde_json::Value>,
+    >,
 }
 
 #[async_trait]
@@ -127,6 +131,19 @@ impl MessageService for RecordingMessages {
     async fn delete(&self, _: domain::Snowflake, _: domain::Snowflake) -> AppResult<()> {
         Err(AppError::Unavailable("not recorded".into()))
     }
+    async fn get(
+        &self,
+        channel_id: domain::Snowflake,
+        message_id: domain::Snowflake,
+    ) -> AppResult<Option<StoredMessage>> {
+        let stored = self.stored.lock().unwrap();
+        Ok(stored
+            .get(&(channel_id, message_id))
+            .map(|body| StoredMessage {
+                id: message_id,
+                body: body.clone(),
+            }))
+    }
 }
 
 struct NoMessages;
@@ -149,6 +166,15 @@ impl MessageService for NoMessages {
         ))
     }
     async fn delete(&self, _: domain::Snowflake, _: domain::Snowflake) -> AppResult<()> {
+        Err(AppError::Unavailable(
+            "messages service not wired in this test".into(),
+        ))
+    }
+    async fn get(
+        &self,
+        _: domain::Snowflake,
+        _: domain::Snowflake,
+    ) -> AppResult<Option<StoredMessage>> {
         Err(AppError::Unavailable(
             "messages service not wired in this test".into(),
         ))
@@ -192,6 +218,7 @@ pub fn ports_with_messages(
         devices: store.clone(),
         push_tokens: store.clone(),
         relationships: store.clone(),
+        reports: store.clone(),
         channels: store.clone(),
         guilds: store.clone(),
         invites: store.clone(),
