@@ -98,6 +98,7 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         devices: store.clone(),
         push_tokens: store.clone(),
         relationships: store.clone(),
+        reports: store.clone(),
         channels: store.clone(),
         guilds: store.clone(),
         invites: store.clone(),
