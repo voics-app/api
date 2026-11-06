@@ -17,7 +17,7 @@ use domain::guild::{Ban, Guild, Member, MemberProfile, Role};
 use domain::invite::Invite;
 use domain::mfa::BackupCodeRecord;
 use domain::notification::GuildNotificationSettings;
-use domain::push_token::{PushPlatform, PushToken};
+use domain::push_token::{PushPlatform, PushToken, VoipToken};
 use domain::relationship::Relationship;
 use domain::session::ClientInfo;
 use domain::template::GuildTemplate;
@@ -388,4 +388,16 @@ pub trait PushTokenRepository: Send + Sync {
     async fn delete_stale(&self, cutoff: DateTime<Utc>) -> AppResult<u64>;
     /// The tokens of these users whose session is still live, ordered by user and session.
     async fn list_live_for_users(&self, user_ids: &[Snowflake]) -> AppResult<Vec<PushToken>>;
+
+    // PushKit (VoIP) tokens. They leave with the same events as the notification token of their
+    // session: `delete_for_session`, `delete_for_sessions`, `delete_by_token` (APNs) and
+    // `delete_stale` remove them too.
+
+    /// Stores the session's VoIP token, replacing its previous one and any other row holding the
+    /// same token.
+    async fn upsert_voip(&self, token: &VoipToken) -> AppResult<()>;
+    /// Removes only the session's VoIP token; `false` when it had none.
+    async fn delete_voip_for_session(&self, session_id: Uuid) -> AppResult<bool>;
+    /// The VoIP tokens of these users whose session is still live, ordered by user and session.
+    async fn list_live_voip_for_users(&self, user_ids: &[Snowflake]) -> AppResult<Vec<VoipToken>>;
 }

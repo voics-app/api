@@ -588,6 +588,16 @@ pub struct CreateGuildFromTemplateRequest {
     pub icon: Option<String>,
 }
 
+/// `POST /users/@me/devices/voip`: the PushKit (VoIP) token of the calling session, which rings
+/// the phone for an incoming call while the app is closed.
+#[derive(Debug, Deserialize)]
+pub struct RegisterVoipTokenRequest {
+    pub token: String,
+    /// `production` (default) or `sandbox`, the APNs host the token was issued for.
+    #[serde(default)]
+    pub environment: Option<String>,
+}
+
 /// `POST /users/@me/devices/push`: the push token of the calling session.
 #[derive(Debug, Deserialize)]
 pub struct RegisterPushTokenRequest {
