@@ -16,7 +16,7 @@ use contracts::internal::{
     AdminGuildDto, AdminUserDto, AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto,
     ChannelRoutingDto, ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse,
     PushTargetDto, PushTargetsDto, PushTokenDto, SuspendUserRequest, UserReadyDto,
-    UsersLookupRequest,
+    UsersLookupRequest, VoipTokenDto,
 };
 use contracts::objects::{
     ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
@@ -198,6 +198,14 @@ async fn push_targets(
                         environment: token.environment.as_str().to_owned(),
                         previews: token.previews,
                         only_mentions: token.only_mentions,
+                    })
+                    .collect(),
+                voip_tokens: target
+                    .voip_tokens
+                    .into_iter()
+                    .map(|token| VoipTokenDto {
+                        token: token.token,
+                        environment: token.environment.as_str().to_owned(),
                     })
                     .collect(),
             })

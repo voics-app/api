@@ -75,6 +75,17 @@ pub struct PushToken {
     pub updated_at: DateTime<Utc>,
 }
 
+/// The PushKit (VoIP) token of an iPhone session, which only rings the phone for a call. APNs only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoipToken {
+    pub session_id: Uuid,
+    pub user_id: Snowflake,
+    pub token: String,
+    pub environment: PushEnvironment,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum PushTokenError {
     #[error("the token must not be empty")]

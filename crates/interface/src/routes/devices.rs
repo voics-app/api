@@ -13,11 +13,15 @@ use application::use_cases::devices::{
     claim_key_package, delete_device, list_user_devices, register_device, upload_key_packages,
 };
 use application::use_cases::push::register_token::RegisterPushTokenInput;
-use application::use_cases::push::{register_token, remove_token};
+use application::use_cases::push::register_voip_token::RegisterVoipTokenInput;
+use application::use_cases::push::{
+    register_token, register_voip_token, remove_token, remove_voip_token,
+};
 use application::{AppError, Resource};
 use contracts::objects::DeviceDto;
 use contracts::requests::{
-    CreateDeviceRequest, RegisterPushTokenRequest, UploadKeyPackagesRequest,
+    CreateDeviceRequest, RegisterPushTokenRequest, RegisterVoipTokenRequest,
+    UploadKeyPackagesRequest,
 };
 use domain::push_token::{PushEnvironment, PushPlatform};
 use domain::Snowflake;
@@ -101,6 +105,41 @@ async fn register_push(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn register_voip(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Body(body): Body<RegisterVoipTokenRequest>,
+) -> Result<StatusCode, ApiError> {
+    let environment = match body.environment.as_deref() {
+        None => PushEnvironment::Production,
+        Some(raw) => PushEnvironment::parse(raw).ok_or_else(|| {
+            AppError::invalid(
+                "environment",
+                "PUSH_ENVIRONMENT_INVALID",
+                "Must be production or sandbox.",
+            )
+        })?,
+    };
+    register_voip_token::execute(
+        &state.ports,
+        &actor,
+        RegisterVoipTokenInput {
+            token: body.token,
+            environment,
+        },
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_voip(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+) -> Result<StatusCode, ApiError> {
+    remove_voip_token::execute(&state.ports, &actor).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn remove_push(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -170,6 +209,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/users/@me/devices/push",
             post(register_push).delete(remove_push),
+        )
+        .route(
+            "/users/@me/devices/voip",
+            post(register_voip).delete(remove_voip),
         )
         .route("/devices/{id}", delete(remove))
         .route("/devices/{id}/key-packages", post(upload_packages))

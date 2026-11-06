@@ -111,6 +111,13 @@ pub struct PushTokenDto {
     pub only_mentions: bool,
 }
 
+/// One PushKit (VoIP) token of a target user: rings the phone for a call.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VoipTokenDto {
+    pub token: String,
+    pub environment: String,
+}
+
 /// A member the notifier may push to, with the facts its notification rules need.
 #[derive(Debug, Clone, Serialize)]
 pub struct PushTargetDto {
@@ -124,6 +131,7 @@ pub struct PushTargetDto {
     pub suppress_everyone: bool,
     pub suppress_roles: bool,
     pub tokens: Vec<PushTokenDto>,
+    pub voip_tokens: Vec<VoipTokenDto>,
 }
 
 /// `GET /internal/v1/channels/{id}/push-targets?author_id=`.
