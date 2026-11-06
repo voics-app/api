@@ -26,7 +26,14 @@ impl HttpMessages {
         }
     }
 
-    async fn send(&self, method: Method, path: &str, body: Option<Value>) -> AppResult<Value> {
+    /// Sends the request and returns the status with the JSON body (`Null` when empty).
+    /// Server errors become `Unavailable`; other failures are left to the caller.
+    async fn exchange(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> AppResult<(reqwest::StatusCode, Value)> {
         let url = self.base.join(path).map_err(AppError::internal)?;
         let mut request = self
             .http
@@ -45,19 +52,25 @@ impl HttpMessages {
                 "messages responded {status}"
             )));
         }
+        if !status.is_success() || status == reqwest::StatusCode::NO_CONTENT {
+            return Ok((status, Value::Null));
+        }
+        let body = response
+            .json()
+            .await
+            .map_err(|e| AppError::Unavailable(format!("messages body: {e}")))?;
+        Ok((status, body))
+    }
+
+    async fn send(&self, method: Method, path: &str, body: Option<Value>) -> AppResult<Value> {
+        let (status, body) = self.exchange(method, path, body).await?;
         if !status.is_success() {
             return Err(AppError::BadRequest {
                 code: 0,
                 message: format!("messages responded {status}"),
             });
         }
-        if status == reqwest::StatusCode::NO_CONTENT {
-            return Ok(Value::Null);
-        }
-        response
-            .json()
-            .await
-            .map_err(|e| AppError::Unavailable(format!("messages body: {e}")))
+        Ok(body)
     }
 }
 
@@ -85,6 +98,23 @@ impl MessageService for HttpMessages {
     ) -> AppResult<StoredMessage> {
         let path = format!("internal/v1/channels/{channel_id}/messages/{message_id}");
         stored(self.send(Method::PATCH, &path, Some(patch)).await?)
+    }
+
+    async fn get(
+        &self,
+        channel_id: Snowflake,
+        message_id: Snowflake,
+    ) -> AppResult<Option<StoredMessage>> {
+        let path = format!("internal/v1/channels/{channel_id}/messages/{message_id}");
+        let (status, body) = self.exchange(Method::GET, &path, None).await?;
+        match status {
+            reqwest::StatusCode::NOT_FOUND => Ok(None),
+            status if status.is_success() => stored(body).map(Some),
+            status => Err(AppError::BadRequest {
+                code: 0,
+                message: format!("messages responded {status}"),
+            }),
+        }
     }
 
     async fn delete(&self, channel_id: Snowflake, message_id: Snowflake) -> AppResult<()> {

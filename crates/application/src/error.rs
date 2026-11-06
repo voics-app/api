@@ -21,6 +21,7 @@ pub enum Resource {
     Member,
     Message,
     Overwrite,
+    Report,
     Role,
     Session,
     User,

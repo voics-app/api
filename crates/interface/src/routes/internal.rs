@@ -6,17 +6,20 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use application::use_cases::admin::{list_guilds, list_users, stats, suspend_user};
+use application::use_cases::admin::{
+    list_guilds, list_reports, list_users, resolve_report, stats, suspend_user,
+};
 use application::use_cases::internal::{
     channel_access, channel_routing, guild_state, introspect, user_ready, users_lookup,
 };
 use application::use_cases::push::{forget_token, targets};
 use application::{AppError, Resource};
 use contracts::internal::{
-    AdminGuildDto, AdminUserDto, AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto,
-    ChannelRoutingDto, ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse,
-    PushTargetDto, PushTargetsDto, PushTokenDto, SuspendUserRequest, UserReadyDto,
-    UsersLookupRequest, VoipTokenDto,
+    AdminGuildDto, AdminReportDto, AdminReportPageDto, AdminReportUserDto, AdminUserDto,
+    AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto, ChannelRoutingDto,
+    ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse, PushTargetDto, PushTargetsDto,
+    PushTokenDto, ResolveReportRequest, SuspendUserRequest, UserReadyDto, UsersLookupRequest,
+    VoipTokenDto,
 };
 use contracts::objects::{
     ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
@@ -24,6 +27,7 @@ use contracts::objects::{
 };
 use contracts::wire::{timestamp, Id, Perm};
 use domain::push_token::PushPlatform;
+use domain::report::{Report, ReportStatus, Resolution};
 use domain::Snowflake;
 
 use crate::error::ApiError;
@@ -313,6 +317,91 @@ async fn admin_guilds(
     ))
 }
 
+#[derive(Deserialize)]
+struct ReportQuery {
+    status: Option<String>,
+    limit: Option<u32>,
+    after: Option<String>,
+}
+
+fn report_dto(
+    report: &Report,
+    reporter: Option<&domain::user::User>,
+    reported: Option<&domain::user::User>,
+) -> AdminReportDto {
+    let who = |id: Snowflake, user: Option<&domain::user::User>| AdminReportUserDto {
+        id: Id(id),
+        username: user.map(|u| u.username.clone()),
+    };
+    AdminReportDto {
+        id: Id(report.id),
+        kind: report.kind.as_str().to_owned(),
+        category: report.category.as_str().to_owned(),
+        note: report.note.clone(),
+        status: report.status.as_str().to_owned(),
+        created_at: timestamp(report.created_at),
+        reporter: who(report.reporter_id, reporter),
+        reported: who(report.reported_user_id, reported),
+        channel_id: report.channel_id.map(Id),
+        guild_id: report.guild_id.map(Id),
+        message_id: report.message_id.map(Id),
+        delivery_mode: report.delivery_mode.map(|m| m.as_str().to_owned()),
+        content: report.content.clone(),
+        content_source: report.content_source.map(|s| s.as_str().to_owned()),
+        resolved_at: report.resolved_at.map(timestamp),
+        resolved_by: report.resolved_by.clone(),
+        resolution_note: report.resolution_note.clone(),
+    }
+}
+
+async fn admin_reports(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Query(params): Query<ReportQuery>,
+) -> Result<Json<AdminReportPageDto>, ApiError> {
+    let status = match params.status.as_deref() {
+        None => ReportStatus::Open,
+        Some(raw) => ReportStatus::parse(raw).ok_or_else(|| {
+            AppError::invalid(
+                "status",
+                "REPORT_STATUS_INVALID",
+                "Must be open, resolved or dismissed.",
+            )
+        })?,
+    };
+    let after = params.after.as_deref().map(parse_id).transpose()?;
+    let page = list_reports::execute(&state.ports, status, params.limit, after).await?;
+    Ok(Json(AdminReportPageDto {
+        reports: page
+            .reports
+            .iter()
+            .map(|view| report_dto(&view.report, view.reporter.as_ref(), view.reported.as_ref()))
+            .collect(),
+        next_after: page.next_after.map(Id),
+    }))
+}
+
+async fn admin_resolve_report(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(report_id): Path<String>,
+    Body(body): Body<ResolveReportRequest>,
+) -> Result<Json<AdminReportDto>, ApiError> {
+    let id = report_id
+        .parse()
+        .map_err(|_| AppError::NotFound(Resource::Report))?;
+    let resolution = Resolution::parse(&body.resolution).map_err(AppError::from)?;
+    let report = resolve_report::execute(
+        &state.ports,
+        id,
+        resolution,
+        &body.resolved_by,
+        body.note.as_deref(),
+    )
+    .await?;
+    Ok(Json(report_dto(&report, None, None)))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/internal/v1/auth/introspect", post(introspect_token))
@@ -330,4 +419,9 @@ pub fn routes() -> Router<AppState> {
         .route("/internal/v1/admin/users", get(admin_users))
         .route("/internal/v1/admin/users/{id}/suspend", post(admin_suspend))
         .route("/internal/v1/admin/guilds", get(admin_guilds))
+        .route("/internal/v1/admin/reports", get(admin_reports))
+        .route(
+            "/internal/v1/admin/reports/{id}/resolve",
+            post(admin_resolve_report),
+        )
 }

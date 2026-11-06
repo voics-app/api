@@ -614,3 +614,27 @@ pub struct RegisterPushTokenRequest {
     #[serde(default)]
     pub only_mentions: Option<bool>,
 }
+
+/// `POST /reports`: report a message or a user.
+#[derive(Debug, Deserialize)]
+pub struct CreateReportRequest {
+    /// `message` or `user`.
+    pub target: String,
+    pub category: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    /// Message reports: the channel and message.
+    #[serde(default)]
+    pub channel_id: Option<String>,
+    #[serde(default)]
+    pub message_id: Option<String>,
+    /// User reports: the reported user.
+    #[serde(default)]
+    pub user_id: Option<String>,
+    /// Message reports in ephemeral and P2P chats, which the server does not store: the author
+    /// as the reporter saw it, and the text the reporter submits as evidence.
+    #[serde(default)]
+    pub author_id: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
+}

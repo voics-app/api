@@ -15,6 +15,7 @@ mod notifications;
 pub mod outbox;
 mod push_tokens;
 mod relationships;
+mod reports;
 mod sessions;
 mod unit_of_work;
 mod users;

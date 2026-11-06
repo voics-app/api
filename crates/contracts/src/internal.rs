@@ -150,3 +150,48 @@ pub struct ForgetPushTokenRequest {
     pub platform: String,
     pub token: String,
 }
+
+/// One report in the admin review queue.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminReportDto {
+    pub id: Id,
+    pub kind: String,
+    pub category: String,
+    pub note: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub reporter: AdminReportUserDto,
+    pub reported: AdminReportUserDto,
+    pub channel_id: Option<Id>,
+    pub guild_id: Option<Id>,
+    pub message_id: Option<Id>,
+    pub delivery_mode: Option<String>,
+    /// The message text, when one exists; see `content_source`.
+    pub content: Option<String>,
+    /// `server` (copied at report time) or `reporter` (submitted by the reporter, unverified).
+    pub content_source: Option<String>,
+    pub resolved_at: Option<String>,
+    pub resolved_by: Option<String>,
+    pub resolution_note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminReportUserDto {
+    pub id: Id,
+    pub username: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminReportPageDto {
+    pub reports: Vec<AdminReportDto>,
+    pub next_after: Option<Id>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResolveReportRequest {
+    /// `resolved` or `dismissed`.
+    pub resolution: String,
+    pub resolved_by: String,
+    #[serde(default)]
+    pub note: Option<String>,
+}
