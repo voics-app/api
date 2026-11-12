@@ -33,7 +33,10 @@ jobs:
     with:
       description: Voics REST API (Rust)
       # RUSTSEC-2023-0071 (rsa Marvin attack) has no fixed release; the API never performs RSA decryption.
-      audit-args: --ignore RUSTSEC-2023-0071
+      # RUSTSEC-2026-0459 (libsqlite3-sys bundled SQLite CVE) is only in Cargo.lock as sqlx's optional sqlite backend: the
+      # sqlite feature is off, so it is never compiled (`cargo tree -i libsqlite3-sys` is empty), and 0.30 is not built with
+      # `bundled`. sqlx 0.8 pins libsqlite3-sys 0.30, so the patched 0.39 cannot be used until sqlx moves; drop this then.
+      audit-args: --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
 
   docker:
     needs: rust
