@@ -582,3 +582,127 @@ async fn pruning_stale_devices_also_drops_tokens_nobody_refreshed() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].1, TOKEN_B);
 }
+
+#[tokio::test]
+async fn manual_push_lists_one_users_live_tokens_and_needs_the_internal_token() {
+    let database = start_database().await;
+    let app = app(&database);
+    let (alice, alice_id) = register(&app, "alice").await;
+    let (_, nobody_id) = register(&app, "nobody").await;
+    let laptop = login(&app, "alice").await;
+    assert_eq!(
+        put_token(&app, &alice, TOKEN_A).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        put_token(&app, &laptop, TOKEN_B).await,
+        StatusCode::NO_CONTENT
+    );
+
+    let (status, body) = send(
+        &app,
+        internal(
+            Method::GET,
+            &format!("/internal/v1/users/{alice_id}/push-tokens"),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["users"].as_array().expect("users").len(), 1);
+    assert_eq!(body["users"][0]["user_id"], alice_id.as_str());
+    assert_eq!(
+        body["users"][0]["tokens"].as_array().expect("tokens").len(),
+        2
+    );
+    assert_eq!(body["next_after"], Value::Null);
+
+    // A revoked session's token is not live any more.
+    sqlx::query("UPDATE sessions SET revoked_at = now() WHERE id = (SELECT session_id FROM push_tokens WHERE token = $1)")
+        .bind(TOKEN_A)
+        .execute(&database.pool)
+        .await
+        .expect("revoke");
+    let (_, body) = send(
+        &app,
+        internal(
+            Method::GET,
+            &format!("/internal/v1/users/{alice_id}/push-tokens"),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(
+        body["users"][0]["tokens"].as_array().expect("tokens").len(),
+        1
+    );
+
+    // A user without a token gives an empty list, not an error.
+    let (status, body) = send(
+        &app,
+        internal(
+            Method::GET,
+            &format!("/internal/v1/users/{nobody_id}/push-tokens"),
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["users"], json!([]));
+
+    let (status, _) = send(
+        &app,
+        request(
+            Method::GET,
+            &format!("/internal/v1/users/{alice_id}/push-tokens"),
+            None,
+            None,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn manual_push_pages_through_every_user_with_a_live_token() {
+    let database = start_database().await;
+    let app = app(&database);
+    let (alice, alice_id) = register(&app, "alice").await;
+    let (bob, bob_id) = register(&app, "bob").await;
+    let (_, _no_token) = register(&app, "carol").await;
+    let (dave, dave_id) = register(&app, "dave").await;
+    assert_eq!(
+        put_token(&app, &alice, TOKEN_A).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(put_token(&app, &bob, TOKEN_B).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        put_token(&app, &dave, &"d".repeat(64)).await,
+        StatusCode::NO_CONTENT
+    );
+
+    let mut seen = Vec::new();
+    let mut after: Option<String> = None;
+    for _ in 0..5 {
+        let path = match &after {
+            Some(id) => format!("/internal/v1/push-tokens?limit=2&after={id}"),
+            None => "/internal/v1/push-tokens?limit=2".to_owned(),
+        };
+        let (status, body) = send(&app, internal(Method::GET, &path, None)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        for user in body["users"].as_array().expect("users") {
+            seen.push(user["user_id"].as_str().expect("id").to_owned());
+        }
+        match body["next_after"].as_str() {
+            Some(next) => after = Some(next.to_owned()),
+            None => break,
+        }
+    }
+
+    let mut expected = vec![alice_id, bob_id, dave_id];
+    expected.sort_by_key(|id| id.parse::<i64>().expect("snowflake"));
+    assert_eq!(
+        seen, expected,
+        "each user with a token once, in id order, none without"
+    );
+}

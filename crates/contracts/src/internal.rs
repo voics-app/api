@@ -144,6 +144,21 @@ pub struct PushTargetsDto {
     pub targets: Vec<PushTargetDto>,
 }
 
+/// One user and the live notification tokens of their devices.
+#[derive(Debug, Clone, Serialize)]
+pub struct ManualPushUserDto {
+    pub user_id: Id,
+    pub tokens: Vec<PushTokenDto>,
+}
+
+/// `GET /internal/v1/users/{id}/push-tokens` and `GET /internal/v1/push-tokens?after=&limit=`:
+/// the tokens a hand-sent notification goes to. `next_after` is set while more users may follow.
+#[derive(Debug, Clone, Serialize)]
+pub struct ManualPushTargetsDto {
+    pub users: Vec<ManualPushUserDto>,
+    pub next_after: Option<Id>,
+}
+
 /// `DELETE /internal/v1/push-tokens`: a token the provider rejected.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ForgetPushTokenRequest {
