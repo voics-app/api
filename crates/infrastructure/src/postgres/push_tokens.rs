@@ -196,6 +196,22 @@ impl PushTokenRepository for PgStore {
         rows.into_iter().map(PushToken::try_from).collect()
     }
 
+    async fn list_live_page(
+        &self,
+        after: Option<Snowflake>,
+        limit: u32,
+    ) -> AppResult<Vec<PushToken>> {
+        let rows: Vec<PushTokenRow> = sqlx::query_as(
+            "WITH page AS (                  SELECT p.user_id FROM push_tokens p JOIN sessions s ON s.id = p.session_id                  WHERE s.revoked_at IS NULL AND p.user_id > $1                  GROUP BY p.user_id ORDER BY p.user_id LIMIT $2)              SELECT p.session_id, p.user_id, p.device_id, p.platform, p.token, p.environment,                     p.previews, p.only_mentions, p.created_at, p.updated_at              FROM push_tokens p JOIN sessions s ON s.id = p.session_id              WHERE p.user_id IN (SELECT user_id FROM page) AND s.revoked_at IS NULL              ORDER BY p.user_id, p.session_id",
+        )
+        .bind(after.map_or(0, |id| id.as_i64()))
+        .bind(i64::from(limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        rows.into_iter().map(PushToken::try_from).collect()
+    }
+
     async fn upsert_voip(&self, token: &VoipToken) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
         // A PushKit token belongs to one installation: it moves to this session.

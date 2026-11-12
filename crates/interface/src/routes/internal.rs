@@ -12,14 +12,14 @@ use application::use_cases::admin::{
 use application::use_cases::internal::{
     channel_access, channel_routing, guild_state, introspect, user_ready, users_lookup,
 };
-use application::use_cases::push::{forget_token, targets};
+use application::use_cases::push::{forget_token, manual_targets, targets};
 use application::{AppError, Resource};
 use contracts::internal::{
     AdminGuildDto, AdminReportDto, AdminReportPageDto, AdminReportUserDto, AdminUserDto,
     AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto, ChannelRoutingDto,
-    ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse, PushTargetDto, PushTargetsDto,
-    PushTokenDto, ResolveReportRequest, SuspendUserRequest, UserReadyDto, UsersLookupRequest,
-    VoipTokenDto,
+    ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse, ManualPushTargetsDto,
+    ManualPushUserDto, PushTargetDto, PushTargetsDto, PushTokenDto, ResolveReportRequest,
+    SuspendUserRequest, UserReadyDto, UsersLookupRequest, VoipTokenDto,
 };
 use contracts::objects::{
     ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
@@ -229,6 +229,55 @@ async fn forget_push_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
+fn push_token_dto(token: domain::push_token::PushToken) -> PushTokenDto {
+    PushTokenDto {
+        platform: token.platform.as_str().to_owned(),
+        token: token.token,
+        environment: token.environment.as_str().to_owned(),
+        previews: token.previews,
+        only_mentions: token.only_mentions,
+    }
+}
+
+fn manual_targets_dto(found: manual_targets::ManualTargets) -> ManualPushTargetsDto {
+    ManualPushTargetsDto {
+        users: found
+            .users
+            .into_iter()
+            .map(|(user_id, tokens)| ManualPushUserDto {
+                user_id: Id(user_id),
+                tokens: tokens.into_iter().map(push_token_dto).collect(),
+            })
+            .collect(),
+        next_after: found.next_after.map(Id),
+    }
+}
+
+async fn user_push_tokens(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(user_id): Path<String>,
+) -> Result<Json<ManualPushTargetsDto>, ApiError> {
+    let found = manual_targets::for_user(&state.ports, parse_id(&user_id)?).await?;
+    Ok(Json(manual_targets_dto(found)))
+}
+
+#[derive(Deserialize)]
+struct PushTokenPageQuery {
+    after: Option<String>,
+    limit: Option<u32>,
+}
+
+async fn push_token_page(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Query(params): Query<PushTokenPageQuery>,
+) -> Result<Json<ManualPushTargetsDto>, ApiError> {
+    let after = params.after.as_deref().map(parse_id).transpose()?;
+    let found = manual_targets::page(&state.ports, after, params.limit).await?;
+    Ok(Json(manual_targets_dto(found)))
+}
+
 async fn admin_stats(
     State(state): State<AppState>,
     _internal: Internal,
@@ -414,7 +463,11 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/internal/v1/channels/{id}/delivery", get(channel_delivery))
         .route("/internal/v1/channels/{id}/push-targets", get(push_targets))
-        .route("/internal/v1/push-tokens", delete(forget_push_token))
+        .route(
+            "/internal/v1/push-tokens",
+            delete(forget_push_token).get(push_token_page),
+        )
+        .route("/internal/v1/users/{id}/push-tokens", get(user_push_tokens))
         .route("/internal/v1/admin/stats", get(admin_stats))
         .route("/internal/v1/admin/users", get(admin_users))
         .route("/internal/v1/admin/users/{id}/suspend", post(admin_suspend))

@@ -389,6 +389,13 @@ pub trait PushTokenRepository: Send + Sync {
     async fn delete_stale(&self, cutoff: DateTime<Utc>) -> AppResult<u64>;
     /// The tokens of these users whose session is still live, ordered by user and session.
     async fn list_live_for_users(&self, user_ids: &[Snowflake]) -> AppResult<Vec<PushToken>>;
+    /// The live tokens of the next `limit` users (ordered by id, strictly after `after`) who hold
+    /// at least one, ordered by user and session. Pages the whole audience for a manual push.
+    async fn list_live_page(
+        &self,
+        after: Option<Snowflake>,
+        limit: u32,
+    ) -> AppResult<Vec<PushToken>>;
 
     // PushKit (VoIP) tokens. They leave with the same events as the notification token of their
     // session: `delete_for_session`, `delete_for_sessions`, `delete_by_token` (APNs) and
