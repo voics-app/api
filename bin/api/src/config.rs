@@ -6,6 +6,9 @@ use std::time::Duration;
 
 use url::Url;
 
+mod webauthn;
+pub use webauthn::WebauthnConfig;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Environment {
     Local,
@@ -65,6 +68,7 @@ pub struct Config {
     /// Seconds between two stale-device prune runs.
     pub device_prune_interval_secs: u64,
     pub mail: MailTransport,
+    pub webauthn: Option<WebauthnConfig>,
     /// Product name shown in emails and as the authenticator-app issuer.
     pub brand_name: String,
     /// Prefix of the links in account emails.
@@ -282,6 +286,7 @@ impl Config {
                 DEFAULT_DEVICE_PRUNE_INTERVAL_SECS,
             )?,
             mail: mail_transport(&get)?,
+            webauthn: webauthn::parse(&get, environment)?,
             brand_name: optional(&get, "BRAND_NAME", application::context::DEFAULT_BRAND_NAME),
             app_link_base: optional(&get, "APP_LINK_BASE", "voics://"),
             account_deletion_retention_days: positive(

@@ -108,6 +108,10 @@ pub async fn execute(
         .emit(DomainEvent::UserUpdate(user.clone()));
     ports.unit_of_work.commit(writes).await?;
 
+    // Factor activation can commit after the profile was read. Return the stored
+    // security state, not the stale snapshot used to prepare this mutation.
+    let user = require_user(ports, actor.user_id).await?;
+
     after(
         ports,
         actor,

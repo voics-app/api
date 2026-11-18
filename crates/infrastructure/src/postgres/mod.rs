@@ -14,6 +14,7 @@ mod interactions;
 mod invites;
 mod notifications;
 pub mod outbox;
+mod passkeys;
 mod push_tokens;
 mod relationships;
 mod reports;

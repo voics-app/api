@@ -6,7 +6,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
 ## Run locally
 
-Prerequisites: Rust 1.99, Docker (for the integration tests and the local dependencies).
+Prerequisites: Rust 1.99, Docker (for integration tests and local dependencies), and the C compiler,
+Perl and Make required by vendored OpenSSL. On Windows use the MSVC toolchain with Strawberry
+Perl (`OPENSSL_SRC_PERL` can point to a portable Perl executable). The Docker build installs its
+own build prerequisites; the runtime does not need a system OpenSSL package.
 
 ```sh
 cp .env.example .env
@@ -62,6 +65,8 @@ All configuration comes from environment variables, validated at startup. Missin
 | `INTERNAL_SERVICE_TOKEN` | yes | | Shared secret for `/internal/v1` (`X-Internal-Token`) |
 | `JWT_PRIVATE_KEY` | yes | | Ed25519 PEM; `\n` escapes allowed |
 | `JWT_PUBLIC_KEY` | yes | | Ed25519 PEM |
+| `WEBAUTHN_RP_ID` | paired | | Passkey relying-party hostname, e.g. `auth.example.com`; set together with `WEBAUTHN_RP_ORIGIN` |
+| `WEBAUTHN_RP_ORIGIN` | paired | | Exact HTTPS origin for ceremonies, including a non-default port if used. HTTP `localhost` is accepted only with `DISCORDY_ENV=local`. Unset both to disable new WebAuthn ceremonies |
 | `SNOWFLAKE_WORKER_ID` | yes | | 0 to 1023 |
 | `PUBLIC_API_URL` | yes | | Base for webhook URLs |
 | `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
@@ -108,6 +113,44 @@ cleanup follows the commit; a surviving session keeps its shared E2EE device.
 token, and concurrent refresh versus logout-all, using isolated Postgres containers. The historical
 one-off failure in api#121 did not reproduce in 12 repetitions with CPU pressure; it is not assumed
 to have the same cause as these separately reproduced security defects.
+
+## Passkey second factors
+
+Passkeys complement password login and TOTP. `POST /users/@me/mfa/passkeys/register/start`
+requires the current password and a name. The matching `/register/finish` verifies the signed
+response and enables MFA only after a credential is stored. `GET /users/@me/mfa/passkeys`
+returns names and usage dates; `DELETE /users/@me/mfa/passkeys/{id}` requires the password
+and a TOTP or unused recovery code. These paths have the `/api/v1` prefix.
+
+Password login returns error `60008`, a ticket, and the available `methods`. Clients pass the
+ticket to `/auth/mfa/webauthn/start`, run the WebAuthn assertion, then submit the ticket,
+`challenge_id` and `credential` to `/auth/mfa/webauthn/finish`. Binary WebAuthn fields use
+base64url JSON, as in the contracts schemas. `/auth/mfa/totp` also accepts recovery codes
+for accounts whose only second factor is a passkey.
+
+Challenges expire after five minutes, bind to the initiating session or password-issued ticket,
+and are consumed by the first correctly bound finish attempt, including an invalid assertion.
+Postgres enforces consumption across replicas, the ten-passkey account limit, and monotonic
+signature counters (authenticators that always send zero are supported). Credentials and
+counter/ticket updates are transactional. Recovery codes use Argon2id hashes and are shown
+once on first activation; adding a passkey preserves an existing set. Removing one factor
+keeps MFA and recovery active when another factor remains. Purging an account deletes keys
+and pending ceremonies. Passkey changes queue `USER_UPDATE` in the same transaction.
+
+The verifier uses patched `webauthn-rs` 0.5.5 with vendored OpenSSL 3.6.3. Version 0.6.2's
+`crypto-glue` currently requests the removed `rsa/sha2` feature and cannot resolve alongside
+the stable RSA dependency in `jsonwebtoken` 12. JWT security fixes remain intact.
+
+The configured RP origin must serve the actual browser ceremony. CORS, request headers,
+`file://`, opaque `null` origins and arbitrary desktop custom schemes never establish RP
+trust. Native clients need a ceremony at that HTTPS origin or an OS bridge with an associated
+domain; these API endpoints alone do not provide that native integration. Keep RP ID/origin
+stable after enrollment, and retain recovery codes before changing or disabling configuration.
+
+`cargo test -p infrastructure --test http_passkeys --test http_passkey_recovery --test http_passkey_races --test postgres_passkeys`
+uses disposable PostgreSQL containers and a software authenticator for registration/assertion,
+origin/signature rejection, expiry/replay, concurrent replicas, counters, recovery and TOTP
+coexistence. It requires no production credentials or external authenticator service.
 
 ## Git hooks
 

@@ -8,6 +8,7 @@ pub mod envelope;
 pub mod errors;
 pub mod internal;
 pub mod objects;
+pub mod passkeys;
 pub mod requests;
 pub mod vanity;
 pub mod wire;
