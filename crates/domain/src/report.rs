@@ -77,6 +77,7 @@ pub enum ReportKind {
     Message,
     User,
     Guild,
+    Channel,
 }
 
 impl ReportKind {
@@ -85,6 +86,7 @@ impl ReportKind {
             ReportKind::Message => "message",
             ReportKind::User => "user",
             ReportKind::Guild => "guild",
+            ReportKind::Channel => "channel",
         }
     }
 
@@ -93,6 +95,7 @@ impl ReportKind {
             "message" => Some(ReportKind::Message),
             "user" => Some(ReportKind::User),
             "guild" => Some(ReportKind::Guild),
+            "channel" => Some(ReportKind::Channel),
             _ => None,
         }
     }
@@ -277,7 +280,7 @@ mod tests {
             assert_eq!(ReportStatus::parse(status.as_str()), Some(status));
         }
         assert_eq!(ReportKind::parse("message"), Some(ReportKind::Message));
-        assert_eq!(ReportKind::parse("channel"), None);
+        assert_eq!(ReportKind::parse("channel"), Some(ReportKind::Channel));
         assert_eq!(ContentSource::parse("server"), Some(ContentSource::Server));
         assert_eq!(ContentSource::parse("p2p"), None);
     }

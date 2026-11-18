@@ -16,6 +16,12 @@ See [the profile specification](https://github.com/discordy-voics/docs/blob/feat
 
 ## Run locally
 
+`POST /reports` accepts `target: "channel"` with a guild channel ID, category and
+optional note. The caller must currently be able to view the channel. The report
+captures only server-owned ID, guild ID, parent ID, name, type and NSFW flag, without
+fetching messages or members. The admin queue keeps a distinct channel target and
+owner-at-filing association. Public listing reports retain their existing policy.
+
 The optional account preference `preferences.hide_age_restricted_channels` accepts
 only booleans and uses the existing settings merge and sync events. Missing means
 false; this does not attest age or change channel permissions. See

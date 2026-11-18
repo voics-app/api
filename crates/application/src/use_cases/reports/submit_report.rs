@@ -20,6 +20,9 @@ pub const REPORT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60
 
 #[derive(Debug, Clone)]
 pub enum ReportTarget {
+    Channel {
+        channel_id: Snowflake,
+    },
     Guild {
         guild_id: Snowflake,
     },
@@ -69,6 +72,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: SubmitReportInput) -> 
     )
     .await?;
     let resolved = match input.target {
+        ReportTarget::Channel { channel_id } => channel_target(ports, actor, channel_id).await?,
         ReportTarget::Guild { guild_id } => guild_target(ports, guild_id).await?,
         ReportTarget::User { user_id } => user_target(ports, user_id).await?,
         ReportTarget::Message {
@@ -78,7 +82,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: SubmitReportInput) -> 
             content,
         } => message_target(ports, actor, channel_id, message_id, author_id, content).await?,
     };
-    if resolved.reported_user_id == actor.user_id {
+    if resolved.kind != ReportKind::Channel && resolved.reported_user_id == actor.user_id {
         return Err(AppError::invalid(
             "target",
             "REPORT_SELF",
@@ -119,6 +123,38 @@ async fn user_target(ports: &Ports, user_id: Snowflake) -> AppResult<Resolved> {
         delivery_mode: None,
         content: None,
         content_source: None,
+    })
+}
+
+/// A content-gate report needs only current channel visibility, never message history.
+async fn channel_target(
+    ports: &Ports,
+    actor: &Actor,
+    channel_id: Snowflake,
+) -> AppResult<Resolved> {
+    let access = ChannelAccess::visible(ports, channel_id, actor.user_id).await?;
+    let guild = &access.guild()?.guild;
+    let channel = &access.channel;
+    if channel.kind.is_thread() && access.parent.is_none() {
+        return Err(AppError::NotFound(Resource::Channel));
+    }
+    let metadata = serde_json::json!({
+        "id": channel.id.to_string(),
+        "guild_id": guild.id.to_string(),
+        "parent_id": channel.parent_id.map(|id| id.to_string()),
+        "name": channel.name,
+        "type": channel.kind.code(),
+        "nsfw": channel.nsfw,
+    });
+    Ok(Resolved {
+        reported_user_id: guild.owner_id,
+        kind: ReportKind::Channel,
+        channel_id: Some(channel.id),
+        guild_id: Some(guild.id),
+        message_id: None,
+        delivery_mode: None,
+        content: Some(metadata.to_string()),
+        content_source: Some(ContentSource::Server),
     })
 }
 
