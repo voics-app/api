@@ -9,6 +9,7 @@ pub mod emojis;
 pub mod guilds;
 pub mod health;
 pub mod ids;
+pub mod integrations;
 pub mod internal;
 pub mod invites;
 pub mod members;

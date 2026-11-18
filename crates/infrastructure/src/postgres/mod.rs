@@ -4,6 +4,7 @@ mod account_tokens;
 mod applications;
 mod audit;
 mod audit_policy;
+mod authorizations;
 mod channels;
 mod community;
 mod convert;

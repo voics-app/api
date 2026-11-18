@@ -542,11 +542,13 @@ pub struct CreateInteractionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OAuth2AuthorizeRequest {
     pub client_id: Id,
     pub guild_id: Id,
-    pub permissions: Perm,
+    pub permissions: String,
     pub scope: String,
+    pub installation_revision: String,
 }
 
 #[derive(Debug, Deserialize)]

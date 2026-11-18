@@ -2,15 +2,17 @@ use serde_json::json;
 
 use domain::application::Webhook;
 use domain::audit::{AuditAction, AuditChange};
+use domain::permissions::Permissions;
 use domain::validation;
 use domain::Snowflake;
 
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Resource};
 use crate::support::audit::AuditContext;
+use crate::support::channel_access::ChannelAccess;
 use crate::support::images::{store_hashed, ImageUpload};
 use crate::use_cases::webhooks::webhook_access::{require_hostable, require_manager};
-use crate::write_set::{Mutation, WriteSet};
+use crate::write_set::{Mutation, WebhookMetadataPatch, WriteSet};
 
 #[derive(Debug, Clone, Default)]
 pub struct UpdateWebhookInput {
@@ -28,10 +30,12 @@ pub async fn execute(
 ) -> AppResult<Webhook> {
     let (before, _ctx) = require_manager(ports, actor, webhook_id).await?;
     let mut webhook = before.clone();
+    let mut patch = WebhookMetadataPatch::default();
     let mut changes = Vec::new();
     if let Some(name) = input.name {
         validation::webhook_name(&name)?;
         webhook.name = name.trim().to_owned();
+        patch.name = Some(webhook.name.clone());
         changes.extend(AuditChange::if_changed(
             "name",
             json!(before.name),
@@ -45,6 +49,7 @@ pub async fn execute(
             }
             None => None,
         };
+        patch.avatar = Some(webhook.avatar.clone());
         changes.extend(AuditChange::if_changed(
             "avatar_hash",
             json!(before.avatar),
@@ -61,7 +66,11 @@ pub async fn execute(
             return Err(AppError::NotFound(Resource::Channel));
         }
         require_hostable(&channel)?;
+        ChannelAccess::visible(ports, channel_id, actor.user_id)
+            .await?
+            .require(Permissions::MANAGE_WEBHOOKS)?;
         webhook.channel_id = channel_id;
+        patch.channel_id = Some(channel_id);
         changes.extend(AuditChange::if_changed(
             "channel_id",
             json!(before.channel_id.to_string()),
@@ -69,7 +78,10 @@ pub async fn execute(
         ));
     }
     let mut writes = WriteSet::new();
-    writes.mutate(Mutation::UpdateWebhook(webhook.clone()));
+    writes.mutate(Mutation::UpdateWebhook {
+        id: webhook_id,
+        patch,
+    });
     if !changes.is_empty() {
         writes.audit(audit.entry(
             ports,
@@ -80,5 +92,9 @@ pub async fn execute(
         )?);
     }
     ports.unit_of_work.commit(writes).await?;
-    Ok(webhook)
+    ports
+        .webhooks
+        .find(webhook_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Webhook))
 }
