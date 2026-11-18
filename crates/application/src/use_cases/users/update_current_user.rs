@@ -13,6 +13,10 @@ use crate::write_set::{Mutation, WriteSet};
 
 #[derive(Debug, Clone, Default)]
 pub struct UpdateCurrentUserInput {
+    pub banner: Option<Option<ImageUpload>>,
+    pub pronouns: Option<Option<String>>,
+    pub theme_colors: Option<Option<[u32; 2]>>,
+    pub accent_color: Option<Option<u32>>,
     pub username: Option<String>,
     /// `Some(None)` clears the display name.
     pub global_name: Option<Option<String>>,
@@ -39,6 +43,10 @@ pub async fn execute(
     input: UpdateCurrentUserInput,
 ) -> AppResult<User> {
     let mut user = require_user(ports, actor.user_id).await?;
+    let changes_identity = input.username.is_some()
+        || input.global_name.is_some()
+        || input.bio.is_some()
+        || input.avatar.is_some();
     let new_email = input.email.as_deref().map(|e| e.trim().to_lowercase());
     validate(&input, new_email.as_deref())?;
 
@@ -96,16 +104,35 @@ pub async fn execute(
             None => None,
         };
     }
+    let appearance = domain::profile::AppearancePatch {
+        banner: match input.banner {
+            Some(Some(image)) => Some(Some(
+                store_hashed(ports, &format!("banners/{}", user.id), image).await?,
+            )),
+            value => value.map(|_| None),
+        },
+        pronouns: input
+            .pronouns
+            .map(|value| value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())),
+        theme_colors: input.theme_colors,
+        accent_color: input.accent_color,
+    };
+    appearance.apply(&mut user);
     let mut writes = WriteSet::new();
+    writes.mutate(Mutation::SetUserAppearance {
+        user_id: user.id,
+        patch: appearance,
+    });
     if let Some(new_password) = &input.new_password {
         writes.mutate(Mutation::SetPasswordHash {
             user_id: user.id,
             hash: ports.passwords.hash(new_password).await?,
         });
     }
-    writes
-        .mutate(Mutation::UpdateUser(user.clone()))
-        .emit(DomainEvent::UserUpdate(user.clone()));
+    if changes_identity {
+        writes.mutate(Mutation::UpdateUser(user.clone()));
+    }
+    writes.emit(DomainEvent::UserUpdate(user.clone()));
     ports.unit_of_work.commit(writes).await?;
 
     // Factor activation can commit after the profile was read. Return the stored
@@ -127,6 +154,17 @@ pub async fn execute(
 
 fn validate(input: &UpdateCurrentUserInput, email: Option<&str>) -> Result<(), ValidationErrors> {
     let mut errors = ValidationErrors::new();
+    if let Some(Some(value)) = &input.pronouns {
+        errors.check(domain::profile::pronouns(value));
+    }
+    if let Some(Some(colors)) = input.theme_colors {
+        for color in colors {
+            errors.check(domain::profile::rgb("theme_colors", color));
+        }
+    }
+    if let Some(Some(color)) = input.accent_color {
+        errors.check(domain::profile::rgb("accent_color", color));
+    }
     if let Some(username) = &input.username {
         errors.check(validation::username(username));
     }

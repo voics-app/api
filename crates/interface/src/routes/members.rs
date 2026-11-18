@@ -1,7 +1,7 @@
 //! Members, roles and bans of a guild (P9).
 
 use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, put};
 use axum::{Json, Router};
@@ -82,6 +82,9 @@ async fn modify_member(
 ) -> Result<Json<MemberDto>, ApiError> {
     let input = UpdateMemberInput {
         nick: body.nick,
+        avatar: crate::images::patch(body.avatar)?,
+        banner: crate::images::patch(body.banner)?,
+        bio: body.bio,
         roles: body
             .roles
             .map(|roles| roles.into_iter().map(|Id(id)| id).collect()),
@@ -449,7 +452,10 @@ pub fn routes() -> Router<AppState> {
         .route("/guilds/{id}/members", get(list_all))
         .route(
             "/guilds/{id}/members/{user_id}",
-            get(fetch_member).patch(modify_member).delete(kick),
+            get(fetch_member)
+                .patch(modify_member)
+                .delete(kick)
+                .layer(DefaultBodyLimit::max(crate::images::IMAGE_BODY_LIMIT * 2)),
         )
         .route("/guilds/{id}/prune", get(prune_preview).post(prune))
         .route(

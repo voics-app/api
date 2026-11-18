@@ -24,7 +24,7 @@ pub(super) const ROLE_COLUMNS: &str =
      managed, mentionable, bot_id";
 
 /// Member columns, with the role list aggregated from `member_roles`.
-const MEMBER_COLUMNS: &str = "m.guild_id, m.user_id, m.nick, m.avatar AS member_avatar, m.joined_at, m.deaf, m.mute, \
+pub(super) const MEMBER_COLUMNS: &str = "m.guild_id, m.user_id, m.nick, m.avatar AS member_avatar, m.banner AS member_banner, m.bio AS member_bio, m.joined_at, m.deaf, m.mute, \
      m.communication_disabled_until, m.pending, \
      ARRAY(SELECT role_id FROM member_roles mr WHERE mr.guild_id = m.guild_id AND mr.user_id = m.user_id \
            ORDER BY role_id) AS role_ids";
@@ -130,6 +130,10 @@ pub(super) struct MemberRow {
     nick: Option<String>,
     #[sqlx(rename = "member_avatar")]
     avatar: Option<String>,
+    #[sqlx(rename = "member_banner")]
+    banner: Option<String>,
+    #[sqlx(rename = "member_bio")]
+    bio: Option<String>,
     joined_at: DateTime<Utc>,
     deaf: bool,
     mute: bool,
@@ -145,6 +149,8 @@ impl From<MemberRow> for Member {
             user_id: sf(row.user_id),
             nick: row.nick,
             avatar: row.avatar,
+            banner: row.banner,
+            bio: row.bio,
             role_ids: sfs(row.role_ids),
             joined_at: row.joined_at,
             deaf: row.deaf,
@@ -196,6 +202,21 @@ fn member_profile_select(filter: &str) -> String {
         "SELECT {MEMBER_COLUMNS}, {user_columns} FROM members m JOIN users u ON u.id = m.user_id {filter}",
         user_columns = prefixed_user_columns()
     )
+}
+
+pub(super) async fn committed_member(
+    conn: &mut sqlx::PgConnection,
+    member: &Member,
+) -> AppResult<MemberProfile> {
+    let row: MemberProfileRow = sqlx::query_as(&member_profile_select(
+        "WHERE m.guild_id = $1 AND m.user_id = $2",
+    ))
+    .bind(member.guild_id.as_i64())
+    .bind(member.user_id.as_i64())
+    .fetch_one(conn)
+    .await
+    .map_err(db)?;
+    Ok(row.into())
 }
 
 #[async_trait]

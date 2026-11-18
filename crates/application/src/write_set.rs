@@ -37,6 +37,15 @@ pub enum Mutation {
         settings: Box<UserSettings>,
     },
     UpdateUser(User),
+    SetUserAppearance {
+        user_id: Snowflake,
+        patch: domain::profile::AppearancePatch,
+    },
+    SetMemberProfile {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        patch: domain::profile::MemberProfilePatch,
+    },
     /// Activates (`Some`) or removes (`None`) TOTP, clearing any pending
     /// secret; removal also deletes the backup codes.
     SetTotpSecret {
