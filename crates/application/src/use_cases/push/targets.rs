@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use domain::access::GuildAccess;
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
-use domain::notification::{GuildNotificationSettings, NotifyLevel, DIRECT_MESSAGES};
+use domain::notification::NotifyLevel;
 use domain::permissions::Permissions;
 use domain::push_token::{PushToken, VoipToken};
 use domain::Snowflake;
@@ -15,6 +15,8 @@ use domain::Snowflake;
 use crate::context::Ports;
 use crate::error::{AppError, AppResult, Resource};
 use crate::support::delivery::effective_mode;
+
+use super::notification_policy;
 
 /// Most targets one call returns, so a channel with a huge audience cannot produce an unbounded
 /// answer. Members beyond it are not notified.
@@ -132,37 +134,25 @@ pub async fn execute(
         .collect();
     with_tokens.sort();
     with_tokens.truncate(MAX_TARGETS);
-    let live = ports.presence.live_ids(&with_tokens).await?;
-    let settings_scope = channel.guild_id.unwrap_or(DIRECT_MESSAGES);
-    let settings: HashMap<Snowflake, GuildNotificationSettings> = ports
-        .users
-        .guild_notification_settings_many(&with_tokens, settings_scope)
-        .await?
+    let users = with_tokens
         .into_iter()
-        .map(|settings| (settings.user_id, settings))
+        .map(|id| (id, roles.remove(&id).unwrap_or_default()))
         .collect();
-    let guild_default = match guild.as_ref().map(|(_, level)| *level) {
-        Some(1) => NotifyLevel::OnlyMentions,
-        _ => NotifyLevel::AllMessages,
-    };
-    let now = ports.clock.now();
-    let targets = with_tokens
+    let default = notification_policy::guild_default(guild.as_ref().map_or(0, |(_, level)| *level));
+    let recipients =
+        notification_policy::resolve(ports, &channel, default, ports.clock.now(), users).await?;
+    let targets = recipients
         .into_iter()
-        .map(|user_id| {
-            let own = settings.get(&user_id).cloned().unwrap_or_else(|| {
-                GuildNotificationSettings::defaults_for(user_id, settings_scope)
-            });
-            PushTarget {
-                user_id,
-                role_ids: roles.remove(&user_id).unwrap_or_default(),
-                online: live.contains(&user_id),
-                level: own.effective_level_in(channel.id, channel.parent_id, guild_default),
-                muted: own.is_muted_in(channel.id, channel.parent_id, now),
-                suppress_everyone: own.suppress_everyone,
-                suppress_roles: own.suppress_roles,
-                tokens: tokens.remove(&user_id).unwrap_or_default(),
-                voip_tokens: voip_tokens.remove(&user_id).unwrap_or_default(),
-            }
+        .map(|recipient| PushTarget {
+            user_id: recipient.user_id,
+            role_ids: recipient.role_ids,
+            online: recipient.online,
+            level: recipient.level,
+            muted: recipient.muted,
+            suppress_everyone: recipient.suppress_everyone,
+            suppress_roles: recipient.suppress_roles,
+            tokens: tokens.remove(&recipient.user_id).unwrap_or_default(),
+            voip_tokens: voip_tokens.remove(&recipient.user_id).unwrap_or_default(),
         })
         .collect();
     Ok(PushTargets {

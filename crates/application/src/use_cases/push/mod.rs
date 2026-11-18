@@ -1,5 +1,7 @@
 pub mod forget_token;
 pub mod manual_targets;
+pub mod notification_policy;
+pub mod notification_recipients;
 pub mod register_token;
 pub mod register_voip_token;
 pub mod remove_token;
