@@ -137,7 +137,46 @@ async fn authorize(
     guild: &str,
     permissions: &str,
 ) -> (StatusCode, Value) {
-    call(app, Method::POST, "/api/v1/oauth2/authorize", user, Some(json!({"client_id": application, "guild_id": guild, "permissions": permissions, "scope": "bot applications.commands"}))).await
+    let preview = authorization_preview(app, user, application, guild, permissions).await;
+    authorize_revision(
+        app,
+        user,
+        application,
+        guild,
+        permissions,
+        preview["installation_revision"].as_str().unwrap(),
+    )
+    .await
+}
+
+async fn authorization_preview(
+    app: &Router,
+    user: &str,
+    application: &str,
+    guild: &str,
+    permissions: &str,
+) -> Value {
+    let path = format!("/api/v1/oauth2/authorize?client_id={application}&scope=bot+applications.commands&permissions={permissions}");
+    let (status, info) = call(app, Method::GET, &path, user, None).await;
+    assert_eq!(status, StatusCode::OK);
+    info["guilds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|value| value["id"] == guild)
+        .expect("eligible guild")
+        .clone()
+}
+
+async fn authorize_revision(
+    app: &Router,
+    user: &str,
+    application: &str,
+    guild: &str,
+    permissions: &str,
+    revision: &str,
+) -> (StatusCode, Value) {
+    call(app, Method::POST, "/api/v1/oauth2/authorize", user, Some(json!({"client_id": application, "guild_id": guild, "permissions": permissions, "scope": "bot applications.commands", "installation_revision": revision}))).await
 }
 
 async fn reauthorize_current(
@@ -146,18 +185,16 @@ async fn reauthorize_current(
     application: &str,
     guild: &str,
 ) -> (StatusCode, Value) {
-    let path = format!("/api/v1/oauth2/authorize?client_id={application}&scope=bot+applications.commands&permissions=0");
-    let (status, info) = call(app, Method::GET, &path, user, None).await;
-    assert_eq!(status, StatusCode::OK);
-    let permissions = info["guilds"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|value| value["id"] == guild)
-        .unwrap()["bot_permissions"]
-        .as_str()
-        .unwrap();
-    authorize(app, user, application, guild, permissions).await
+    let preview = authorization_preview(app, user, application, guild, "0").await;
+    authorize_revision(
+        app,
+        user,
+        application,
+        guild,
+        preview["bot_permissions"].as_str().unwrap(),
+        preview["installation_revision"].as_str().unwrap(),
+    )
+    .await
 }
 
 #[tokio::test]

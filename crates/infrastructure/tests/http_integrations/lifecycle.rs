@@ -1,6 +1,73 @@
 use super::*;
 
 #[tokio::test]
+async fn an_installed_preview_cannot_reinstall_a_bot_removed_before_the_post() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let app = router(ports(&database.pool, &public, &private));
+    let owner = register(&app, "previewmanager").await;
+    let (guild, _) = guild(&app, &owner).await;
+    let (application, _) = application(&app, &owner).await;
+    assert_eq!(
+        authorize(&app, &owner, &application, &guild, "2048")
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let preview_path = format!("/api/v1/oauth2/authorize?client_id={application}&scope=bot+applications.commands&permissions=2048");
+    let (status, preview) = call(&app, Method::GET, &preview_path, &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let reviewed = preview["guilds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["id"] == guild)
+        .unwrap();
+    let reviewed_permissions = reviewed["bot_permissions"]
+        .as_str()
+        .expect("the UI presents Record consent for an existing installation")
+        .to_owned();
+    assert_eq!(
+        call(
+            &app,
+            Method::DELETE,
+            &format!("/api/v1/guilds/{guild}/integrations/{application}"),
+            &owner,
+            None,
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    // The removal has committed before POST begins. A guard that snapshots only
+    // inside POST cannot identify the installation the user actually reviewed.
+    assert_eq!(
+        authorize_revision(
+            &app,
+            &owner,
+            &application,
+            &guild,
+            &reviewed_permissions,
+            reviewed["installation_revision"].as_str().unwrap(),
+        )
+            .await
+            .0,
+        StatusCode::CONFLICT,
+        "Record consent must not reinstall a bot removed since its preview"
+    );
+    let (status, installed) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{guild}/integrations"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(installed.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn consent_cannot_acknowledge_permissions_changed_after_the_preview() {
     let database = start_database().await;
     let (private, public) = jwt_keys();
@@ -68,6 +135,68 @@ async fn consent_cannot_acknowledge_permissions_changed_after_the_preview() {
         after[0]["permissions"],
         domain::permissions::Permissions::ALL.bits().to_string()
     );
+}
+
+#[tokio::test]
+async fn old_absent_and_replaced_previews_cannot_target_a_new_installation() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let app = router(ports(&database.pool, &public, &private));
+    let owner = register(&app, "revisionmanager").await;
+    let (guild, _) = guild(&app, &owner).await;
+    let (application, _) = application(&app, &owner).await;
+    let installations = format!("/api/v1/guilds/{guild}/integrations");
+    let remove_path = format!("{installations}/{application}");
+    let original = authorization_preview(&app, &owner, &application, &guild, "2048").await;
+    assert_eq!(original["installation_revision"], "absent:0");
+    assert_eq!(authorize(&app, &owner, &application, &guild, "2048").await.0, StatusCode::OK);
+    let installed = authorization_preview(&app, &owner, &application, &guild, "2048").await;
+    assert_eq!(call(&app, Method::DELETE, &remove_path, &owner, None).await.0, StatusCode::NO_CONTENT);
+    let removed = authorization_preview(&app, &owner, &application, &guild, "2048").await;
+    assert_ne!(original["installation_revision"], removed["installation_revision"]);
+    assert!(removed["bot_permissions"].is_null());
+    assert_eq!(
+        authorize_revision(&app, &owner, &application, &guild, "2048", original["installation_revision"].as_str().unwrap()).await.0,
+        StatusCode::CONFLICT,
+        "initial absence cannot undo an intervening installation and removal"
+    );
+    assert_eq!(call(&app, Method::GET, &installations, &owner, None).await.1, json!([]));
+    assert_eq!(call(&app, Method::GET, "/api/v1/oauth2/tokens", &owner, None).await.1, json!([]));
+    assert_eq!(authorize(&app, &owner, &application, &guild, "2048").await.0, StatusCode::OK);
+    let fresh_grants = call(&app, Method::GET, "/api/v1/oauth2/tokens", &owner, None).await.1;
+    assert_eq!(
+        authorize_revision(&app, &owner, &application, &guild, installed["bot_permissions"].as_str().unwrap(), installed["installation_revision"].as_str().unwrap()).await.0,
+        StatusCode::CONFLICT,
+        "equal permissions cannot attach old consent to a replacement installation"
+    );
+    assert_eq!(call(&app, Method::GET, "/api/v1/oauth2/tokens", &owner, None).await.1, fresh_grants);
+    assert_eq!(call(&app, Method::DELETE, &remove_path, &owner, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        authorize_revision(&app, &owner, &application, &guild, "2048", removed["installation_revision"].as_str().unwrap()).await.0,
+        StatusCode::CONFLICT,
+        "an earlier removal is not the current absent state"
+    );
+    assert_eq!(call(&app, Method::GET, &installations, &owner, None).await.1, json!([]));
+    assert_eq!(authorize(&app, &owner, &application, &guild, "2048").await.0, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn authorization_requires_a_non_null_preview_revision() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let app = router(ports(&database.pool, &public, &private));
+    let owner = register(&app, "requiredrevision").await;
+    let (guild, _) = guild(&app, &owner).await;
+    let (application, _) = application(&app, &owner).await;
+    let base = json!({"client_id": application, "guild_id": guild, "permissions": "0", "scope": "bot"});
+    assert_eq!(call(&app, Method::POST, "/api/v1/oauth2/authorize", &owner, Some(base.clone())).await.0, StatusCode::BAD_REQUEST);
+    for invalid in [Value::Null, json!(""), json!("absent:01"), json!("installed:0"), json!("installed:9223372036854775808")] {
+        let mut body = base.clone();
+        body["installation_revision"] = invalid;
+        assert_eq!(call(&app, Method::POST, "/api/v1/oauth2/authorize", &owner, Some(body)).await.0, StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(call(&app, Method::GET, "/api/v1/oauth2/tokens", &owner, None).await.1, json!([]));
+    assert_eq!(call(&app, Method::GET, &format!("/api/v1/guilds/{guild}/integrations"), &owner, None).await.1, json!([]));
 }
 
 #[tokio::test]
@@ -331,7 +460,7 @@ async fn scope_private_app_permission_and_personal_revocation_boundaries_are_enf
         ("bot guilds", "0"),
         ("bot", "9223372036854775808"),
     ] {
-        assert_eq!(call(&app, Method::POST, "/api/v1/oauth2/authorize", &owner, Some(json!({"client_id":application,"guild_id":guild,"scope":scope,"permissions":permissions}))).await.0, StatusCode::BAD_REQUEST);
+        assert_eq!(call(&app, Method::POST, "/api/v1/oauth2/authorize", &owner, Some(json!({"client_id":application,"guild_id":guild,"scope":scope,"permissions":permissions,"installation_revision":"absent:0"}))).await.0, StatusCode::BAD_REQUEST);
     }
     assert_eq!(
         call(
@@ -350,7 +479,7 @@ async fn scope_private_app_permission_and_personal_revocation_boundaries_are_enf
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        authorize(&app, &manager, &application, &guild, "0").await.0,
+        authorize_revision(&app, &manager, &application, &guild, "0", "absent:0").await.0,
         StatusCode::NOT_FOUND
     );
     assert_eq!(

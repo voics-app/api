@@ -105,6 +105,7 @@ async fn applications_commands_authorization_and_webhooks_follow_the_contract() 
             "client_id": application_id,
             "guild_id": guild_id,
             "permissions": "8",
+            "installation_revision": "absent:0",
             "scope": "bot applications.commands"
         })),
     )

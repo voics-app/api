@@ -7,6 +7,7 @@ use sqlx::FromRow;
 use application::ports::{ApplicationRepository, BotIdentity};
 use application::{AppError, AppResult};
 use domain::application::{Application, ApplicationCommand, CommandKind};
+use domain::bot_authorization::BotInstallationRevision;
 use domain::Snowflake;
 
 use super::convert::{permissions, sf, sf_opt};
@@ -98,9 +99,16 @@ impl ApplicationRepository for PgStore {
         &self,
         guild_id: Snowflake,
         application_id: Snowflake,
-    ) -> AppResult<Option<i64>> {
-        sqlx::query_scalar("SELECT last_generation FROM application_installation_versions WHERE guild_id=$1 AND application_id=$2")
-            .bind(guild_id.as_i64()).bind(application_id.as_i64()).fetch_optional(&self.pool).await.map_err(db)
+    ) -> AppResult<BotInstallationRevision> {
+        let (generation, last): (Option<i64>, Option<i64>) = sqlx::query_as("SELECT (SELECT generation FROM guild_application_installations WHERE guild_id=$1 AND application_id=$2), (SELECT last_generation FROM application_installation_versions WHERE guild_id=$1 AND application_id=$2)")
+            .bind(guild_id.as_i64()).bind(application_id.as_i64()).fetch_one(&self.pool).await.map_err(db)?;
+        match (generation, last) {
+            (None, last) => Ok(BotInstallationRevision::Absent(last)),
+            (Some(generation), Some(last)) if generation == last => {
+                Ok(BotInstallationRevision::Installed(generation))
+            }
+            _ => Err(AppError::internal("installation generation disagrees with its revision")),
+        }
     }
     async fn installation(
         &self,

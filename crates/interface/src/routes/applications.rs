@@ -305,6 +305,7 @@ struct AuthorizeGuildDto {
     icon: Option<String>,
     permissions: Perm,
     bot_permissions: Option<Perm>,
+    installation_revision: String,
 }
 
 #[derive(Serialize)]
@@ -346,12 +347,13 @@ async fn authorize_info(
         guilds: info
             .guilds
             .iter()
-            .map(|(guild, permissions, bot_permissions)| AuthorizeGuildDto {
-                id: Id(guild.id),
-                name: guild.name.clone(),
-                icon: guild.icon.clone(),
-                permissions: Perm(*permissions),
-                bot_permissions: bot_permissions.map(Perm),
+            .map(|item| AuthorizeGuildDto {
+                id: Id(item.guild.id),
+                name: item.guild.name.clone(),
+                icon: item.guild.icon.clone(),
+                permissions: Perm(item.permissions),
+                bot_permissions: item.bot_permissions.map(Perm),
+                installation_revision: item.installation_revision.to_wire(),
             })
             .collect(),
         scopes: info.scopes,
@@ -370,6 +372,10 @@ async fn authorize(
         permissions: domain::bot_authorization::requested_permissions(&body.permissions)
             .map_err(application::AppError::from)?,
         scope: body.scope,
+        installation_revision: domain::bot_authorization::BotInstallationRevision::parse(
+            &body.installation_revision,
+        )
+        .map_err(application::AppError::from)?,
     };
     authorize_bot::execute(&state.ports, &actor, input).await?;
     Ok(Json(

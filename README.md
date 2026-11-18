@@ -220,6 +220,12 @@ uninstall a shared server bot or change its credentials. The supported authoriza
 scopes are `bot` and optional `applications.commands`; authorization-code flows and
 personal-data OAuth scopes are not implemented. Unknown scopes and permission bits
 are rejected. `POST /oauth2/authorize` returns `200` with a relative in-app location.
+Each guild in the GET preview includes `installation_revision`; POST must echo the
+selected guild's exact value. It distinguishes present, never-installed and removed
+states. Stale revisions return 409 without writes, including removal before POST
+starts and replacement installations with identical permissions. Missing/null
+revisions return 400: the unreleased flow requires matched API/client/contracts
+updates and intentionally has no legacy fallback. The existing 0070 ledger is reused.
 
 Server managers list installed application bots with `GET /guilds/{id}/integrations`.
 Removing one additionally requires Kick Members and role hierarchy. Removal clears

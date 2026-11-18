@@ -1,6 +1,6 @@
 use domain::access::GuildAccess;
 use domain::audit::AuditAction;
-use domain::bot_authorization::{supported_scopes, BotConsent};
+use domain::bot_authorization::{supported_scopes, BotConsent, BotInstallationRevision};
 use domain::guild::{Member, MemberProfile, Role};
 use domain::permissions::Permissions;
 use domain::Snowflake;
@@ -20,6 +20,7 @@ pub struct AuthorizeBotInput {
     pub guild_id: Snowflake,
     pub permissions: Permissions,
     pub scope: String,
+    pub installation_revision: BotInstallationRevision,
 }
 
 /// `POST /oauth2/authorize` with scope `bot` (and optionally
@@ -50,17 +51,19 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: AuthorizeBotInput) -> 
         .applications
         .installation_revision(guild_id, application.id)
         .await?;
-    let installation = ports
-        .applications
-        .installation(guild_id, application.id)
-        .await?;
+    if revision != input.installation_revision {
+        return Err(AppError::Conflict {
+            code: 50035,
+            message: "The bot installation changed. Review it and try again.".into(),
+        });
+    }
     let mut writes = WriteSet::new();
     writes.mutate(Mutation::GuardApplicationInstallation {
         guild_id,
         application_id: application.id,
         bot_user_id: bot_id,
-        expected_generation: installation.map(|i| i.generation),
-        expected_revision: revision,
+        expected_generation: input.installation_revision.generation(),
+        expected_revision: input.installation_revision.last_generation(),
     });
     let mut consent = BotConsent {
         id: ports.ids.next_id()?,

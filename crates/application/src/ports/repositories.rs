@@ -8,7 +8,7 @@ use uuid::Uuid;
 use domain::account::{AccountState, AccountToken, TokenPurpose};
 use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
-use domain::bot_authorization::{BotAuthorization, BotInstallation};
+use domain::bot_authorization::{BotAuthorization, BotInstallation, BotInstallationRevision};
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
 use domain::device::Device;
@@ -379,12 +379,12 @@ pub trait ApplicationRepository: Send + Sync {
         guild_id: Snowflake,
         application_id: Snowflake,
     ) -> AppResult<Option<BotInstallation>>;
-    /// Last installation generation, retained after the bot leaves.
+    /// One consistent read of presence and last generation, retained after removal.
     async fn installation_revision(
         &self,
         guild_id: Snowflake,
         application_id: Snowflake,
-    ) -> AppResult<Option<i64>>;
+    ) -> AppResult<BotInstallationRevision>;
     async fn authorizations(&self, user_id: Snowflake) -> AppResult<Vec<BotAuthorization>>;
     async fn authorization(
         &self,

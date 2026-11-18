@@ -542,6 +542,7 @@ pub struct OAuth2AuthorizeRequest {
     pub guild_id: Id,
     pub permissions: String,
     pub scope: String,
+    pub installation_revision: String,
 }
 
 #[derive(Debug, Deserialize)]

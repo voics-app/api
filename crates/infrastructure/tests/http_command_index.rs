@@ -107,6 +107,7 @@ async fn command_index_lists_installed_bots_commands_filtered_by_permissions() {
             "client_id": helper_id,
             "guild_id": guild_id,
             "permissions": "8",
+            "installation_revision": "absent:0",
             "scope": "bot applications.commands"
         })),
     )
