@@ -252,6 +252,39 @@ repository's `docs/passkeys.md` for the required environment and local TLS fixtu
 it is intentionally ignored in ordinary API-only test runs. Test credentials travel
 only through the child process environment, never command-line arguments or URLs.
 
+## Integrations and bot consent
+
+`GET /oauth2/tokens` lists only the authenticated user's explicit bot consent records;
+`DELETE /oauth2/tokens/{id}` removes only that record. Personal revocation does not
+uninstall a shared server bot or change its credentials. The supported authorization
+scopes are `bot` and optional `applications.commands`; authorization-code flows and
+personal-data OAuth scopes are not implemented. Unknown scopes and permission bits
+are rejected. `POST /oauth2/authorize` returns `200` with a relative in-app location.
+Each guild in the GET preview includes `installation_revision`; POST must echo the
+selected guild's exact value. It distinguishes present, never-installed and removed
+states. Stale revisions return 409 without writes, including removal before POST
+starts and replacement installations with identical permissions. Missing/null
+revisions return 400: the unreleased flow requires matched API/client/contracts
+updates and intentionally has no legacy fallback. The existing 0070 ledger is reused.
+
+Server managers list installed application bots with `GET /guilds/{id}/integrations`.
+Removing one additionally requires Kick Members and role hierarchy. Removal clears
+membership, managed roles and that installation's consent records atomically.
+Migration `0070_application_authorizations.sql` tracks installation generations,
+including a retained revision after removal, so delayed requests cannot undo a later
+administrator removal. Existing installations receive no invented personal consent.
+
+Webhook metadata edits write only supplied metadata. Authenticated
+`POST /webhooks/{id}/reset-token` rotates the execution credential without changing
+metadata; the old credential stops working after commit. Only create/reset responses
+return a raw token and URL, with `Cache-Control: no-store`. Audit entries never contain
+credentials. Lists and ordinary edits cannot recover an existing execution URL.
+
+The interface is specified in contracts#49 and docs#178. Run
+`cargo test -p infrastructure --test http_integrations --test http_applications --test http_command_index --test http_interactions`
+for real PostgreSQL HTTP coverage, including forced stale-edit, concurrent-install,
+remove/reinstall, removal-after-absent-read and transaction-rollback interleavings.
+
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.

@@ -31,6 +31,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::invites::routes())
         .merge(routes::emojis::routes())
         .merge(routes::applications::routes())
+        .merge(routes::integrations::routes())
         .merge(routes::reports::routes())
         .merge(routes::webhooks::routes());
     let public = public.layer(axum::middleware::from_fn_with_state(
