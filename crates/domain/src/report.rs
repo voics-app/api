@@ -76,6 +76,7 @@ impl ReportCategory {
 pub enum ReportKind {
     Message,
     User,
+    Guild,
 }
 
 impl ReportKind {
@@ -83,6 +84,7 @@ impl ReportKind {
         match self {
             ReportKind::Message => "message",
             ReportKind::User => "user",
+            ReportKind::Guild => "guild",
         }
     }
 
@@ -90,6 +92,7 @@ impl ReportKind {
         match raw {
             "message" => Some(ReportKind::Message),
             "user" => Some(ReportKind::User),
+            "guild" => Some(ReportKind::Guild),
             _ => None,
         }
     }

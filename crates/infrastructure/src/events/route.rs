@@ -657,6 +657,7 @@ mod tests {
             splash: None,
             prune_admin_only: false,
             audit_policy: Default::default(),
+            community: None,
             created_at: at(),
         };
         let snapshot = domain::guild::GuildSnapshot {

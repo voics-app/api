@@ -67,6 +67,9 @@ async fn modify(
     Body(body): Body<ModifyGuildRequest>,
 ) -> Result<Json<GuildDto>, ApiError> {
     let input = UpdateGuildInput {
+        features: body.features,
+        rules_channel_id: body.rules_channel_id.map(|id| id.map(|id| id.0)),
+        public_updates_channel_id: body.public_updates_channel_id.map(|id| id.map(|id| id.0)),
         name: body.name,
         icon: images::patch(body.icon)?,
         description: body.description,

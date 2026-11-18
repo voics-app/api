@@ -536,6 +536,8 @@ pub struct GuildDto {
     pub roles: Vec<RoleDto>,
     pub emojis: Vec<EmojiDto>,
     pub features: Vec<String>,
+    pub rules_channel_id: Option<Id>,
+    pub public_updates_channel_id: Option<Id>,
     pub mfa_level: u8,
     pub system_channel_id: Option<Id>,
     pub system_channel_flags: u32,
@@ -569,7 +571,12 @@ impl GuildDto {
             explicit_content_filter: guild.explicit_content_filter,
             roles: roles.iter().map(RoleDto::from).collect(),
             emojis: emojis.iter().map(EmojiDto::from).collect(),
-            features: Vec::new(),
+            features: guild
+                .community
+                .map(|_| vec!["COMMUNITY".into()])
+                .unwrap_or_default(),
+            rules_channel_id: guild.community.map(|c| Id(c.rules_channel_id)),
+            public_updates_channel_id: guild.community.map(|c| Id(c.public_updates_channel_id)),
             mfa_level: 0,
             system_channel_id: guild.system_channel_id.map(Id),
             system_channel_flags: guild.system_channel_flags,

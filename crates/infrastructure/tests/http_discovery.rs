@@ -35,12 +35,19 @@ async fn make_guild(app: &axum::Router, token: &str, name: &str, description: &s
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let id = guild["id"].as_str().expect("id").to_owned();
+    let text = guild["channels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["type"] == 0)
+        .unwrap()["id"]
+        .clone();
     let (status, _) = call(
         app,
         Method::PATCH,
         &format!("/api/v1/guilds/{id}"),
         token,
-        Some(json!({"description": description})),
+        Some(json!({"description": description, "features": ["COMMUNITY"], "rules_channel_id": text, "public_updates_channel_id": text})),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
