@@ -152,6 +152,18 @@ uses disposable PostgreSQL containers and a software authenticator for registrat
 origin/signature rejection, expiry/replay, concurrent replicas, counters, recovery and TOTP
 coexistence. It requires no production credentials or external authenticator service.
 
+`PATCH /users/@me/mfa/passkeys/{id}` accepts `{ "name": "Work laptop" }` for an owned key.
+It trims and validates the 1–64-character label and changes no credential material,
+signature counter, recovery code or MFA state. Unknown and foreign key IDs return the
+same error. Run `cargo test -p infrastructure --test http_passkey_management` for the
+HTTP/PostgreSQL ownership and recovery regression.
+
+The optional `http_passkey_browser` test invokes the paired client/website acceptance
+suite with real Chromium WebAuthn and an isolated PostgreSQL/API router. See the client
+repository's `docs/passkeys.md` for the required environment and local TLS fixture;
+it is intentionally ignored in ordinary API-only test runs. Test credentials travel
+only through the child process environment, never command-line arguments or URLs.
+
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.

@@ -55,14 +55,7 @@ pub async fn list(ports: &Ports, actor: &Actor) -> AppResult<Vec<PasskeyRecord>>
     ports.passkeys.list(actor.user_id).await
 }
 
-pub async fn start(
-    ports: &Ports,
-    actor: &Actor,
-    password: &str,
-    name: &str,
-) -> AppResult<Challenge> {
-    let binding = session_binding(actor)?;
-    let verifier = verifier(ports)?;
+fn passkey_name(name: &str) -> AppResult<&str> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 64 || name.chars().any(char::is_control) {
         return Err(AppError::invalid(
@@ -71,6 +64,35 @@ pub async fn start(
             "Use a name between 1 and 64 characters.",
         ));
     }
+    Ok(name)
+}
+
+pub async fn rename(
+    ports: &Ports,
+    actor: &Actor,
+    id: Uuid,
+    name: &str,
+) -> AppResult<PasskeyRecord> {
+    actor.require_user()?;
+    ports
+        .passkeys
+        .rename(actor.user_id, id, passkey_name(name)?)
+        .await?
+        .ok_or_else(|| AppError::BadRequest {
+            code: 50035,
+            message: "Unknown passkey.".into(),
+        })
+}
+
+pub async fn start(
+    ports: &Ports,
+    actor: &Actor,
+    password: &str,
+    name: &str,
+) -> AppResult<Challenge> {
+    let binding = session_binding(actor)?;
+    let verifier = verifier(ports)?;
+    let name = passkey_name(name)?;
     confirm_password(ports, actor.user_id, password).await?;
     let user = require_user(ports, actor.user_id).await?;
     let keys = ports.passkeys.list(user.id).await?;

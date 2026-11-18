@@ -24,6 +24,12 @@ pub struct RemovePasskey {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RenamePasskey {
+    pub name: String,
+}
+
+#[derive(Deserialize)]
 pub struct AuthenticationStart {
     pub ticket: String,
 }
