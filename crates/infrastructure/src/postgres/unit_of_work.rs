@@ -63,6 +63,23 @@ impl UnitOfWork for PgUnitOfWork {
             {
                 continue;
             }
+            // A profile snapshot may predate another factor change. Publish the
+            // committed user, including derived MFA state, under the write lock.
+            let committed;
+            let event = if let DomainEvent::UserUpdate(user) = event {
+                let row: super::users::UserRow = sqlx::query_as(&format!(
+                    "SELECT {} FROM users WHERE id = $1",
+                    super::users::USER_COLUMNS
+                ))
+                .bind(user.id.as_i64())
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(db)?;
+                committed = DomainEvent::UserUpdate(row.into());
+                &committed
+            } else {
+                event
+            };
             for routed in route(event, &self.default_region, now) {
                 outbox::enqueue(&mut *conn, &routed, now).await?;
             }

@@ -47,10 +47,19 @@ pub async fn execute(ports: &Ports, input: LoginInput) -> AppResult<AuthTokens> 
     if user.is_suspended(ports.clock.now()) {
         return Err(AppError::Forbidden(Denial::Suspended));
     }
-    if credentials.totp_secret.is_some() {
+    let passkeys = ports.passkeys.list(user.id).await?;
+    if credentials.totp_secret.is_some() || !passkeys.is_empty() {
         let Some(code) = input.totp.as_deref() else {
             let ticket = issue_mfa_ticket(ports, user.id).await?;
-            return Err(AppError::MfaRequired { ticket });
+            let mut methods = Vec::new();
+            if credentials.totp_secret.is_some() {
+                methods.push("totp");
+            }
+            if !passkeys.is_empty() && ports.webauthn.is_some() {
+                methods.push("webauthn");
+            }
+            methods.push("backup_code");
+            return Err(AppError::MfaRequired { ticket, methods });
         };
         verify_second_factor(ports, user.id, &credentials, code, "totp").await?;
     }

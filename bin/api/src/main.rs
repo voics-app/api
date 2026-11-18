@@ -27,6 +27,7 @@ use infrastructure::security::jwt::Ed25519Tokens;
 use infrastructure::security::password::Argon2Passwords;
 use infrastructure::security::secrets::OsSecrets;
 use infrastructure::security::totp::Rfc6238;
+use infrastructure::security::webauthn::PasskeyVerifier;
 use infrastructure::storage::MinioAssets;
 use infrastructure::system::clock::SystemClock;
 use infrastructure::system::ids::SnowflakeIds;
@@ -90,6 +91,16 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         })?),
     };
     let ports = Ports {
+        passkeys: store.clone(),
+        webauthn: config
+            .webauthn
+            .as_ref()
+            .map(|rp| {
+                PasskeyVerifier::new(&rp.rp_id, &rp.origin, &config.brand_name).map(|verifier| {
+                    Arc::new(verifier) as Arc<dyn application::ports::WebauthnVerifier>
+                })
+            })
+            .transpose()?,
         account_tokens: store.clone(),
         mailer,
         limiter: rate_limiter.clone(),
