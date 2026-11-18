@@ -4,7 +4,7 @@ use domain::permissions::Permissions;
 use domain::Snowflake;
 
 use crate::context::Ports;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::support::channel_access::ChannelAccess;
 use crate::support::delivery::{effective_mode, viewer_ids};
 
@@ -28,6 +28,7 @@ pub async fn execute(
     channel_id: Snowflake,
     user_id: Snowflake,
 ) -> AppResult<ChannelAccessInfo> {
+    ensure_current_account_access(ports, user_id).await?;
     let access = ChannelAccess::resolve(ports, channel_id, user_id).await?;
     let delivery_mode = effective_mode(ports, &access.channel).await?;
     let recipient_ids = match (&access.guild, delivery_mode) {
@@ -50,4 +51,20 @@ pub async fn execute(
         delivery_mode,
         recipient_ids,
     })
+}
+
+/// Offline work has no live user session to revoke. Check the account itself
+/// on each service lookup, including guild owners and private-channel recipients.
+async fn ensure_current_account_access(ports: &Ports, user_id: Snowflake) -> AppResult<()> {
+    let user = ports
+        .users
+        .find(user_id)
+        .await?
+        .ok_or_else(AppError::missing_access)?;
+    if user.is_suspended(ports.clock.now())
+        || ports.users.account_state(user_id).await?.is_inactive()
+    {
+        return Err(AppError::missing_access());
+    }
+    Ok(())
 }
