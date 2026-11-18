@@ -50,6 +50,16 @@ including in disabled guilds. The default 90-day retention also applies to
 existing entries on rollout. Migration 0050 adds permanent invites; 0051 adds
 audit policy. No new configuration or secret is needed.
 
+## Server templates
+
+`GET /guilds/templates/{code}` is a public, rate-limited preview of the saved
+template. Creating from it still requires a signed-in user; managing a guild's
+template requires `MANAGE_GUILD`. The five built-ins create their full roles,
+channels and overwrites. `is_dirty` reports differences from the current
+template-visible guild structure, while previews and creation keep using the
+saved snapshot until explicit sync. Duplicate creation, including a database
+race, returns error `30031`. No migration or new environment variable is needed.
+
 ## Configuration
 
 All configuration comes from environment variables, validated at startup. Missing or invalid values stop the process with a message naming the variable.
@@ -67,7 +77,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `JWT_PUBLIC_KEY` | yes | | Ed25519 PEM |
 | `WEBAUTHN_RP_ID` | paired | | Passkey relying-party hostname, e.g. `auth.example.com`; set together with `WEBAUTHN_RP_ORIGIN` |
 | `WEBAUTHN_RP_ORIGIN` | paired | | Exact HTTPS origin for ceremonies, including a non-default port if used. HTTP `localhost` is accepted only with `DISCORDY_ENV=local`. Unset both to disable new WebAuthn ceremonies |
-| `SNOWFLAKE_WORKER_ID` | yes | | 0 to 1023 |
+| `SNOWFLAKE_WORKER_ID` | yes | | Preferred API worker 0–63; allocation uses 1–63 and permanently excludes legacy worker 0 |
 | `PUBLIC_API_URL` | yes | | Base for webhook URLs |
 | `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
 | `CDN_PUBLIC_URL` | yes | | Public asset base |
@@ -105,6 +115,10 @@ These tests do not claim real APNs/FCM/PushKit delivery on a device.
 
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
 
+API and messages reserve non-overlapping timestamp intervals before generating IDs. Readiness
+includes a valid ID reservation. See [ID allocation and recovery](docs/id-reservations.md) for
+replica capacity, legacy rollout preflight, failure behavior and the mandatory restore barrier.
+
 ## Pending owner actions
 
 - The reusable workflows `discordy-voics/.github/.github/workflows/rust.yml` and `docker.yml` must exist on `main` before `ci.yml` can run.
@@ -114,6 +128,22 @@ Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_request
 - The `.env.example` JWT keys are dev-only and public; production keys must be generated per environment.
 
 ## Session revocation guarantees
+
+`POST /auth/refresh` accepts an optional `request_id` UUID for crash recovery.
+Clients must persist a random UUID with the current refresh token before sending,
+reuse that pair after response loss, and remove the UUID only after saving the
+successor credentials. For five minutes after a committed rotation, identical
+requests recover its immediate unused, unexpired successor in a live session.
+The original token must also remain unexpired. Retries neither create token
+branches nor extend expiry or last-used time. Legacy requests without a UUID,
+mismatched IDs, expired windows and used successors keep strict reuse detection.
+Logout, remote revocation and password changes cannot be undone by a retry.
+
+Migration 0080 stores only the request UUID hash and successor token hash. The
+successor is derived with HMAC-SHA256 from the previous bearer token, a fixed
+purpose label and the UUID; plaintext tokens and request IDs are never stored or
+logged. No new server secret or configuration is required. Roll out the API and
+migration before clients depend on recovery; older clients remain compatible.
 
 Access tokens continue to use Ed25519/EdDSA with `jsonwebtoken` 12. Its RustCrypto dependency chain
 uses `elliptic-curve` 0.14 and `crypto-bigint` 0.7, so the former RUSTSEC-2026-0387 exception is removed.
@@ -165,6 +195,18 @@ stable after enrollment, and retain recovery codes before changing or disabling 
 uses disposable PostgreSQL containers and a software authenticator for registration/assertion,
 origin/signature rejection, expiry/replay, concurrent replicas, counters, recovery and TOTP
 coexistence. It requires no production credentials or external authenticator service.
+
+`PATCH /users/@me/mfa/passkeys/{id}` accepts `{ "name": "Work laptop" }` for an owned key.
+It trims and validates the 1–64-character label and changes no credential material,
+signature counter, recovery code or MFA state. Unknown and foreign key IDs return the
+same error. Run `cargo test -p infrastructure --test http_passkey_management` for the
+HTTP/PostgreSQL ownership and recovery regression.
+
+The optional `http_passkey_browser` test invokes the paired client/website acceptance
+suite with real Chromium WebAuthn and an isolated PostgreSQL/API router. See the client
+repository's `docs/passkeys.md` for the required environment and local TLS fixture;
+it is intentionally ignored in ordinary API-only test runs. Test credentials travel
+only through the child process environment, never command-line arguments or URLs.
 
 ## Git hooks
 

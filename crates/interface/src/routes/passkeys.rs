@@ -86,6 +86,17 @@ async fn remove(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn rename(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<Uuid>,
+    Body(body): Body<dto::RenamePasskey>,
+) -> Result<Json<dto::Passkey>, ApiError> {
+    Ok(Json(public_key(
+        passkeys::rename(&state.ports, &actor, id, &body.name).await?,
+    )))
+}
+
 async fn auth_start(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -125,7 +136,7 @@ pub fn routes() -> Router<AppState> {
             "/users/@me/mfa/passkeys/register/finish",
             post(register_finish),
         )
-        .route("/users/@me/mfa/passkeys/{id}", delete(remove))
+        .route("/users/@me/mfa/passkeys/{id}", delete(remove).patch(rename))
         .route("/auth/mfa/webauthn/start", post(auth_start))
         .route("/auth/mfa/webauthn/finish", post(auth_finish))
 }

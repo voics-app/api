@@ -18,6 +18,7 @@ use domain::guild::GuildSnapshot;
 pub struct TemplateView {
     pub template: GuildTemplate,
     pub creator: Option<User>,
+    pub is_dirty: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +39,29 @@ async fn view(ports: &Ports, template: GuildTemplate) -> AppResult<TemplateView>
         Some(id) => ports.users.find(id).await?,
         None => None,
     };
-    Ok(TemplateView { template, creator })
+    let is_dirty = match template.source_guild_id {
+        Some(guild_id) => current_snapshot(ports, guild_id).await? != template.source,
+        None => false,
+    };
+    Ok(TemplateView {
+        template,
+        creator,
+        is_dirty,
+    })
+}
+
+async fn current_snapshot(
+    ports: &Ports,
+    guild_id: Snowflake,
+) -> AppResult<template::TemplateSource> {
+    let guild = ports
+        .guilds
+        .find(guild_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::GuildTemplate))?;
+    let roles = ports.guilds.roles(guild_id).await?;
+    let channels = ports.channels.list_for_guild(guild_id).await?;
+    Ok(template::capture(&guild, &roles, &channels))
 }
 
 fn clean_description(description: Option<String>) -> AppResult<Option<String>> {
@@ -58,11 +81,12 @@ pub fn list_builtin() -> Vec<TemplateView> {
         .map(|template| TemplateView {
             template,
             creator: None,
+            is_dirty: false,
         })
         .collect()
 }
 
-/// `GET /guilds/templates/{code}`: any signed-in user may resolve a code.
+/// `GET /guilds/templates/{code}`: possession of the code grants preview access.
 pub async fn get(ports: &Ports, code: &str) -> AppResult<TemplateView> {
     view(ports, resolve(ports, code).await?).await
 }

@@ -25,7 +25,7 @@ impl AuditContext<'_> {
             validation::audit_reason(reason)?;
         }
         Ok(AuditLogEntry {
-            id: ports.ids.next_id(),
+            id: ports.ids.next_id()?,
             guild_id,
             user_id: Some(self.actor_id),
             target_id,

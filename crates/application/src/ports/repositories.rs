@@ -113,6 +113,14 @@ pub enum RotateOutcome {
     Invalid,
 }
 
+/// Only an identical request may recover the immediate, unused successor, and
+/// only within this bounded interval. Repository implementations must not extend
+/// the successor's expiry during recovery or store either plaintext credential.
+pub struct RefreshReplay {
+    pub request_hash: String,
+    pub earliest_rotation: DateTime<Utc>,
+}
+
 #[async_trait]
 /// Session revocation, including refresh-token reuse, atomically removes the session's
 /// notification/VoIP tokens and durably queues `SESSION_REVOKE` for the gateway.
@@ -131,6 +139,7 @@ pub trait SessionRepository: Send + Sync {
         new_hash: &str,
         expires_at: DateTime<Utc>,
         now: DateTime<Utc>,
+        replay: Option<&RefreshReplay>,
     ) -> AppResult<RotateOutcome>;
     async fn find(&self, id: Uuid) -> AppResult<Option<Session>>;
     async fn revoke(&self, id: Uuid, now: DateTime<Utc>) -> AppResult<()>;

@@ -78,6 +78,24 @@ async fn notify_change(conn: &mut PgConnection, user: Snowflake) -> AppResult<()
 
 #[async_trait]
 impl PasskeyRepository for PgStore {
+    async fn rename(
+        &self,
+        user: Snowflake,
+        id: Uuid,
+        name: &str,
+    ) -> AppResult<Option<PasskeyRecord>> {
+        let row: Option<KeyRow> = sqlx::query_as(
+            "UPDATE user_passkeys SET name = $3 WHERE user_id = $1 AND id = $2 RETURNING *",
+        )
+        .bind(user.as_i64())
+        .bind(id)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(Into::into))
+    }
+
     async fn list(&self, user: Snowflake) -> AppResult<Vec<PasskeyRecord>> {
         let rows: Vec<KeyRow> = sqlx::query_as(
             "SELECT * FROM user_passkeys WHERE user_id = $1 ORDER BY created_at, id",

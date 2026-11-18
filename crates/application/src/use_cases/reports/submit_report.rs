@@ -82,7 +82,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: SubmitReportInput) -> 
         ));
     }
     let report = Report {
-        id: ports.ids.next_id(),
+        id: ports.ids.next_id()?,
         reporter_id: actor.user_id,
         reported_user_id: resolved.reported_user_id,
         kind: resolved.kind,

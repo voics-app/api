@@ -63,7 +63,7 @@ pub async fn execute(
     }
     let now = ports.clock.now();
     let device = Device {
-        id: ports.ids.next_id(),
+        id: ports.ids.next_id()?,
         user_id: actor.user_id,
         name,
         identity_key,
