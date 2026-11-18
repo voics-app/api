@@ -69,11 +69,66 @@ async fn preferences_merge_round_trip_and_validate() {
     );
     assert_eq!(settings["message_display_compact"], json!(true));
 
+    // The content preference follows this account and preserves unrelated preferences.
+    let (status, hidden) = call(
+        &app,
+        Method::PATCH,
+        url,
+        &token,
+        Some(json!({"preferences": {"hide_age_restricted_channels": true}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        hidden["preferences"]["hide_age_restricted_channels"],
+        json!(true)
+    );
+    assert_eq!(hidden["preferences"]["accent"], json!("sky"));
+    let (_, stored) = call(&app, Method::GET, url, &token, None).await;
+    assert_eq!(stored["preferences"], hidden["preferences"]);
+
+    let (other_status, other) = send(
+        &app,
+        request(
+            Method::POST,
+            "/api/v1/auth/register",
+            None,
+            Some(json!({"email": "other-pref@example.com", "username": "other_pref", "password": "a-long-enough-passphrase"})),
+        ),
+    )
+    .await;
+    assert_eq!(other_status, StatusCode::CREATED);
+    let other_token = other["access_token"].as_str().expect("other token");
+    let (other_status, other_settings) = call(&app, Method::GET, url, other_token, None).await;
+    assert_eq!(other_status, StatusCode::OK);
+    assert!(other_settings["preferences"]
+        .get("hide_age_restricted_channels")
+        .is_none());
+
+    let (status, visible) = call(
+        &app,
+        Method::PATCH,
+        url,
+        &token,
+        Some(json!({"preferences": {"hide_age_restricted_channels": false}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        visible["preferences"]["hide_age_restricted_channels"],
+        json!(false)
+    );
+    let (_, settings) = call(&app, Method::GET, url, &token, None).await;
+    assert_eq!(settings["preferences"], visible["preferences"]);
+
     for bad in [
         json!({"nope": true}),
         json!({"accent": "teal"}),
         json!({"font_scale": 9}),
         json!({"notify_sounds": "yes"}),
+        json!({"hide_age_restricted_channels": "false"}),
+        json!({"hide_age_restricted_channels": null}),
+        json!({"hide_age_restricted_channels": 0}),
     ] {
         let (status, _) = call(
             &app,

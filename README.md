@@ -16,6 +16,11 @@ See [the profile specification](https://github.com/discordy-voics/docs/blob/feat
 
 ## Run locally
 
+The optional account preference `preferences.hide_age_restricted_channels` accepts
+only booleans and uses the existing settings merge and sync events. Missing means
+false; this does not attest age or change channel permissions. See
+[the channel-gate specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-18-age-restricted-channels.md).
+
 Prerequisites: Rust 1.99, Docker (for integration tests and local dependencies), and the C compiler,
 Perl and Make required by vendored OpenSSL. On Windows use the MSVC toolchain with Strawberry
 Perl (`OPENSSL_SRC_PERL` can point to a portable Perl executable). The Docker build installs its
