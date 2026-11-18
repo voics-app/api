@@ -5,6 +5,12 @@ use application::AppError;
 pub fn db(error: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(database) = &error {
         match (database.code().as_deref(), database.constraint()) {
+            (Some("23505"), Some("guild_templates_guild_id_key")) => {
+                return AppError::BadRequest {
+                    code: 30_031,
+                    message: "Guild already has a template.".into(),
+                };
+            }
             (Some("23505"), Some("guild_vanity_urls_code_key")) => {
                 return super::vanity::occupied_code();
             }

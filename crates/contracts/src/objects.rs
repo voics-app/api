@@ -1175,7 +1175,11 @@ pub struct GuildTemplateDto {
 }
 
 impl GuildTemplateDto {
-    pub fn new(template: &domain::template::GuildTemplate, creator: Option<&User>) -> Self {
+    pub fn new(
+        template: &domain::template::GuildTemplate,
+        creator: Option<&User>,
+        is_dirty: bool,
+    ) -> Self {
         Self {
             code: template.code.clone(),
             name: template.name.clone(),
@@ -1187,7 +1191,7 @@ impl GuildTemplateDto {
             updated_at: timestamp(template.updated_at),
             source_guild_id: template.source_guild_id.map(Id),
             serialized_source_guild: template.source.to_json(),
-            is_dirty: false,
+            is_dirty,
         }
     }
 }

@@ -47,6 +47,16 @@ including in disabled guilds. The default 90-day retention also applies to
 existing entries on rollout. Migration 0050 adds permanent invites; 0051 adds
 audit policy. No new configuration or secret is needed.
 
+## Server templates
+
+`GET /guilds/templates/{code}` is a public, rate-limited preview of the saved
+template. Creating from it still requires a signed-in user; managing a guild's
+template requires `MANAGE_GUILD`. The five built-ins create their full roles,
+channels and overwrites. `is_dirty` reports differences from the current
+template-visible guild structure, while previews and creation keep using the
+saved snapshot until explicit sync. Duplicate creation, including a database
+race, returns error `30031`. No migration or new environment variable is needed.
+
 ## Configuration
 
 All configuration comes from environment variables, validated at startup. Missing or invalid values stop the process with a message naming the variable.

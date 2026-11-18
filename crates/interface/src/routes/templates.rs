@@ -21,7 +21,7 @@ use crate::routes::ids::snowflake;
 use crate::state::AppState;
 
 fn dto(view: &TemplateView) -> GuildTemplateDto {
-    GuildTemplateDto::new(&view.template, view.creator.as_ref())
+    GuildTemplateDto::new(&view.template, view.creator.as_ref(), view.is_dirty)
 }
 
 async fn builtin(Caller(_): Caller) -> Json<Vec<GuildTemplateDto>> {
@@ -30,7 +30,6 @@ async fn builtin(Caller(_): Caller) -> Json<Vec<GuildTemplateDto>> {
 
 async fn resolve(
     State(state): State<AppState>,
-    Caller(_): Caller,
     Path(code): Path<String>,
 ) -> Result<Json<GuildTemplateDto>, ApiError> {
     Ok(Json(dto(&templates::get(&state.ports, &code).await?)))
