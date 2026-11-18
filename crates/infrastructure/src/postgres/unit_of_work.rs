@@ -77,6 +77,11 @@ impl UnitOfWork for PgUnitOfWork {
                 .map_err(db)?;
                 committed = DomainEvent::UserUpdate(row.into());
                 &committed
+            } else if let DomainEvent::MemberUpdate(profile) = event {
+                committed = DomainEvent::MemberUpdate(
+                    super::guilds::committed_member(conn, &profile.member).await?,
+                );
+                &committed
             } else {
                 event
             };
@@ -102,6 +107,14 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             identity::upsert_settings(conn, settings.as_ref()).await
         }
         Mutation::UpdateUser(user) => identity::upsert_user(conn, user).await,
+        Mutation::SetUserAppearance { user_id, patch } => {
+            super::profile::set_user(conn, *user_id, patch).await
+        }
+        Mutation::SetMemberProfile {
+            guild_id,
+            user_id,
+            patch,
+        } => super::profile::set_member(conn, *guild_id, *user_id, patch).await,
         Mutation::SetTotpSecret { user_id, secret } => {
             identity::set_totp_secret(conn, *user_id, secret.as_deref()).await
         }

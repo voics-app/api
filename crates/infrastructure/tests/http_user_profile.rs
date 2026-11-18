@@ -156,3 +156,70 @@ async fn profile_lists_mutual_guilds_and_mutual_friends() {
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn profile_customization_persists_public_fields_and_supports_reset() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let app = interface::router(AppState {
+        ports: ports(&database.pool, &public, &private),
+        internal_token: support::http::INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
+    });
+    let (alice, alice_id) = register(&app, "alice").await;
+    let (bob, _) = register(&app, "bob").await;
+    let (status, updated) = call(
+        &app,
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice,
+        Some(
+            json!({"pronouns":"  they / them  ","theme_colors":[0,16777215],"accent_color":0,
+            "banner":"data:image/png;base64,aW1hZ2U=","bio":"Global bio"}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["pronouns"], "they / them");
+    assert_eq!(updated["theme_colors"], json!([0, 16777215]));
+    assert_eq!(updated["accent_color"], 0);
+    assert!(updated["banner"]
+        .as_str()
+        .is_some_and(|hash| !hash.is_empty() && !hash.starts_with("data:")));
+    let (_, public) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/users/{alice_id}"),
+        &bob,
+        None,
+    )
+    .await;
+    for field in ["pronouns", "theme_colors", "accent_color", "banner"] {
+        assert_eq!(public[field], updated[field], "public {field}");
+    }
+    assert!(public.get("email").is_none());
+    assert!(public.get("mfa_enabled").is_none());
+    let (_, preserved) = call(
+        &app,
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice,
+        Some(json!({"global_name":"Alice"})),
+    )
+    .await;
+    assert_eq!(preserved["theme_colors"], updated["theme_colors"]);
+    assert_eq!(preserved["banner"], updated["banner"]);
+    let (_, reset) = call(
+        &app,
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice,
+        Some(json!({"pronouns":" ","theme_colors":null,"accent_color":null,"banner":null})),
+    )
+    .await;
+    for field in ["pronouns", "theme_colors", "accent_color", "banner"] {
+        assert!(reset[field].is_null(), "reset {field}: {reset}");
+    }
+    assert_eq!(reset["bio"], "Global bio");
+}

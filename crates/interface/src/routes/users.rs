@@ -65,6 +65,10 @@ async fn update_me(
         global_name: body.global_name,
         bio: body.bio,
         avatar: images::patch(body.avatar)?,
+        banner: images::patch(body.banner)?,
+        pronouns: body.pronouns,
+        theme_colors: body.theme_colors,
+        accent_color: body.accent_color,
         password: body.password,
         new_password: body.new_password,
         email: body.email,
@@ -406,7 +410,7 @@ pub fn routes() -> Router<AppState> {
             "/users/@me",
             get(current_user)
                 .patch(update_me)
-                .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
+                .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT * 2)),
         )
         .route("/users/@me/disable", post(disable_account))
         .route("/users/@me/delete", post(delete_account))

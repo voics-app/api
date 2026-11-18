@@ -16,6 +16,9 @@ pub const MAX_TIMEOUT_DAYS: i64 = 28;
 
 #[derive(Debug, Clone, Default)]
 pub struct UpdateMemberInput {
+    pub avatar: Option<Option<crate::support::images::ImageUpload>>,
+    pub banner: Option<Option<crate::support::images::ImageUpload>>,
+    pub bio: Option<Option<String>>,
     pub nick: Option<Option<String>>,
     pub roles: Option<Vec<Snowflake>>,
     pub mute: Option<bool>,
@@ -99,7 +102,18 @@ pub async fn execute(
         Some(target) => Some(voice_move(ports, &ctx, guild_id, target).await?),
         None => None,
     };
-    commit_member_update(ports, &before, member, voice, audit).await
+    let profile = super::profile::apply(
+        ports,
+        &mut member,
+        super::profile::ProfileInput {
+            actor_id: actor.user_id,
+            avatar: input.avatar,
+            banner: input.banner,
+            bio: input.bio,
+        },
+    )
+    .await?;
+    commit_member_update(ports, &before, member, profile, voice, audit).await
 }
 
 /// Checks that the caller may move members to `target` (or disconnect them for `None`).

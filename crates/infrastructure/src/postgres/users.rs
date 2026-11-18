@@ -15,7 +15,7 @@ use super::error::db;
 use super::PgStore;
 
 pub(super) const USER_COLUMNS: &str =
-    "id, username, email, global_name, avatar, bio, bot, system, verified, \
+    "id, username, email, global_name, avatar, bio, banner, pronouns, theme_colors, accent_color, bot, system, verified, \
      mfa_enabled, flags, platform_admin, suspended, suspension_reason, suspended_until, created_at";
 
 #[derive(FromRow)]
@@ -26,6 +26,10 @@ pub(super) struct UserRow {
     global_name: Option<String>,
     avatar: Option<String>,
     bio: Option<String>,
+    banner: Option<String>,
+    pronouns: Option<String>,
+    theme_colors: Option<Vec<i32>>,
+    accent_color: Option<i32>,
     bot: bool,
     system: bool,
     verified: bool,
@@ -46,6 +50,12 @@ impl From<UserRow> for User {
             global_name: row.global_name,
             avatar: row.avatar,
             bio: row.bio,
+            banner: row.banner,
+            pronouns: row.pronouns,
+            theme_colors: row
+                .theme_colors
+                .map(|colors| [colors[0] as u32, colors[1] as u32]),
+            accent_color: row.accent_color.map(|color| color as u32),
             bot: row.bot,
             system: row.system,
             email: row.email,
