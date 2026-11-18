@@ -268,6 +268,10 @@ pub struct ModifyGuildRequest {
     pub owner_id: Option<Id>,
     #[serde(default)]
     pub prune_admin_only: Option<bool>,
+    #[serde(default)]
+    pub audit_log_enabled: Option<bool>,
+    #[serde(default)]
+    pub audit_log_retention_days: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]

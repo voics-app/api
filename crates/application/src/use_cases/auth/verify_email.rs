@@ -52,5 +52,5 @@ pub async fn execute(ports: &Ports, token: &str) -> AppResult<User> {
         .mutate(Mutation::UpdateUser(user.clone()))
         .emit(DomainEvent::UserUpdate(user.clone()));
     ports.unit_of_work.commit(writes).await?;
-    Ok(user)
+    require_user(ports, user.id).await
 }

@@ -164,6 +164,7 @@ fn default_layout(
         banner: None,
         splash: None,
         prune_admin_only: false,
+        audit_policy: Default::default(),
         created_at: now,
     };
     let everyone = Role::everyone(guild_id, Permissions::DEFAULT_EVERYONE);

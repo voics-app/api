@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 pub mod http;
+pub mod passkeys;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -234,6 +235,15 @@ pub fn ports_with_messages(
     Ports {
         users: store.clone(),
         sessions: store.clone(),
+        passkeys: store.clone(),
+        webauthn: Some(Arc::new(
+            infrastructure::security::webauthn::PasskeyVerifier::new(
+                "localhost",
+                &url::Url::parse("https://localhost:8443").unwrap(),
+                "Test",
+            )
+            .expect("test relying party"),
+        )),
         account_tokens: store.clone(),
         devices: store.clone(),
         push_tokens: store.clone(),

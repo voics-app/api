@@ -11,6 +11,7 @@ ADD --checksum=sha256:70ef940ef90d04d122f0176fdb8d6c39069191b484a1eaa29b327370c2
 RUN tar -xJf /tmp/cargo-chef.tar.xz -C /tmp && mv /tmp/cargo-chef-*/cargo-chef /cargo-chef
 
 FROM rust:1.99-slim-bookworm AS chef
+RUN apt-get update && apt-get install -y --no-install-recommends perl make && rm -rf /var/lib/apt/lists/*
 COPY --from=chef-bin /cargo-chef /usr/local/cargo/bin/cargo-chef
 WORKDIR /src
 

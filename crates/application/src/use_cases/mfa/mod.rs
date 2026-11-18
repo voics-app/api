@@ -4,6 +4,7 @@ pub mod backup_codes;
 pub mod begin_enrolment;
 pub mod confirm_enrolment;
 pub mod disable;
+pub mod passkeys;
 
 use domain::mfa::{format_backup_code, BACKUP_CODE_COUNT};
 

@@ -26,6 +26,7 @@ pub struct Guild {
     pub splash: Option<String>,
     /// Only administrators may prune inactive members while this is set.
     pub prune_admin_only: bool,
+    pub audit_policy: crate::audit_policy::AuditPolicy,
     pub created_at: DateTime<Utc>,
 }
 

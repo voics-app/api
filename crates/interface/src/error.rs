@@ -36,6 +36,8 @@ struct Body {
     #[serde(skip_serializing_if = "Option::is_none")]
     ticket: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    methods: Option<Vec<&'static str>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     retry_after: Option<u64>,
 }
 
@@ -111,6 +113,7 @@ fn field_errors(errors: &domain::validation::ValidationErrors) -> Value {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let mut ticket = None;
+        let mut methods = None;
         let mut retry_after = None;
         let (status, code, message, errors) = match self.0 {
             AppError::Unauthorized => (
@@ -119,8 +122,12 @@ impl IntoResponse for ApiError {
                 "401: Unauthorized".to_owned(),
                 None,
             ),
-            AppError::MfaRequired { ticket: issued } => {
+            AppError::MfaRequired {
+                ticket: issued,
+                methods: available,
+            } => {
                 ticket = Some(issued);
+                methods = Some(available);
                 (
                     StatusCode::UNAUTHORIZED,
                     MFA_REQUIRED,
@@ -183,6 +190,7 @@ impl IntoResponse for ApiError {
                 message,
                 errors,
                 ticket,
+                methods,
                 retry_after,
             }),
         )

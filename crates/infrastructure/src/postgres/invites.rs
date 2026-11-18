@@ -47,6 +47,17 @@ impl From<InviteRow> for Invite {
 
 #[async_trait]
 impl InviteRepository for PgStore {
+    async fn vanity_for_guild(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Option<domain::vanity::VanityInvite>> {
+        super::vanity::for_guild(self, guild_id).await
+    }
+
+    async fn vanity_by_code(&self, code: &str) -> AppResult<Option<domain::vanity::VanityInvite>> {
+        super::vanity::by_code(self, code).await
+    }
+
     async fn find(&self, code: &str) -> AppResult<Option<Invite>> {
         let sql = format!("SELECT {INVITE_COLUMNS} FROM invites WHERE code = $1");
         let row: Option<InviteRow> = sqlx::query_as(&sql)

@@ -56,6 +56,11 @@ futures = "0.3"
 http-body-util = "0.1"
 subtle = "2"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
+# 0.6.2's crypto-glue requests rsa/sha2, removed in the stable RSA used by JWT 12.
+# The maintained 0.5 line uses OpenSSL; vendoring makes Linux and Windows builds reproducible.
+webauthn-rs = { version = "0.5.5", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
+openssl = { version = "0.10", features = ["vendored"] }
 
 [profile.release]
 lto = "thin"

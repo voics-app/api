@@ -8,12 +8,14 @@ use axum::{Json, Router};
 use application::support::audit::AuditContext;
 use application::use_cases::invites::create_invite::CreateInviteInput;
 use application::use_cases::invites::get_invite::InviteView;
+use application::use_cases::invites::vanity;
 use application::use_cases::invites::{
     accept_invite, create_invite, delete_invite, get_invite, list_guild_invites,
 };
 use application::Resource;
 use contracts::objects::InviteDto;
 use contracts::requests::CreateInviteRequest;
+use contracts::vanity::{ModifyVanityUrlRequest, VanityUrlDto};
 
 use crate::error::ApiError;
 use crate::extract::{AuditReason, Body, Caller};
@@ -100,9 +102,54 @@ async fn guild_invites(
     Ok(Json(views.iter().map(to_dto).collect()))
 }
 
+async fn get_vanity(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+) -> Result<Json<VanityUrlDto>, ApiError> {
+    Ok(Json(
+        vanity::get(&state.ports, &actor, snowflake(&guild, Resource::Guild)?)
+            .await?
+            .into(),
+    ))
+}
+
+async fn modify_vanity(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
+    Path(guild): Path<String>,
+    Body(body): Body<ModifyVanityUrlRequest>,
+) -> Result<Json<VanityUrlDto>, ApiError> {
+    let code = body.code.ok_or_else(|| {
+        application::AppError::invalid(
+            "code",
+            "BASE_TYPE_REQUIRED",
+            "This field is required; use null to remove the code.",
+        )
+    })?;
+    let audit = AuditContext {
+        actor_id: actor.user_id,
+        reason: reason.as_deref(),
+    };
+    let invite = vanity::update(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        code.as_deref(),
+        audit,
+    )
+    .await?;
+    Ok(Json(invite.into()))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/channels/{id}/invites", post(create))
         .route("/invites/{code}", get(fetch).post(accept).delete(revoke))
         .route("/guilds/{id}/invites", get(guild_invites))
+        .route(
+            "/guilds/{id}/vanity-url",
+            get(get_vanity).patch(modify_vanity),
+        )
 }

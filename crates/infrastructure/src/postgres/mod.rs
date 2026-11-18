@@ -3,6 +3,7 @@
 mod account_tokens;
 mod applications;
 mod audit;
+mod audit_policy;
 mod channels;
 mod convert;
 mod devices;
@@ -13,6 +14,7 @@ mod interactions;
 mod invites;
 mod notifications;
 pub mod outbox;
+mod passkeys;
 mod push_tokens;
 mod relationships;
 mod reports;
@@ -21,6 +23,7 @@ mod sessions;
 mod snowflake;
 mod unit_of_work;
 mod users;
+mod vanity;
 mod webhooks;
 
 use std::time::Duration;

@@ -547,6 +547,8 @@ pub struct GuildDto {
     pub approximate_member_count: Option<u64>,
     pub voice_region: String,
     pub prune_admin_only: bool,
+    pub audit_log_enabled: bool,
+    pub audit_log_retention_days: u16,
 }
 
 impl GuildDto {
@@ -581,6 +583,8 @@ impl GuildDto {
                 .clone()
                 .unwrap_or_else(|| default_region.to_owned()),
             prune_admin_only: guild.prune_admin_only,
+            audit_log_enabled: guild.audit_policy.enabled,
+            audit_log_retention_days: guild.audit_policy.retention_days,
         }
     }
 
