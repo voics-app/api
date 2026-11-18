@@ -14,7 +14,15 @@ DTOs and transactional user/member events include the new fields. Server images 
 global profile when overrides are cleared. Migration `0054` requires no new settings.
 See [the profile specification](https://github.com/discordy-voics/docs/blob/feature/community-profiles/specs/2026-11-18-profile-customization.md).
 
-## Run locally
+Age-restricted background notifications (client#76): the internal channel push-targets
+endpoint follows the channel's parent chain. Restricted or incomplete context forces
+the existing token `previews` response field to false; session-local Continue never
+enables background content previews. Accounts with persisted
+`preferences.hide_age_restricted_channels: true` receive no restricted-channel push
+target. Ordinary channels retain their registered preview preference. This policy
+does not rewrite device tokens or require a notifier DTO change. Preference writes
+are the separate API #151 companion. HTTP regressions live in
+`crates/infrastructure/tests/http_push_tokens/age_restricted.rs`.
 
 `POST /reports` accepts `target: "channel"` with a guild channel ID, category and
 optional note. The caller must currently be able to view the channel. The report
@@ -26,6 +34,8 @@ The optional account preference `preferences.hide_age_restricted_channels` accep
 only booleans and uses the existing settings merge and sync events. Missing means
 false; this does not attest age or change channel permissions. See
 [the channel-gate specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-18-age-restricted-channels.md).
+
+## Run locally
 
 Prerequisites: Rust 1.99, Docker (for integration tests and local dependencies), and the C compiler,
 Perl and Make required by vendored OpenSSL. On Windows use the MSVC toolchain with Strawberry

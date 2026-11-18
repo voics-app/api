@@ -95,6 +95,24 @@ async fn audience(ports: &Ports, channel: &Channel) -> AppResult<Audience> {
     })
 }
 
+/// An absent, cyclic or foreign parent cannot make a background preview safe.
+async fn restricted_context(ports: &Ports, channel: &Channel) -> AppResult<bool> {
+    let mut current = channel.clone();
+    let mut seen = HashSet::new();
+    loop {
+        if !seen.insert(current.id) || current.guild_id != channel.guild_id || current.nsfw {
+            return Ok(true);
+        }
+        let Some(parent_id) = current.parent_id else {
+            return Ok(current.kind.is_thread());
+        };
+        let Some(parent) = ports.channels.find(parent_id).await? else {
+            return Ok(true);
+        };
+        current = parent;
+    }
+}
+
 pub async fn execute(
     ports: &Ports,
     channel_id: Snowflake,
@@ -106,6 +124,7 @@ pub async fn execute(
         .await?
         .ok_or(AppError::NotFound(Resource::Channel))?;
     let delivery_mode = effective_mode(ports, &channel).await?;
+    let restricted = restricted_context(ports, &channel).await?;
     let Audience { guild, users } = audience(ports, &channel).await?;
     let candidates: Vec<Snowflake> = users
         .iter()
@@ -134,8 +153,32 @@ pub async fn execute(
         .collect();
     with_tokens.sort();
     with_tokens.truncate(MAX_TARGETS);
+    // Session-local Continue never enables background previews. Read account settings in one batch.
+    let hidden: HashSet<Snowflake> = if restricted {
+        ports
+            .users
+            .settings_many(&with_tokens)
+            .await?
+            .into_iter()
+            .filter(|settings| {
+                settings
+                    .preferences
+                    .get("hide_age_restricted_channels")
+                    .is_some_and(|value| value.as_bool() != Some(false))
+            })
+            .map(|settings| settings.user_id)
+            .collect()
+    } else {
+        HashSet::new()
+    };
+    if restricted {
+        for token in tokens.values_mut().flatten() {
+            token.previews = false;
+        }
+    }
     let users = with_tokens
         .into_iter()
+        .filter(|id| !hidden.contains(id))
         .map(|id| (id, roles.remove(&id).unwrap_or_default()))
         .collect();
     let default = notification_policy::guild_default(guild.as_ref().map_or(0, |(_, level)| *level));
