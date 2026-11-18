@@ -5,6 +5,9 @@ use application::AppError;
 pub fn db(error: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(database) = &error {
         match (database.code().as_deref(), database.constraint()) {
+            (Some("23505"), Some("guild_vanity_urls_code_key")) => {
+                return super::vanity::occupied_code();
+            }
             (Some("23505"), Some("users_email_key")) => {
                 return AppError::invalid(
                     "email",

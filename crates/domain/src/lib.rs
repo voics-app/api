@@ -5,6 +5,7 @@ pub mod access;
 pub mod account;
 pub mod application;
 pub mod audit;
+pub mod audit_policy;
 pub mod channel;
 pub mod delivery_mode;
 pub mod device;
@@ -25,5 +26,6 @@ pub mod template;
 pub mod user;
 pub mod user_preferences;
 pub mod validation;
+pub mod vanity;
 
 pub use snowflake::Snowflake;

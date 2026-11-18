@@ -158,11 +158,27 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         },
     };
     let prune_ports = ports.clone();
+    let audit_ports = ports.clone();
     let purge_ports = ports.clone();
     let purge_every = std::time::Duration::from_secs(config.account_purge_interval_secs);
     let prune_every = std::time::Duration::from_secs(config.device_prune_interval_secs);
 
     tokio::spawn(OutboxRelay::new(pool.clone(), publisher.clone()).run());
+    tokio::spawn(async move {
+        const AUDIT_RETENTION_INTERVAL_SECS: u64 = 3600;
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(
+            AUDIT_RETENTION_INTERVAL_SECS,
+        ));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            match application::use_cases::audit::prune_expired::execute(&audit_ports).await {
+                Ok(0) => {}
+                Ok(count) => tracing::info!(count, "pruned expired audit entries"),
+                Err(error) => tracing::warn!(%error, "audit retention prune failed"),
+            }
+        }
+    });
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(prune_every);
         loop {

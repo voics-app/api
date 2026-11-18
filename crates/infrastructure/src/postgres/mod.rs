@@ -3,6 +3,7 @@
 mod account_tokens;
 mod applications;
 mod audit;
+mod audit_policy;
 mod channels;
 mod convert;
 mod devices;
@@ -19,6 +20,7 @@ mod reports;
 mod sessions;
 mod unit_of_work;
 mod users;
+mod vanity;
 mod webhooks;
 
 use std::time::Duration;

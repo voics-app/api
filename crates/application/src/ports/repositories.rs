@@ -304,6 +304,11 @@ pub struct DiscoveryPage {
 pub trait InviteRepository: Send + Sync {
     async fn find(&self, code: &str) -> AppResult<Option<Invite>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Invite>>;
+    async fn vanity_for_guild(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Option<domain::vanity::VanityInvite>>;
+    async fn vanity_by_code(&self, code: &str) -> AppResult<Option<domain::vanity::VanityInvite>>;
 }
 
 #[async_trait]
@@ -324,6 +329,7 @@ pub struct AuditLogQuery {
 
 #[async_trait]
 pub trait AuditLogRepository: Send + Sync {
+    async fn prune_expired(&self, now: DateTime<Utc>) -> AppResult<u64>;
     async fn list(
         &self,
         guild_id: Snowflake,

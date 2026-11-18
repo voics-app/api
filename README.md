@@ -26,6 +26,27 @@ make docker   # OCI image, ghcr.io/discordy-voics/api:<version>
 
 Integration tests start throwaway containers with testcontainers (Postgres 16, Redpanda v24.2.7, Valkey 8). Docker must be running.
 
+## Community settings
+
+Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
+set or remove a permanent invite. Send `{"code":"study-club"}` or
+`{"code":null}`. Codes use 2–32 ASCII letters, digits or hyphens and resolve
+case-insensitively through the ordinary invite preview/accept routes. They
+cannot collide with another guild or an ordinary invite. A text channel visible
+to @everyone is required. Bans and guild limits still apply. Renaming resets the
+join count; existing members do not increase it. Changes are audited.
+
+`PATCH /guilds/{id}` accepts `audit_log_enabled` (default true) and
+`audit_log_retention_days` (30, 90 or 365; default 90). Only the owner or a member
+with `ADMINISTRATOR` may change these. Disabled logging suppresses new audit
+entries and their dispatches in the transaction; audit-policy changes always
+remain recorded. Existing entries remain readable with `VIEW_AUDIT_LOG` until
+retention expires. Queries enforce retention immediately, and an idempotent
+worker deletes expired entries and their outbox copies at startup and hourly,
+including in disabled guilds. The default 90-day retention also applies to
+existing entries on rollout. Migration 0050 adds permanent invites; 0051 adds
+audit policy. No new configuration or secret is needed.
+
 ## Configuration
 
 All configuration comes from environment variables, validated at startup. Missing or invalid values stop the process with a message naming the variable.

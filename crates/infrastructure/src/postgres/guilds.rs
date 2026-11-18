@@ -17,7 +17,7 @@ use super::users::{UserRow, USER_COLUMNS};
 use super::PgStore;
 
 const GUILD_COLUMNS: &str = "id, name, icon, description, owner_id, voice_region, verification_level, \
-     default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, system_channel_flags, banner, splash, prune_admin_only, created_at";
+     default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, system_channel_flags, banner, splash, prune_admin_only, audit_log_enabled, audit_log_retention_days, created_at";
 
 const ROLE_COLUMNS: &str =
     "id, guild_id, name, color, hoist, icon, unicode_emoji, position, permissions, \
@@ -47,6 +47,8 @@ pub(super) struct GuildRow {
     banner: Option<String>,
     splash: Option<String>,
     prune_admin_only: bool,
+    audit_log_enabled: bool,
+    audit_log_retention_days: i16,
     created_at: DateTime<Utc>,
 }
 
@@ -69,6 +71,10 @@ impl From<GuildRow> for Guild {
             banner: row.banner,
             splash: row.splash,
             prune_admin_only: row.prune_admin_only,
+            audit_policy: domain::audit_policy::AuditPolicy {
+                enabled: row.audit_log_enabled,
+                retention_days: row.audit_log_retention_days as u16,
+            },
             created_at: row.created_at,
         }
     }
