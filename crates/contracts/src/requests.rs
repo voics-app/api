@@ -239,6 +239,12 @@ pub struct CreateGuildRequest {
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyGuildRequest {
     #[serde(default)]
+    pub features: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub rules_channel_id: Option<Option<Id>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub public_updates_channel_id: Option<Option<Id>>,
+    #[serde(default)]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
     pub icon: Option<Option<String>>,

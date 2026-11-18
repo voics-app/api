@@ -20,6 +20,9 @@ pub const REPORT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60
 
 #[derive(Debug, Clone)]
 pub enum ReportTarget {
+    Guild {
+        guild_id: Snowflake,
+    },
     Message {
         channel_id: Snowflake,
         message_id: Snowflake,
@@ -66,6 +69,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: SubmitReportInput) -> 
     )
     .await?;
     let resolved = match input.target {
+        ReportTarget::Guild { guild_id } => guild_target(ports, guild_id).await?,
         ReportTarget::User { user_id } => user_target(ports, user_id).await?,
         ReportTarget::Message {
             channel_id,
@@ -115,6 +119,46 @@ async fn user_target(ports: &Ports, user_id: Snowflake) -> AppResult<Resolved> {
         delivery_mode: None,
         content: None,
         content_source: None,
+    })
+}
+
+async fn guild_target(ports: &Ports, guild_id: Snowflake) -> AppResult<Resolved> {
+    let guild = ports
+        .guilds
+        .find(guild_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Guild))?;
+    let listing = ports
+        .guilds
+        .discovery(guild_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Guild))?;
+    if !domain::discovery::ineligibilities(
+        &guild,
+        ports.guilds.member_count(guild_id).await?,
+        ports.guilds.has_nsfw_channel(guild_id).await?,
+        ports.settings.discovery_rules(),
+        ports.clock.now(),
+    )
+    .is_empty()
+    {
+        return Err(AppError::NotFound(Resource::Guild));
+    }
+    Ok(Resolved {
+        reported_user_id: guild.owner_id,
+        kind: ReportKind::Guild,
+        guild_id: Some(guild_id),
+        channel_id: None,
+        message_id: None,
+        delivery_mode: None,
+        content: Some(format!(
+            "Name: {}\nDescription: {}\nCategory: {}\nTags: {}",
+            guild.name,
+            guild.description.unwrap_or_default(),
+            listing.category,
+            listing.tags.join(", ")
+        )),
+        content_source: Some(ContentSource::Server),
     })
 }
 

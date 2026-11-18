@@ -312,6 +312,7 @@ pub fn instantiate(
         splash: None,
         prune_admin_only: false,
         audit_policy: Default::default(),
+        community: None,
         created_at: now,
     };
     Ok(Instantiated {

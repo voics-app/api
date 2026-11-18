@@ -31,6 +31,32 @@ Integration tests start throwaway containers with testcontainers (Postgres 16, R
 
 ## Community settings
 
+`PATCH /guilds/{id}` accepts `features:["COMMUNITY"]` with `rules_channel_id`
+and `public_updates_channel_id` (requires `MANAGE_GUILD`). Both must be
+non-age-restricted Standard text/announcement channels in this guild; one channel
+may serve both purposes. Configured channels cannot be deleted, made NSFW or
+switched to ephemeral/P2P delivery until replaced or Community is disabled.
+`features:[]` clears the pair and removes the discovery listing transactionally.
+Ordinary guild updates preserve the pair; Community changes and channel writes
+serialize on the guild row. Migration 0052 adds the channel pair and deferred FKs.
+
+Discovery requires Community in addition to a description of at least 10
+characters, the configured age/member thresholds and no NSFW channels. Existing
+listing rows without Community become hidden at rollout. After explicitly
+disabling Community, re-enabling does not automatically list the server again.
+Search, join and report requests all check eligibility.
+
+`POST /discovery/guilds/{id}/reports` accepts a report category and optional note
+(500 characters). Only public listings can be reported by signed-in users;
+owners cannot report their own listing. The existing 10/hour reporter limit and
+duplicate-open-report behavior apply. Migration 0053 adds report kind `guild`.
+The admin queue receives public name/description/category/tags, guild ID and the
+owner at filing. No private channel/member/message data is copied. Resolving a
+report does not automatically delist the server. See the central
+[discovery specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-03-server-discovery.md).
+No new configuration or infrastructure is needed. Membership screening remains
+a separate feature; Community setup does not implement api#40.
+
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or
 `{"code":null}`. Codes use 2–32 ASCII letters, digits or hyphens and resolve

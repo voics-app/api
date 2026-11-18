@@ -39,6 +39,7 @@ pub struct DiscoveryRules {
 /// Why a guild cannot be listed right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ineligibility {
+    CommunityRequired,
     DescriptionMissing,
     TooFewMembers { required: u64 },
     TooYoung,
@@ -48,6 +49,7 @@ pub enum Ineligibility {
 impl Ineligibility {
     pub const fn code(self) -> &'static str {
         match self {
+            Self::CommunityRequired => "COMMUNITY_REQUIRED",
             Self::DescriptionMissing => "DESCRIPTION_REQUIRED",
             Self::TooFewMembers { .. } => "MEMBER_COUNT_TOO_LOW",
             Self::TooYoung => "GUILD_TOO_NEW",
@@ -65,6 +67,9 @@ pub fn ineligibilities(
     now: DateTime<Utc>,
 ) -> Vec<Ineligibility> {
     let mut out = Vec::new();
+    if guild.community.is_none() {
+        out.push(Ineligibility::CommunityRequired);
+    }
     let described = guild
         .description
         .as_deref()
@@ -150,6 +155,10 @@ mod tests {
             splash: None,
             prune_admin_only: false,
             audit_policy: Default::default(),
+            community: Some(crate::guild::CommunityChannels {
+                rules_channel_id: Snowflake::new(3),
+                public_updates_channel_id: Snowflake::new(3),
+            }),
             created_at,
         }
     }
@@ -172,11 +181,13 @@ mod tests {
     #[test]
     fn every_unmet_rule_is_reported() {
         let now = Utc::now();
-        let g = guild(Some("short"), now);
+        let mut g = guild(Some("short"), now);
+        g.community = None;
         let blockers = ineligibilities(&g, 1, true, RULES, now);
         assert_eq!(
             blockers,
             vec![
+                Ineligibility::CommunityRequired,
                 Ineligibility::DescriptionMissing,
                 Ineligibility::TooFewMembers { required: 5 },
                 Ineligibility::TooYoung,
