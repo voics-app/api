@@ -15,6 +15,7 @@ application = { path = "crates/application" }
 contracts = { path = "crates/contracts" }
 infrastructure = { path = "crates/infrastructure" }
 interface = { path = "crates/interface" }
+voics-snowflake = { path = "crates/snowflake" }
 
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }

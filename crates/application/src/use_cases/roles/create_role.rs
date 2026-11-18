@@ -74,7 +74,7 @@ pub async fn execute(
         });
     }
     let mut role = Role {
-        id: ports.ids.next_id(),
+        id: ports.ids.next_id()?,
         name: "new role".into(),
         position: 1,
         ..Role::everyone(guild_id, Permissions::NONE)

@@ -43,6 +43,22 @@ fn region(state: &AppState) -> &str {
     &state.ports.settings.default_voice_region
 }
 
+async fn reserve_ids(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Body(body): Body<voics_snowflake::ReservationRequest>,
+) -> Result<Json<voics_snowflake::Reservation>, ApiError> {
+    if body.service() != voics_snowflake::Service::Messages {
+        return Err(AppError::invalid(
+            "service",
+            "INVALID_SERVICE",
+            "Only messages may reserve through HTTP",
+        )
+        .into());
+    }
+    Ok(Json(state.ports.id_reservations.reserve(body).await?))
+}
+
 async fn introspect_token(
     State(state): State<AppState>,
     _internal: Internal,
@@ -453,6 +469,7 @@ async fn admin_resolve_report(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/internal/v1/id-reservations", post(reserve_ids))
         .route("/internal/v1/auth/introspect", post(introspect_token))
         .route("/internal/v1/users/lookup", post(users_lookup))
         .route("/internal/v1/users/{id}/ready", get(user_ready_state))

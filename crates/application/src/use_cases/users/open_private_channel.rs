@@ -58,7 +58,7 @@ pub async fn execute(
     } else {
         ChannelType::GroupDm
     };
-    let mut channel = Channel::new(ports.ids.next_id(), kind, None, ports.clock.now());
+    let mut channel = Channel::new(ports.ids.next_id()?, kind, None, ports.clock.now());
     channel.recipient_ids = std::iter::once(actor.user_id).chain(others).collect();
     if kind == ChannelType::GroupDm {
         channel.owner_id = Some(actor.user_id);
