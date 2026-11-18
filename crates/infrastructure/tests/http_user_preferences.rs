@@ -87,18 +87,20 @@ async fn preferences_merge_round_trip_and_validate() {
     let (_, stored) = call(&app, Method::GET, url, &token, None).await;
     assert_eq!(stored["preferences"], hidden["preferences"]);
 
-    let (_, other) = send(
+    let (other_status, other) = send(
         &app,
         request(
             Method::POST,
             "/api/v1/auth/register",
             None,
-            Some(json!({"email": "other-pref@example.com", "username": "other-pref", "password": "a-long-enough-passphrase"})),
+            Some(json!({"email": "other-pref@example.com", "username": "other_pref", "password": "a-long-enough-passphrase"})),
         ),
     )
     .await;
+    assert_eq!(other_status, StatusCode::CREATED);
     let other_token = other["access_token"].as_str().expect("other token");
-    let (_, other_settings) = call(&app, Method::GET, url, other_token, None).await;
+    let (other_status, other_settings) = call(&app, Method::GET, url, other_token, None).await;
+    assert_eq!(other_status, StatusCode::OK);
     assert!(other_settings["preferences"]
         .get("hide_age_restricted_channels")
         .is_none());
