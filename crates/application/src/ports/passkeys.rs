@@ -78,6 +78,13 @@ pub trait WebauthnVerifier: Send + Sync {
 #[async_trait]
 pub trait PasskeyRepository: Send + Sync {
     async fn list(&self, user_id: Snowflake) -> AppResult<Vec<PasskeyRecord>>;
+    /// Updates only the label and only when this account owns the credential.
+    async fn rename(
+        &self,
+        user_id: Snowflake,
+        id: Uuid,
+        name: &str,
+    ) -> AppResult<Option<PasskeyRecord>>;
     async fn create_challenge(
         &self,
         challenge: &PasskeyChallenge,
