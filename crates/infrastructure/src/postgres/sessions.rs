@@ -4,7 +4,7 @@ use sqlx::{FromRow, Row};
 use uuid::Uuid;
 
 use application::ports::{ActiveSession, RefreshReplay, RotateOutcome, Session, SessionRepository};
-use application::AppResult;
+use application::{AppError, AppResult};
 use domain::session::ClientInfo;
 use domain::Snowflake;
 
@@ -283,13 +283,37 @@ impl SessionRepository for PgStore {
     }
 
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()> {
-        sqlx::query("UPDATE sessions SET device_id = $2 WHERE id = $1")
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let user_id: Option<i64> = sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = $1")
             .bind(id)
-            .bind(device_id.as_i64())
-            .execute(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(db)?;
-        Ok(())
+        let user_id = user_id.ok_or(AppError::Unauthorized)?;
+        super::push_tokens::lock_user(&mut tx, sf(user_id)).await?;
+        let changed = sqlx::query(
+            "UPDATE sessions SET device_id = $2 WHERE id = $1 AND revoked_at IS NULL \
+             AND EXISTS (SELECT 1 FROM devices WHERE id = $2 AND user_id = $3)",
+        )
+        .bind(id)
+        .bind(device_id.as_i64())
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        if changed.rows_affected() == 0 {
+            return Err(AppError::Unauthorized);
+        }
+        // Push can be registered before E2EE startup finishes. Move its device
+        // association with the session so old-device removal cannot remove a
+        // token that already belongs to a replacement device.
+        sqlx::query("UPDATE push_tokens SET device_id = $2 WHERE session_id = $1")
+            .bind(id)
+            .bind(device_id.as_i64())
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        tx.commit().await.map_err(db)
     }
 
     async fn live_device_ids(

@@ -9,6 +9,7 @@ use serde::Deserialize;
 use application::use_cases::discovery::join;
 use application::use_cases::discovery::search::{self, SearchInput};
 use application::use_cases::discovery::settings::{self, DiscoverySettings, UpdateDiscoveryInput};
+use application::use_cases::reports::submit_report::{self, ReportTarget, SubmitReportInput};
 use application::Resource;
 use contracts::objects::{
     DiscoveryCategoriesDto, DiscoveryGuildDto, DiscoveryPageDto, DiscoverySettingsDto,
@@ -87,6 +88,34 @@ async fn join_guild(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReportListingRequest {
+    category: String,
+    note: Option<String>,
+}
+
+async fn report_listing(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<ReportListingRequest>,
+) -> Result<StatusCode, ApiError> {
+    submit_report::execute(
+        &state.ports,
+        &actor,
+        SubmitReportInput {
+            target: ReportTarget::Guild {
+                guild_id: snowflake(&id, Resource::Guild)?,
+            },
+            category: body.category,
+            note: body.note,
+        },
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 fn dto(state: &DiscoverySettings) -> Json<DiscoverySettingsDto> {
     Json(DiscoverySettingsDto::new(
         state.listing.as_ref(),
@@ -130,6 +159,7 @@ pub fn routes() -> Router<AppState> {
         .route("/discovery/guilds", get(browse))
         .route("/discovery/categories", get(categories))
         .route("/discovery/guilds/{id}/join", post(join_guild))
+        .route("/discovery/guilds/{id}/reports", post(report_listing))
         .route(
             "/guilds/{id}/discovery",
             get(settings_get).put(settings_put),

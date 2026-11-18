@@ -214,6 +214,9 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::SetAuditPolicy { guild_id, policy } => {
             super::audit_policy::set(conn, *guild_id, *policy).await
         }
+        Mutation::SetCommunity { guild_id, channels } => {
+            super::community::set(conn, *guild_id, *channels).await
+        }
 
         Mutation::InsertApplication(app) | Mutation::UpdateApplication(app) => {
             applications::upsert_application(conn, app).await

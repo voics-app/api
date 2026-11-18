@@ -18,6 +18,9 @@ use crate::write_set::{Mutation, WriteSet};
 
 #[derive(Debug, Clone, Default)]
 pub struct UpdateGuildInput {
+    pub features: Option<Vec<String>>,
+    pub rules_channel_id: Option<Option<Snowflake>>,
+    pub public_updates_channel_id: Option<Option<Snowflake>>,
     pub name: Option<String>,
     pub icon: Option<Option<ImageUpload>>,
     pub description: Option<Option<String>>,
@@ -59,6 +62,7 @@ pub async fn execute(
     ctx.require(Permissions::MANAGE_GUILD)?;
     let before = ctx.guild.clone();
     let mut guild = ctx.guild.clone();
+    let community_requested = super::community::apply(ports, &mut guild, &input).await?;
     if input.audit_log_enabled.is_some() || input.audit_log_retention_days.is_some() {
         ctx.require(Permissions::ADMINISTRATOR)?;
     }
@@ -171,6 +175,31 @@ pub async fn execute(
 
     let changes: Vec<AuditChange> = [
         AuditChange::if_changed(
+            "features",
+            json!(before
+                .community
+                .map(|_| vec!["COMMUNITY"])
+                .unwrap_or_default()),
+            json!(guild
+                .community
+                .map(|_| vec!["COMMUNITY"])
+                .unwrap_or_default()),
+        ),
+        AuditChange::if_changed(
+            "rules_channel_id",
+            json!(before.community.map(|c| c.rules_channel_id.to_string())),
+            json!(guild.community.map(|c| c.rules_channel_id.to_string())),
+        ),
+        AuditChange::if_changed(
+            "public_updates_channel_id",
+            json!(before
+                .community
+                .map(|c| c.public_updates_channel_id.to_string())),
+            json!(guild
+                .community
+                .map(|c| c.public_updates_channel_id.to_string())),
+        ),
+        AuditChange::if_changed(
             "audit_log_enabled",
             json!(before.audit_policy.enabled),
             json!(guild.audit_policy.enabled),
@@ -240,6 +269,12 @@ pub async fn execute(
     .collect();
 
     let mut writes = WriteSet::new();
+    if community_requested {
+        writes.mutate(Mutation::SetCommunity {
+            guild_id,
+            channels: guild.community,
+        });
+    }
     if before.audit_policy != guild.audit_policy {
         writes.mutate(Mutation::SetAuditPolicy {
             guild_id,

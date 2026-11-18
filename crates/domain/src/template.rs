@@ -335,6 +335,7 @@ pub fn instantiate_with_ids(
         splash: None,
         prune_admin_only: false,
         audit_policy: Default::default(),
+        community: None,
         created_at: now,
     };
     Ok(Instantiated {

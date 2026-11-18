@@ -31,6 +31,32 @@ Integration tests start throwaway containers with testcontainers (Postgres 16, R
 
 ## Community settings
 
+`PATCH /guilds/{id}` accepts `features:["COMMUNITY"]` with `rules_channel_id`
+and `public_updates_channel_id` (requires `MANAGE_GUILD`). Both must be
+non-age-restricted Standard text/announcement channels in this guild; one channel
+may serve both purposes. Configured channels cannot be deleted, made NSFW or
+switched to ephemeral/P2P delivery until replaced or Community is disabled.
+`features:[]` clears the pair and removes the discovery listing transactionally.
+Ordinary guild updates preserve the pair; Community changes and channel writes
+serialize on the guild row. Migration 0052 adds the channel pair and deferred FKs.
+
+Discovery requires Community in addition to a description of at least 10
+characters, the configured age/member thresholds and no NSFW channels. Existing
+listing rows without Community become hidden at rollout. After explicitly
+disabling Community, re-enabling does not automatically list the server again.
+Search, join and report requests all check eligibility.
+
+`POST /discovery/guilds/{id}/reports` accepts a report category and optional note
+(500 characters). Only public listings can be reported by signed-in users;
+owners cannot report their own listing. The existing 10/hour reporter limit and
+duplicate-open-report behavior apply. Migration 0053 adds report kind `guild`.
+The admin queue receives public name/description/category/tags, guild ID and the
+owner at filing. No private channel/member/message data is copied. Resolving a
+report does not automatically delist the server. See the central
+[discovery specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-03-server-discovery.md).
+No new configuration or infrastructure is needed. Membership screening remains
+a separate feature; Community setup does not implement api#40.
+
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or
 `{"code":null}`. Codes use 2–32 ASCII letters, digits or hyphens and resolve
@@ -98,6 +124,20 @@ All configuration comes from environment variables, validated at startup. Missin
 | `CORS_ALLOWED_ORIGINS` | no | `null,http://localhost:5173` | Comma-separated origins allowed by CORS (`null` is the packaged `file://` client) |
 
 Push (mobile): `POST /api/v1/users/@me/devices/push` with `{platform: "apns"|"fcm", token, environment?: "production"|"sandbox", previews?: bool, only_mentions?: bool}` stores the calling session's token (call it on every start to refresh); `DELETE` on the same path removes it. VoIP (iPhone calls): `POST /api/v1/users/@me/devices/voip` with `{token, environment?: "production"|"sandbox"}` stores the calling session's PushKit token (call it every time PushKit reports it); `DELETE` on the same path removes it. It is separate from the notification token and works when notifications are off. Internal, for the notifier: `GET /internal/v1/channels/{id}/push-targets?author_id=` (each target also lists `voip_tokens`) and `DELETE /internal/v1/push-tokens` (removes the token from both tables). For manual pushes from the admin portal: `GET /internal/v1/users/{id}/push-tokens` and `GET /internal/v1/push-tokens?after=&limit=` (live notification tokens of one user, or a page of all users; `next_after` continues).
+
+Token registration may finish before E2EE device registration. Binding a session to a device moves
+its existing notification token too. Removing, evicting or pruning that device atomically removes
+both notification and PushKit tokens for its bound sessions, unbinds those sessions and deletes the
+device with its update event; other devices keep their tokens. The session remains signed in and
+may register a fresh token later. Tokens never registered against a device still expire through the
+token-age prune or session logout. A delayed registration rechecks and locks the live session inside
+its database transaction, so it cannot restore tokens after logout. Device binding/removal and token
+writes serialize per user through a transaction-scoped advisory lock, acquired before session locks;
+the token write uses the session's current device rather than an earlier request snapshot.
+
+`cargo test -p infrastructure --test http_push_lifecycle` covers registration order, device pruning,
+device replacement, delayed/concurrent logout and cleanup rollback with disposable PostgreSQL.
+These tests do not claim real APNs/FCM/PushKit delivery on a device.
 
 Mention-policy directory: `GET /internal/v1/channels/{id}/notification-recipients?author_id=...`
 requires `X-Internal-Token` and returns current permitted viewers independently of mobile tokens.

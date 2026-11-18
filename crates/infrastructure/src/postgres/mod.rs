@@ -6,6 +6,7 @@ mod audit;
 mod audit_policy;
 mod authorizations;
 mod channels;
+mod community;
 mod convert;
 mod devices;
 mod emojis;
