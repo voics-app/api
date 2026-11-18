@@ -101,6 +101,8 @@ pub enum Mutation {
     },
     /// Inserts or replaces the member and its role list.
     UpsertMember(Member),
+    /// Rejects concurrent joins instead of resetting an existing member's roles.
+    InsertMember(Member),
     DeleteMember {
         guild_id: Snowflake,
         user_id: Snowflake,
@@ -119,6 +121,14 @@ pub enum Mutation {
     DeleteInvite(String),
     /// Increments uses; fails with a conflict when the invite is exhausted.
     ConsumeInvite(String),
+    SetVanityInvite {
+        guild_id: Snowflake,
+        invite: Option<domain::vanity::VanityInvite>,
+    },
+    ConsumeVanityInvite {
+        guild_id: Snowflake,
+        code: String,
+    },
 
     InsertEmoji(Emoji),
     UpdateEmoji(Emoji),
@@ -128,6 +138,10 @@ pub enum Mutation {
     },
 
     InsertAudit(AuditLogEntry),
+    SetAuditPolicy {
+        guild_id: Snowflake,
+        policy: domain::audit_policy::AuditPolicy,
+    },
 
     InsertApplication(Application),
     UpdateApplication(Application),

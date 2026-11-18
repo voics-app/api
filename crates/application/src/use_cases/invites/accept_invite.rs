@@ -12,11 +12,7 @@ use crate::write_set::{Mutation, WriteSet};
 /// Joins the invite's guild. Joining a guild one is already in is a no-op.
 pub async fn execute(ports: &Ports, actor: &Actor, code: &str) -> AppResult<InviteView> {
     actor.require_user()?;
-    let invite = ports
-        .invites
-        .find(code)
-        .await?
-        .ok_or(AppError::NotFound(Resource::Invite))?;
+    let (invite, is_vanity) = super::vanity::resolve(ports, code).await?;
     let now = ports.clock.now();
     if !invite.is_usable(now) {
         return Err(AppError::NotFound(Resource::Invite));
@@ -52,9 +48,17 @@ pub async fn execute(ports: &Ports, actor: &Actor, code: &str) -> AppResult<Invi
     snapshot.member_count += 1;
 
     let mut writes = WriteSet::new();
+    let consume = if is_vanity {
+        Mutation::ConsumeVanityInvite {
+            guild_id,
+            code: invite.code.clone(),
+        }
+    } else {
+        Mutation::ConsumeInvite(invite.code.clone())
+    };
     writes
-        .mutate(Mutation::ConsumeInvite(invite.code.clone()))
-        .mutate(Mutation::UpsertMember(member))
+        .mutate(consume)
+        .mutate(Mutation::InsertMember(member))
         .emit(DomainEvent::MemberAdd(profile))
         .emit(DomainEvent::GuildCreate {
             snapshot: Box::new(snapshot),

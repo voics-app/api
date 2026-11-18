@@ -311,6 +311,7 @@ pub fn instantiate(
         banner: None,
         splash: None,
         prune_admin_only: false,
+        audit_policy: Default::default(),
         created_at: now,
     };
     Ok(Instantiated {

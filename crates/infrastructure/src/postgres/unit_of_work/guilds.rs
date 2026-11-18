@@ -105,6 +105,17 @@ pub(super) async fn delete_role(
     Ok(())
 }
 
+pub(super) async fn insert_member(conn: &mut PgConnection, member: &Member) -> AppResult<()> {
+    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES ($1, $2, $3)")
+        .bind(member.guild_id.as_i64())
+        .bind(member.user_id.as_i64())
+        .bind(member.joined_at)
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
+    upsert_member(conn, member).await
+}
+
 pub(super) async fn upsert_member(conn: &mut PgConnection, member: &Member) -> AppResult<()> {
     sqlx::query(
         "INSERT INTO members (guild_id, user_id, nick, avatar, joined_at, deaf, mute, communication_disabled_until, \
@@ -194,6 +205,7 @@ pub(super) async fn delete_ban(
 }
 
 pub(super) async fn insert_invite(conn: &mut PgConnection, invite: &Invite) -> AppResult<()> {
+    crate::postgres::vanity::reserve_ordinary(&mut *conn, &invite.code).await?;
     sqlx::query(
         "INSERT INTO invites (code, guild_id, channel_id, inviter_id, max_age, max_uses, uses, temporary, created_at) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",

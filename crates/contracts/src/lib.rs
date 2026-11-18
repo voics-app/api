@@ -9,6 +9,7 @@ pub mod errors;
 pub mod internal;
 pub mod objects;
 pub mod requests;
+pub mod vanity;
 pub mod wire;
 
 pub use wire::{Id, Perm};
