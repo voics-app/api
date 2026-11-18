@@ -112,11 +112,9 @@ mod tests {
     #[test]
     fn age_restriction_is_an_optional_boolean_preference() {
         let empty = Preferences::new();
-        assert!(
-            !merge(&empty, &json!({}))
-                .unwrap()
-                .contains_key("hide_age_restricted_channels")
-        );
+        assert!(!merge(&empty, &json!({}))
+            .unwrap()
+            .contains_key("hide_age_restricted_channels"));
         let hidden = merge(&empty, &json!({"hide_age_restricted_channels": true})).unwrap();
         let visible = merge(&hidden, &json!({"hide_age_restricted_channels": false})).unwrap();
         assert_eq!(visible["hide_age_restricted_channels"], json!(false));

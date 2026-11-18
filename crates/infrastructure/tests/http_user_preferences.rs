@@ -6,7 +6,7 @@ use axum::http::{Method, StatusCode};
 use serde_json::json;
 
 use interface::state::AppState;
-use support::http::{INTERNAL_TOKEN, call, request, send};
+use support::http::{call, request, send, INTERNAL_TOKEN};
 use support::{jwt_keys, ports, start_database};
 
 #[tokio::test]
@@ -99,11 +99,9 @@ async fn preferences_merge_round_trip_and_validate() {
     .await;
     let other_token = other["access_token"].as_str().expect("other token");
     let (_, other_settings) = call(&app, Method::GET, url, other_token, None).await;
-    assert!(
-        other_settings["preferences"]
-            .get("hide_age_restricted_channels")
-            .is_none()
-    );
+    assert!(other_settings["preferences"]
+        .get("hide_age_restricted_channels")
+        .is_none());
 
     let (status, visible) = call(
         &app,
