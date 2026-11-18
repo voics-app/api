@@ -993,6 +993,7 @@ mod tests {
         channels.push(thread);
 
         let captured = capture(&made.guild, &roles, &channels);
+        assert_eq!(captured, capture(&made.guild, &made.roles, &made.channels));
         assert_eq!(captured.roles.len(), source.roles.len(), "bot role dropped");
         assert_eq!(
             captured.channels.len(),
