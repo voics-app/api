@@ -68,6 +68,9 @@ pub trait IdReservations: Send + Sync {
 pub trait SecretGenerator: Send + Sync {
     /// `bytes` of randomness, base64url without padding.
     fn token(&self, bytes: usize) -> String;
+    /// A deterministic 256-bit successor for an idempotent refresh. The previous
+    /// bearer token is the HMAC key; neither input is persisted by this service.
+    fn retryable_refresh_token(&self, previous: &str, request_id: Uuid) -> String;
     /// Alphanumeric invite code.
     fn invite_code(&self) -> String;
     /// Deterministic one-way hash used to store tokens.

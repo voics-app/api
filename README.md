@@ -105,6 +105,22 @@ replica capacity, legacy rollout preflight, failure behavior and the mandatory r
 
 ## Session revocation guarantees
 
+`POST /auth/refresh` accepts an optional `request_id` UUID for crash recovery.
+Clients must persist a random UUID with the current refresh token before sending,
+reuse that pair after response loss, and remove the UUID only after saving the
+successor credentials. For five minutes after a committed rotation, identical
+requests recover its immediate unused, unexpired successor in a live session.
+The original token must also remain unexpired. Retries neither create token
+branches nor extend expiry or last-used time. Legacy requests without a UUID,
+mismatched IDs, expired windows and used successors keep strict reuse detection.
+Logout, remote revocation and password changes cannot be undone by a retry.
+
+Migration 0080 stores only the request UUID hash and successor token hash. The
+successor is derived with HMAC-SHA256 from the previous bearer token, a fixed
+purpose label and the UUID; plaintext tokens and request IDs are never stored or
+logged. No new server secret or configuration is required. Roll out the API and
+migration before clients depend on recovery; older clients remain compatible.
+
 Access tokens continue to use Ed25519/EdDSA with `jsonwebtoken` 12. Its RustCrypto dependency chain
 uses `elliptic-curve` 0.14 and `crypto-bigint` 0.7, so the former RUSTSEC-2026-0387 exception is removed.
 

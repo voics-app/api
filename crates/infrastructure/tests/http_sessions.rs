@@ -115,6 +115,322 @@ async fn revocations(database: &Database) -> Vec<Value> {
 }
 
 #[tokio::test]
+async fn retrying_a_refresh_after_losing_the_response_recovers_the_same_successor() {
+    let database = start_database().await;
+    let app = app(&database);
+    let saved = register(&app, "refreshrecovery").await;
+    let body = json!({
+        "refresh_token": saved.refresh,
+        "request_id": "ae4b0d8e-06d1-4b72-9401-44f83fc966bf",
+    });
+    let (first_status, lost_response) = send(
+        &app,
+        request(
+            Method::POST,
+            "/api/v1/auth/refresh",
+            None,
+            Some(body.clone()),
+        ),
+    )
+    .await;
+    assert_eq!(first_status, StatusCode::OK);
+
+    // The process died after the commit, before saving this response. A new
+    // runtime knows only the old token and the request id saved before sending.
+    let (retry_status, recovered) = send(
+        &app,
+        request(Method::POST, "/api/v1/auth/refresh", None, Some(body)),
+    )
+    .await;
+    assert_eq!(
+        retry_status,
+        StatusCode::OK,
+        "restart must recover the committed rotation"
+    );
+    assert!(
+        recovered["refresh_token"] == lost_response["refresh_token"],
+        "the retry returns the original successor"
+    );
+    assert_eq!(
+        status_of(&app, &tokens(&recovered).access).await,
+        StatusCode::OK
+    );
+    assert!(
+        revocations(&database).await.is_empty(),
+        "a legitimate retry must not revoke the session"
+    );
+}
+
+async fn recoverable_refresh(
+    app: &axum::Router,
+    token: &str,
+    id: uuid::Uuid,
+) -> (StatusCode, Value) {
+    send(
+        app,
+        request(
+            Method::POST,
+            "/api/v1/auth/refresh",
+            None,
+            Some(json!({ "refresh_token": token, "request_id": id })),
+        ),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn concurrent_identical_refresh_retries_converge_without_extending_expiry() {
+    let database = start_database().await;
+    let app = app(&database);
+    let saved = register(&app, "samerequest").await;
+    let id = uuid::Uuid::new_v4();
+    let (a, b) = tokio::join!(
+        recoverable_refresh(&app, &saved.refresh, id),
+        recoverable_refresh(&app, &saved.refresh, id),
+    );
+    assert_eq!(a.0, StatusCode::OK);
+    assert_eq!(b.0, StatusCode::OK);
+    assert!(
+        a.1["refresh_token"] == b.1["refresh_token"],
+        "concurrent requests share one successor"
+    );
+    let expiries_before: Vec<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT expires_at FROM refresh_tokens ORDER BY token_hash")
+            .fetch_all(&database.pool)
+            .await
+            .unwrap();
+    for _ in 0..3 {
+        assert_eq!(
+            recoverable_refresh(&app, &saved.refresh, id).await.0,
+            StatusCode::OK
+        );
+    }
+    let expiries_after: Vec<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT expires_at FROM refresh_tokens ORDER BY token_hash")
+            .fetch_all(&database.pool)
+            .await
+            .unwrap();
+    assert_eq!(expiries_after, expiries_before);
+    assert_eq!(expiries_after.len(), 2, "retries create no token branches");
+    assert!(revocations(&database).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_different_refresh_request_id_still_revokes_the_family_and_push_tokens() {
+    let database = start_database().await;
+    let app = app(&database);
+    let saved = register(&app, "differentrequest").await;
+    let status = call(
+        &app,
+        Method::POST,
+        "/api/v1/users/@me/devices/push",
+        &saved.access,
+        Some(json!({ "platform": "fcm", "token": "refresh-recovery-push-fixture" })),
+    )
+    .await
+    .0;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, successor) = recoverable_refresh(&app, &saved.refresh, uuid::Uuid::new_v4()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        recoverable_refresh(&app, &saved.refresh, uuid::Uuid::new_v4())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        status_of(&app, &tokens(&successor).access).await,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(revocations(&database).await.len(), 1);
+    let pushes: i64 = sqlx::query_scalar("SELECT count(*) FROM push_tokens")
+        .fetch_one(&database.pool)
+        .await
+        .unwrap();
+    assert_eq!(pushes, 0);
+}
+
+#[tokio::test]
+async fn recovery_refuses_expired_or_used_successors_and_elapsed_windows() {
+    let database = start_database().await;
+    let app = app(&database);
+    for scenario in ["expired", "used", "window", "parentexpired", "future"] {
+        let saved = register(&app, scenario).await;
+        let id = uuid::Uuid::new_v4();
+        let (status, response) = recoverable_refresh(&app, &saved.refresh, id).await;
+        assert_eq!(status, StatusCode::OK);
+        let successor = tokens(&response);
+        let session_id = current_id(&sessions(&app, &successor.access).await);
+        let session_id = uuid::Uuid::parse_str(&session_id).unwrap();
+        match scenario {
+            "expired" => {
+                sqlx::query("UPDATE refresh_tokens SET expires_at = now() - interval '1 second' WHERE session_id = $1 AND rotated_at IS NULL")
+                    .bind(session_id).execute(&database.pool).await.unwrap();
+            }
+            "used" => {
+                assert_eq!(
+                    recoverable_refresh(&app, &successor.refresh, uuid::Uuid::new_v4())
+                        .await
+                        .0,
+                    StatusCode::OK
+                );
+            }
+            "window" => {
+                sqlx::query("UPDATE refresh_tokens SET rotated_at = now() - interval '6 minutes' WHERE session_id = $1 AND rotated_at IS NOT NULL")
+                    .bind(session_id).execute(&database.pool).await.unwrap();
+            }
+            "parentexpired" => {
+                sqlx::query("UPDATE refresh_tokens SET expires_at = now() - interval '1 second' WHERE session_id = $1 AND rotated_at IS NOT NULL")
+                    .bind(session_id).execute(&database.pool).await.unwrap();
+            }
+            _ => {
+                sqlx::query("UPDATE refresh_tokens SET rotated_at = now() + interval '1 minute' WHERE session_id = $1 AND rotated_at IS NOT NULL")
+                    .bind(session_id).execute(&database.pool).await.unwrap();
+            }
+        }
+        assert_eq!(
+            recoverable_refresh(&app, &saved.refresh, id).await.0,
+            StatusCode::UNAUTHORIZED,
+            "{scenario}"
+        );
+        assert_eq!(
+            status_of(&app, &successor.access).await,
+            StatusCode::UNAUTHORIZED,
+            "{scenario}"
+        );
+    }
+    assert_eq!(revocations(&database).await.len(), 5);
+}
+
+#[tokio::test]
+async fn malformed_recovery_ids_do_not_rotate_and_omitted_ids_keep_strict_reuse_detection() {
+    let database = start_database().await;
+    let app = app(&database);
+    let saved = register(&app, "requestvalidation").await;
+    let (status, _) = send(
+        &app,
+        request(
+            Method::POST,
+            "/api/v1/auth/refresh",
+            None,
+            Some(json!({ "refresh_token": saved.refresh, "request_id": "not-a-uuid" })),
+        ),
+    )
+    .await;
+    assert!(status.is_client_error());
+    let unrotated: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM refresh_tokens WHERE rotated_at IS NULL")
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+    assert_eq!(unrotated, 1);
+    let (status, successor) = recoverable_refresh(&app, &saved.refresh, uuid::Uuid::new_v4()).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app,
+        request(
+            Method::POST,
+            "/api/v1/auth/refresh",
+            None,
+            Some(json!({ "refresh_token": saved.refresh })),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        status_of(&app, &tokens(&successor).access).await,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(revocations(&database).await.len(), 1);
+}
+
+#[tokio::test]
+async fn recovery_cannot_restore_a_logged_out_remotely_revoked_or_password_changed_session() {
+    let database = start_database().await;
+    let app = app(&database);
+    for scenario in ["logout", "remote", "password"] {
+        let saved = register(&app, scenario).await;
+        let other = login(&app, scenario, FIREFOX_UA, "NL").await;
+        let id = uuid::Uuid::new_v4();
+        let (status, response) = recoverable_refresh(&app, &saved.refresh, id).await;
+        assert_eq!(status, StatusCode::OK);
+        let successor = tokens(&response);
+        let session_id = current_id(&sessions(&app, &successor.access).await);
+        let status =
+            match scenario {
+                "logout" => {
+                    call(
+                        &app,
+                        Method::POST,
+                        "/api/v1/auth/logout",
+                        &successor.access,
+                        None,
+                    )
+                    .await
+                    .0
+                }
+                "remote" => delete_session(&app, &other.access, &session_id).await.0,
+                _ => call(
+                    &app,
+                    Method::PATCH,
+                    "/api/v1/users/@me",
+                    &other.access,
+                    Some(
+                        json!({ "password": PASSWORD, "new_password": "the-new-long-passphrase" }),
+                    ),
+                )
+                .await
+                .0,
+            };
+        assert!(status.is_success(), "{scenario}: {status}");
+        assert_eq!(
+            recoverable_refresh(&app, &saved.refresh, id).await.0,
+            StatusCode::UNAUTHORIZED,
+            "{scenario}"
+        );
+        assert_eq!(
+            status_of(&app, &successor.access).await,
+            StatusCode::UNAUTHORIZED,
+            "{scenario}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn refresh_retry_and_logout_cannot_commit_a_live_session_after_revocation() {
+    let database = start_database().await;
+    let app = app(&database);
+    for index in 0..8 {
+        let saved = register(&app, &format!("retryrace{index}")).await;
+        let id = uuid::Uuid::new_v4();
+        let (status, response) = recoverable_refresh(&app, &saved.refresh, id).await;
+        assert_eq!(status, StatusCode::OK);
+        let successor = tokens(&response);
+        let (retry, logout) = tokio::join!(
+            recoverable_refresh(&app, &saved.refresh, id),
+            call(
+                &app,
+                Method::POST,
+                "/api/v1/auth/logout",
+                &successor.access,
+                None
+            ),
+        );
+        assert!(retry.0 == StatusCode::OK || retry.0 == StatusCode::UNAUTHORIZED);
+        assert_eq!(logout.0, StatusCode::NO_CONTENT);
+        assert_eq!(
+            status_of(&app, &successor.access).await,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            recoverable_refresh(&app, &saved.refresh, id).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert_eq!(revocations(&database).await.len(), 8);
+}
+
+#[tokio::test]
 async fn lists_live_sessions_with_client_details_and_marks_the_current_one() {
     let database = start_database().await;
     let app = app(&database);
