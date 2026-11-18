@@ -6,6 +6,7 @@
 
 pub mod envelope;
 pub mod errors;
+pub mod integrations;
 pub mod internal;
 pub mod objects;
 pub mod passkeys;

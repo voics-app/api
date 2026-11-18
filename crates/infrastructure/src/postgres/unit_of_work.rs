@@ -2,6 +2,7 @@
 //! events in the outbox within the same transaction (P6).
 
 mod applications;
+mod authorizations;
 mod devices;
 mod guilds;
 mod identity;
@@ -81,6 +82,18 @@ impl UnitOfWork for PgUnitOfWork {
                 committed = DomainEvent::MemberUpdate(
                     super::guilds::committed_member(conn, &profile.member).await?,
                 );
+                &committed
+            } else if let DomainEvent::RoleUpdate(role) = event {
+                let row: Option<super::guilds::RoleRow> = sqlx::query_as(&format!(
+                    "SELECT {} FROM roles WHERE id = $1",
+                    super::guilds::ROLE_COLUMNS
+                ))
+                .bind(role.id.as_i64())
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(db)?;
+                let Some(row) = row else { continue };
+                committed = DomainEvent::RoleUpdate(row.into());
                 &committed
             } else {
                 event
@@ -169,6 +182,16 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertRole(role) | Mutation::UpdateRole(role) => {
             guilds::upsert_role(conn, role).await
         }
+        Mutation::ShiftRolesForBot { guild_id } => {
+            sqlx::query(
+                "UPDATE roles SET position = position + 1 WHERE guild_id = $1 AND id <> $1",
+            )
+            .bind(guild_id.as_i64())
+            .execute(conn)
+            .await
+            .map_err(db)?;
+            Ok(())
+        }
         Mutation::DeleteRole { guild_id, role_id } => {
             guilds::delete_role(conn, *guild_id, *role_id).await
         }
@@ -239,8 +262,48 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             state,
             original_message_id,
         } => applications::update_interaction(conn, *id, *state, *original_message_id).await,
-        Mutation::InsertWebhook(webhook) | Mutation::UpdateWebhook(webhook) => {
-            applications::upsert_webhook(conn, webhook).await
+        Mutation::InsertWebhook(webhook) => applications::insert_webhook(conn, webhook).await,
+        Mutation::GuardApplicationInstallation {
+            guild_id,
+            application_id,
+            bot_user_id,
+            expected_generation,
+            expected_revision,
+        } => {
+            authorizations::guard(
+                conn,
+                *guild_id,
+                *application_id,
+                *bot_user_id,
+                *expected_generation,
+                *expected_revision,
+            )
+            .await
+        }
+        Mutation::RegisterApplicationInstallation {
+            guild_id,
+            application_id,
+            bot_user_id,
+            installed_at,
+        } => {
+            authorizations::register(
+                conn,
+                *guild_id,
+                *application_id,
+                *bot_user_id,
+                *installed_at,
+            )
+            .await
+        }
+        Mutation::RecordBotConsent(consent) => authorizations::consent(conn, consent).await,
+        Mutation::RevokeBotConsent { id, user_id } => {
+            authorizations::revoke(conn, *id, *user_id).await
+        }
+        Mutation::UpdateWebhook { id, patch } => {
+            applications::update_webhook(conn, *id, patch).await
+        }
+        Mutation::SetWebhookToken { id, token_hash } => {
+            applications::set_webhook_token(conn, *id, token_hash).await
         }
         Mutation::DeleteWebhook(webhook_id) => {
             applications::delete_webhook(conn, *webhook_id).await
