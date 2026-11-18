@@ -8,7 +8,7 @@ fn channel_report(w: &World) -> Value {
 async fn channel_reports_snapshot_only_server_metadata_without_message_history() {
     let database = start_database().await;
     let w = world(&database, None).await;
-    let (status, _) = call(
+    let (status, channel) = call(
         &w.app,
         Method::PATCH,
         &format!("/api/v1/channels/{}", w.channel_id),
@@ -17,6 +17,10 @@ async fn channel_reports_snapshot_only_server_metadata_without_message_history()
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    assert!(
+        channel["parent_id"].is_string(),
+        "the default text channel belongs to a category"
+    );
     let (status, _) = call(
         &w.app,
         Method::PUT,
@@ -49,7 +53,7 @@ async fn channel_reports_snapshot_only_server_metadata_without_message_history()
     let metadata: Value = serde_json::from_str(report["content"].as_str().unwrap()).unwrap();
     assert_eq!(
         metadata,
-        json!({"id": w.channel_id, "guild_id": w.guild_id, "parent_id": null, "name": "sensitive-原文", "type": 0, "nsfw": true})
+        json!({"id": w.channel_id, "guild_id": w.guild_id, "parent_id": channel["parent_id"], "name": "sensitive-原文", "type": 0, "nsfw": true})
     );
     assert_eq!(
         w.messages
