@@ -3,8 +3,8 @@ use chrono::{DateTime, Utc};
 use sqlx::{FromRow, Row};
 use uuid::Uuid;
 
-use application::ports::{ActiveSession, RotateOutcome, Session, SessionRepository};
-use application::AppResult;
+use application::ports::{ActiveSession, RefreshReplay, RotateOutcome, Session, SessionRepository};
+use application::{AppError, AppResult};
 use domain::session::ClientInfo;
 use domain::Snowflake;
 
@@ -42,6 +42,15 @@ impl From<SessionRow> for Session {
 
 const SESSION_COLUMNS: &str =
     "id, user_id, device_id, client, os, location, created_at, last_used_at, revoked_at";
+
+#[derive(FromRow)]
+struct RefreshTokenRow {
+    session_id: Uuid,
+    expires_at: DateTime<Utc>,
+    rotated_at: Option<DateTime<Utc>>,
+    rotation_request_hash: Option<String>,
+    successor_hash: Option<String>,
+}
 
 #[async_trait]
 impl SessionRepository for PgStore {
@@ -83,18 +92,21 @@ impl SessionRepository for PgStore {
         new_hash: &str,
         expires_at: DateTime<Utc>,
         now: DateTime<Utc>,
+        replay: Option<&RefreshReplay>,
     ) -> AppResult<RotateOutcome> {
         let mut tx = self.pool.begin().await.map_err(db)?;
-        let token: Option<(Uuid, DateTime<Utc>, Option<DateTime<Utc>>)> = sqlx::query_as(
-            "SELECT session_id, expires_at, rotated_at FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE",
+        let token: Option<RefreshTokenRow> = sqlx::query_as(
+            "SELECT session_id, expires_at, rotated_at, rotation_request_hash, successor_hash \
+             FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE",
         )
         .bind(old_hash)
         .fetch_optional(&mut *tx)
         .await
         .map_err(db)?;
-        let Some((session_id, token_expires_at, rotated_at)) = token else {
+        let Some(token) = token else {
             return Ok(RotateOutcome::Invalid);
         };
+        let session_id = token.session_id;
         let sql = format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id = $1 FOR UPDATE");
         let row: SessionRow = sqlx::query_as(&sql)
             .bind(session_id)
@@ -105,7 +117,36 @@ impl SessionRepository for PgStore {
         if session.revoked_at.is_some() {
             return Ok(RotateOutcome::Invalid);
         }
-        if rotated_at.is_some() {
+        if let Some(rotated_at) = token.rotated_at {
+            if replay
+                .filter(|replay| {
+                    rotated_at >= replay.earliest_rotation
+                        && rotated_at <= now
+                        && token.expires_at > now
+                        && token.rotation_request_hash.as_deref()
+                            == Some(replay.request_hash.as_str())
+                        && token.successor_hash.as_deref() == Some(new_hash)
+                })
+                .is_some()
+            {
+                // The session lock serializes all rotations and revocations.
+                // Do not lock the successor token here: another rotation may
+                // already hold it while waiting for this same session lock.
+                let usable: bool = sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT 1 FROM refresh_tokens WHERE token_hash = $1 \
+                     AND session_id = $2 AND rotated_at IS NULL AND expires_at > $3)",
+                )
+                .bind(new_hash)
+                .bind(session_id)
+                .bind(now)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db)?;
+                if usable {
+                    tx.commit().await.map_err(db)?;
+                    return Ok(RotateOutcome::Rotated(session));
+                }
+            }
             sqlx::query("UPDATE sessions SET revoked_at = $2 WHERE id = $1")
                 .bind(session_id)
                 .bind(now)
@@ -117,12 +158,14 @@ impl SessionRepository for PgStore {
             session.revoked_at = Some(now);
             return Ok(RotateOutcome::ReuseDetected(session));
         }
-        if token_expires_at <= now {
+        if token.expires_at <= now {
             return Ok(RotateOutcome::Invalid);
         }
-        sqlx::query("UPDATE refresh_tokens SET rotated_at = $2 WHERE token_hash = $1")
+        sqlx::query("UPDATE refresh_tokens SET rotated_at = $2, rotation_request_hash = $3, successor_hash = $4 WHERE token_hash = $1")
             .bind(old_hash)
             .bind(now)
+            .bind(replay.map(|r| r.request_hash.as_str()))
+            .bind(replay.map(|_| new_hash))
             .execute(&mut *tx)
             .await
             .map_err(db)?;
@@ -240,13 +283,37 @@ impl SessionRepository for PgStore {
     }
 
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()> {
-        sqlx::query("UPDATE sessions SET device_id = $2 WHERE id = $1")
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let user_id: Option<i64> = sqlx::query_scalar("SELECT user_id FROM sessions WHERE id = $1")
             .bind(id)
-            .bind(device_id.as_i64())
-            .execute(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(db)?;
-        Ok(())
+        let user_id = user_id.ok_or(AppError::Unauthorized)?;
+        super::push_tokens::lock_user(&mut tx, sf(user_id)).await?;
+        let changed = sqlx::query(
+            "UPDATE sessions SET device_id = $2 WHERE id = $1 AND revoked_at IS NULL \
+             AND EXISTS (SELECT 1 FROM devices WHERE id = $2 AND user_id = $3)",
+        )
+        .bind(id)
+        .bind(device_id.as_i64())
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        if changed.rows_affected() == 0 {
+            return Err(AppError::Unauthorized);
+        }
+        // Push can be registered before E2EE startup finishes. Move its device
+        // association with the session so old-device removal cannot remove a
+        // token that already belongs to a replacement device.
+        sqlx::query("UPDATE push_tokens SET device_id = $2 WHERE session_id = $1")
+            .bind(id)
+            .bind(device_id.as_i64())
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        tx.commit().await.map_err(db)
     }
 
     async fn live_device_ids(

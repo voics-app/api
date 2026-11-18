@@ -102,7 +102,8 @@ async fn refresh_tokens(
     State(state): State<AppState>,
     Body(body): Body<RefreshRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
-    let tokens = refresh::execute(&state.ports, &body.refresh_token).await?;
+    let tokens =
+        refresh::execute_with_recovery(&state.ports, &body.refresh_token, body.request_id).await?;
     Ok(Json(to_response(&state, tokens).await?))
 }
 

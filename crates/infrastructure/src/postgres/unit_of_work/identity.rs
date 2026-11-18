@@ -255,6 +255,7 @@ pub(super) async fn suspend_user(
 }
 
 pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -> AppResult<()> {
+    crate::postgres::community::check_update(conn, channel).await?;
     sqlx::query(
         "INSERT INTO channels (id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
              rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at) \
@@ -332,6 +333,7 @@ pub(super) async fn delete_channel(
     conn: &mut PgConnection,
     channel_id: Snowflake,
 ) -> AppResult<()> {
+    crate::postgres::community::check_delete(conn, channel_id).await?;
     sqlx::query("DELETE FROM channels WHERE id = $1")
         .bind(channel_id.as_i64())
         .execute(conn)

@@ -151,6 +151,10 @@ pub enum Mutation {
         guild_id: Snowflake,
         policy: domain::audit_policy::AuditPolicy,
     },
+    SetCommunity {
+        guild_id: Snowflake,
+        channels: Option<domain::guild::CommunityChannels>,
+    },
 
     InsertApplication(Application),
     UpdateApplication(Application),

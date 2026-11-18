@@ -335,6 +335,7 @@ pub fn instantiate_with_ids(
         splash: None,
         prune_admin_only: false,
         audit_policy: Default::default(),
+        community: None,
         created_at: now,
     };
     Ok(Instantiated {
@@ -993,6 +994,7 @@ mod tests {
         channels.push(thread);
 
         let captured = capture(&made.guild, &roles, &channels);
+        assert_eq!(captured, capture(&made.guild, &made.roles, &made.channels));
         assert_eq!(captured.roles.len(), source.roles.len(), "bot role dropped");
         assert_eq!(
             captured.channels.len(),

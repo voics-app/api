@@ -41,6 +41,32 @@ Integration tests start throwaway containers with testcontainers (Postgres 16, R
 
 ## Community settings
 
+`PATCH /guilds/{id}` accepts `features:["COMMUNITY"]` with `rules_channel_id`
+and `public_updates_channel_id` (requires `MANAGE_GUILD`). Both must be
+non-age-restricted Standard text/announcement channels in this guild; one channel
+may serve both purposes. Configured channels cannot be deleted, made NSFW or
+switched to ephemeral/P2P delivery until replaced or Community is disabled.
+`features:[]` clears the pair and removes the discovery listing transactionally.
+Ordinary guild updates preserve the pair; Community changes and channel writes
+serialize on the guild row. Migration 0052 adds the channel pair and deferred FKs.
+
+Discovery requires Community in addition to a description of at least 10
+characters, the configured age/member thresholds and no NSFW channels. Existing
+listing rows without Community become hidden at rollout. After explicitly
+disabling Community, re-enabling does not automatically list the server again.
+Search, join and report requests all check eligibility.
+
+`POST /discovery/guilds/{id}/reports` accepts a report category and optional note
+(500 characters). Only public listings can be reported by signed-in users;
+owners cannot report their own listing. The existing 10/hour reporter limit and
+duplicate-open-report behavior apply. Migration 0053 adds report kind `guild`.
+The admin queue receives public name/description/category/tags, guild ID and the
+owner at filing. No private channel/member/message data is copied. Resolving a
+report does not automatically delist the server. See the central
+[discovery specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-03-server-discovery.md).
+No new configuration or infrastructure is needed. Membership screening remains
+a separate feature; Community setup does not implement api#40.
+
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or
 `{"code":null}`. Codes use 2–32 ASCII letters, digits or hyphens and resolve
@@ -59,6 +85,16 @@ worker deletes expired entries and their outbox copies at startup and hourly,
 including in disabled guilds. The default 90-day retention also applies to
 existing entries on rollout. Migration 0050 adds permanent invites; 0051 adds
 audit policy. No new configuration or secret is needed.
+
+## Server templates
+
+`GET /guilds/templates/{code}` is a public, rate-limited preview of the saved
+template. Creating from it still requires a signed-in user; managing a guild's
+template requires `MANAGE_GUILD`. The five built-ins create their full roles,
+channels and overwrites. `is_dirty` reports differences from the current
+template-visible guild structure, while previews and creation keep using the
+saved snapshot until explicit sync. Duplicate creation, including a database
+race, returns error `30031`. No migration or new environment variable is needed.
 
 ## Configuration
 
@@ -99,6 +135,38 @@ All configuration comes from environment variables, validated at startup. Missin
 
 Push (mobile): `POST /api/v1/users/@me/devices/push` with `{platform: "apns"|"fcm", token, environment?: "production"|"sandbox", previews?: bool, only_mentions?: bool}` stores the calling session's token (call it on every start to refresh); `DELETE` on the same path removes it. VoIP (iPhone calls): `POST /api/v1/users/@me/devices/voip` with `{token, environment?: "production"|"sandbox"}` stores the calling session's PushKit token (call it every time PushKit reports it); `DELETE` on the same path removes it. It is separate from the notification token and works when notifications are off. Internal, for the notifier: `GET /internal/v1/channels/{id}/push-targets?author_id=` (each target also lists `voip_tokens`) and `DELETE /internal/v1/push-tokens` (removes the token from both tables). For manual pushes from the admin portal: `GET /internal/v1/users/{id}/push-tokens` and `GET /internal/v1/push-tokens?after=&limit=` (live notification tokens of one user, or a page of all users; `next_after` continues).
 
+Token registration may finish before E2EE device registration. Binding a session to a device moves
+its existing notification token too. Removing, evicting or pruning that device atomically removes
+both notification and PushKit tokens for its bound sessions, unbinds those sessions and deletes the
+device with its update event; other devices keep their tokens. The session remains signed in and
+may register a fresh token later. Tokens never registered against a device still expire through the
+token-age prune or session logout. A delayed registration rechecks and locks the live session inside
+its database transaction, so it cannot restore tokens after logout. Device binding/removal and token
+writes serialize per user through a transaction-scoped advisory lock, acquired before session locks;
+the token write uses the session's current device rather than an earlier request snapshot.
+
+`cargo test -p infrastructure --test http_push_lifecycle` covers registration order, device pruning,
+device replacement, delayed/concurrent logout and cleanup rollback with disposable PostgreSQL.
+These tests do not claim real APNs/FCM/PushKit delivery on a device.
+
+Mention-policy directory: `GET /internal/v1/channels/{id}/notification-recipients?author_id=...`
+requires `X-Internal-Token` and returns current permitted viewers independently of mobile tokens.
+Each recipient has `user_id`, `role_ids`, `online`, resolved `level` (0/1/2), `muted`,
+`suppress_everyone` and `suppress_roles`; device/token data is absent. The response also carries
+`channel_id`, `guild_id`, `delivery_mode`, `evaluated_at` and `next_after`.
+`limit` is 1–200 (default100) candidates examined, ordered by user ID. Continue with
+`after=next_after` until null, even after an empty page caused by author/permission filtering.
+Guild membership queries read at most `limit+1` profiles. Threads inherit parent access;
+private-thread access follows the existing creator/manager rules. Ephemeral/P2P delivery returns
+an empty terminal page. Each page resolves current policy and mute expiry independently; it is
+not a historical or cross-page snapshot. Lookup failure returns an error, never an unfiltered
+audience. Push delivery and this endpoint share the same preference resolver.
+
+This endpoint is a prerequisite for messages#23. It does not itself change stored mention counts,
+ACK behavior, silent-message semantics or counter idempotence. Those remain messages-service work.
+`cargo test -p infrastructure --test http_notification_recipients` exercises the actual route with
+disposable PostgreSQL, including users without tokens, pagination, permissions, mutes and privacy.
+
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
 
 API and messages reserve non-overlapping timestamp intervals before generating IDs. Readiness
@@ -114,6 +182,22 @@ replica capacity, legacy rollout preflight, failure behavior and the mandatory r
 - The `.env.example` JWT keys are dev-only and public; production keys must be generated per environment.
 
 ## Session revocation guarantees
+
+`POST /auth/refresh` accepts an optional `request_id` UUID for crash recovery.
+Clients must persist a random UUID with the current refresh token before sending,
+reuse that pair after response loss, and remove the UUID only after saving the
+successor credentials. For five minutes after a committed rotation, identical
+requests recover its immediate unused, unexpired successor in a live session.
+The original token must also remain unexpired. Retries neither create token
+branches nor extend expiry or last-used time. Legacy requests without a UUID,
+mismatched IDs, expired windows and used successors keep strict reuse detection.
+Logout, remote revocation and password changes cannot be undone by a retry.
+
+Migration 0080 stores only the request UUID hash and successor token hash. The
+successor is derived with HMAC-SHA256 from the previous bearer token, a fixed
+purpose label and the UUID; plaintext tokens and request IDs are never stored or
+logged. No new server secret or configuration is required. Roll out the API and
+migration before clients depend on recovery; older clients remain compatible.
 
 Access tokens continue to use Ed25519/EdDSA with `jsonwebtoken` 12. Its RustCrypto dependency chain
 uses `elliptic-curve` 0.14 and `crypto-bigint` 0.7, so the former RUSTSEC-2026-0387 exception is removed.

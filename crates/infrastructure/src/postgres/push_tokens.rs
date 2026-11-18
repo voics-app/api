@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::FromRow;
+use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
 use application::ports::PushTokenRepository;
@@ -13,6 +13,41 @@ use domain::Snowflake;
 use super::convert::{raw_ids, sf, sf_opt};
 use super::error::db;
 use super::PgStore;
+
+/// Device binding/removal and token writes take this lock before any session
+/// row lock. It closes the gap between finding bound sessions and deleting a
+/// device, including tokens registered before the session acquired a device.
+/// The namespace is separate from other advisory-lock uses; a hash collision
+/// only serializes unrelated users and cannot grant access to their records.
+pub(super) async fn lock_user(conn: &mut PgConnection, user_id: Snowflake) -> AppResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('push-device:' || $1::text, 0))")
+        .bind(user_id.as_i64())
+        .execute(conn)
+        .await
+        .map_err(db)?;
+    Ok(())
+}
+
+/// Recheck authorization inside the write transaction. Revocation updates the
+/// same session row before deleting its tokens, so no late registration can
+/// recreate a token after logout has committed.
+async fn lock_live_session(
+    conn: &mut PgConnection,
+    session_id: Uuid,
+    user_id: Snowflake,
+) -> AppResult<Option<i64>> {
+    lock_user(conn, user_id).await?;
+    let row: Option<(Option<i64>,)> = sqlx::query_as(
+        "SELECT device_id FROM sessions WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL FOR UPDATE",
+    )
+    .bind(session_id)
+    .bind(user_id.as_i64())
+    .fetch_optional(conn)
+    .await
+    .map_err(db)?;
+    row.map(|(device_id,)| device_id)
+        .ok_or(AppError::Unauthorized)
+}
 
 #[derive(FromRow)]
 struct PushTokenRow {
@@ -79,6 +114,7 @@ impl TryFrom<VoipTokenRow> for VoipToken {
 impl PushTokenRepository for PgStore {
     async fn upsert(&self, token: &PushToken) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
+        let device_id = lock_live_session(&mut tx, token.session_id, token.user_id).await?;
         // A provider token belongs to one installation: it moves to this session.
         sqlx::query(
             "DELETE FROM push_tokens WHERE platform = $1 AND token = $2 AND session_id <> $3",
@@ -101,7 +137,7 @@ impl PushTokenRepository for PgStore {
         )
         .bind(token.session_id)
         .bind(token.user_id.as_i64())
-        .bind(token.device_id.map(|id| id.as_i64()))
+        .bind(device_id)
         .bind(token.platform.as_str())
         .bind(&token.token)
         .bind(token.environment.as_str())
@@ -214,6 +250,7 @@ impl PushTokenRepository for PgStore {
 
     async fn upsert_voip(&self, token: &VoipToken) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(db)?;
+        lock_live_session(&mut tx, token.session_id, token.user_id).await?;
         // A PushKit token belongs to one installation: it moves to this session.
         sqlx::query("DELETE FROM voip_tokens WHERE token = $1 AND session_id <> $2")
             .bind(&token.token)

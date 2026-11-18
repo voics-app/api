@@ -113,6 +113,14 @@ pub enum RotateOutcome {
     Invalid,
 }
 
+/// Only an identical request may recover the immediate, unused successor, and
+/// only within this bounded interval. Repository implementations must not extend
+/// the successor's expiry during recovery or store either plaintext credential.
+pub struct RefreshReplay {
+    pub request_hash: String,
+    pub earliest_rotation: DateTime<Utc>,
+}
+
 #[async_trait]
 /// Session revocation, including refresh-token reuse, atomically removes the session's
 /// notification/VoIP tokens and durably queues `SESSION_REVOKE` for the gateway.
@@ -131,6 +139,7 @@ pub trait SessionRepository: Send + Sync {
         new_hash: &str,
         expires_at: DateTime<Utc>,
         now: DateTime<Utc>,
+        replay: Option<&RefreshReplay>,
     ) -> AppResult<RotateOutcome>;
     async fn find(&self, id: Uuid) -> AppResult<Option<Session>>;
     async fn revoke(&self, id: Uuid, now: DateTime<Utc>) -> AppResult<()>;
@@ -154,6 +163,8 @@ pub trait SessionRepository: Send + Sync {
         user_id: Snowflake,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<ActiveSession>>;
+    /// Binds a live session to its owner's device and moves any already registered
+    /// notification token with it, atomically with respect to token writes/removal.
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()>;
     /// Devices of `user_id` that a session bound to them still holds: not
     /// revoked, and with an unrotated refresh token that has not expired.
@@ -388,6 +399,8 @@ pub trait PushTokenRepository: Send + Sync {
     /// Stores the session's token. It replaces the session's previous token and any other row
     /// holding the same provider token (the installation moved to this session), and the
     /// user's least recently refreshed tokens beyond the per-user limit are dropped.
+    /// The write must revalidate/lock the live session and use its current device;
+    /// a prior authorization or device snapshot may have raced logout/rebinding.
     async fn upsert(&self, token: &PushToken) -> AppResult<()>;
     /// Removes the session's token; `false` when it had none.
     async fn delete_for_session(&self, session_id: Uuid) -> AppResult<bool>;
@@ -411,7 +424,7 @@ pub trait PushTokenRepository: Send + Sync {
     // `delete_stale` remove them too.
 
     /// Stores the session's VoIP token, replacing its previous one and any other row holding the
-    /// same token.
+    /// same token. Revalidates/locks the live session in the write transaction.
     async fn upsert_voip(&self, token: &VoipToken) -> AppResult<()>;
     /// Removes only the session's VoIP token; `false` when it had none.
     async fn delete_voip_for_session(&self, session_id: Uuid) -> AppResult<bool>;

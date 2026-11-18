@@ -29,6 +29,9 @@ pub struct LoginRequest {
 #[derive(Debug, Deserialize)]
 pub struct RefreshRequest {
     pub refresh_token: String,
+    /// Persisted before the request. Reusing it can recover a lost rotation response.
+    #[serde(default)]
+    pub request_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -246,6 +249,12 @@ pub struct CreateGuildRequest {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyGuildRequest {
+    #[serde(default)]
+    pub features: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub rules_channel_id: Option<Option<Id>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub public_updates_channel_id: Option<Option<Id>>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
