@@ -16,6 +16,16 @@ See [the profile specification](https://github.com/discordy-voics/docs/blob/feat
 
 ## Run locally
 
+Age-restricted background notifications (client#76): the internal channel push-targets
+endpoint follows the channel's parent chain. Restricted or incomplete context forces
+the existing token `previews` response field to false; session-local Continue never
+enables background content previews. Accounts with persisted
+`preferences.hide_age_restricted_channels: true` receive no restricted-channel push
+target. Ordinary channels retain their registered preview preference. This policy
+does not rewrite device tokens or require a notifier DTO change. Preference writes
+are the separate API #151 companion. HTTP regressions live in
+`crates/infrastructure/tests/http_push_tokens/age_restricted.rs`.
+
 Prerequisites: Rust 1.99, Docker (for integration tests and local dependencies), and the C compiler,
 Perl and Make required by vendored OpenSSL. On Windows use the MSVC toolchain with Strawberry
 Perl (`OPENSSL_SRC_PERL` can point to a portable Perl executable). The Docker build installs its
