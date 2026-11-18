@@ -114,6 +114,9 @@ pub enum RotateOutcome {
 }
 
 #[async_trait]
+/// Session revocation, including refresh-token reuse, atomically removes the session's
+/// notification/VoIP tokens and durably queues `SESSION_REVOKE` for the gateway.
+/// A failed commit must leave all three unchanged so a retry cannot miss a disconnect.
 pub trait SessionRepository: Send + Sync {
     async fn create(
         &self,

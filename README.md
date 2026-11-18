@@ -94,6 +94,21 @@ Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_request
 - Redpanda topics listed in `contracts::envelope::API_TOPICS` are created by the compose init container and the cluster, not by api.
 - The `.env.example` JWT keys are dev-only and public; production keys must be generated per environment.
 
+## Session revocation guarantees
+
+Access tokens continue to use Ed25519/EdDSA with `jsonwebtoken` 12. Its RustCrypto dependency chain
+uses `elliptic-curve` 0.14 and `crypto-bigint` 0.7, so the former RUSTSEC-2026-0387 exception is removed.
+
+Logout, remote logout, logout-all, suspension and refresh-token reuse persist the revoked session,
+remove notification/VoIP tokens, and queue `SESSION_REVOKE` in the same Postgres transaction. An
+outbox failure rolls the revocation back so retrying can still notify connected gateways. Device
+cleanup follows the commit; a surviving session keeps its shared E2EE device.
+
+`cargo test -p infrastructure --test http_sessions` covers a failed outbox write, replay of a rotated
+token, and concurrent refresh versus logout-all, using isolated Postgres containers. The historical
+one-off failure in api#121 did not reproduce in 12 repetitions with CPU pressure; it is not assumed
+to have the same cause as these separately reproduced security defects.
+
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.

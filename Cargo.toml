@@ -26,7 +26,7 @@ hex = "0.4"
 hmac = "0.12"
 http = "1"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
-jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "rust_crypto"] }
+jsonwebtoken = { version = "12", default-features = false, features = ["use_pem", "rust_crypto"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false }
 opentelemetry = "0.27"

@@ -2,7 +2,6 @@ use uuid::Uuid;
 
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Resource};
-use crate::support::sessions::announce_revoked;
 use crate::use_cases::devices::delete_device;
 
 /// `DELETE /users/@me/sessions/{id}`: revokes one of the caller's other live
@@ -25,6 +24,5 @@ pub async fn execute(ports: &Ports, actor: &Actor, session_id: Uuid) -> AppResul
         .ok_or(AppError::NotFound(Resource::Session))?;
     let now = ports.clock.now();
     ports.sessions.revoke(session.id, now).await?;
-    delete_device::remove_if_unheld(ports, actor.user_id, session.device_id, now).await?;
-    announce_revoked(ports, actor.user_id, vec![session.id]).await
+    delete_device::remove_if_unheld(ports, actor.user_id, session.device_id, now).await
 }

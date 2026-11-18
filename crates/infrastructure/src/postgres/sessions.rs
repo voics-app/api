@@ -10,6 +10,7 @@ use domain::Snowflake;
 
 use super::convert::{sf, sf_opt};
 use super::error::db;
+use super::session_revocation;
 use super::PgStore;
 
 #[derive(FromRow)]
@@ -111,6 +112,7 @@ impl SessionRepository for PgStore {
                 .execute(&mut *tx)
                 .await
                 .map_err(db)?;
+            session_revocation::record(&mut tx, session.user_id, &[session_id], now).await?;
             tx.commit().await.map_err(db)?;
             session.revoked_at = Some(now);
             return Ok(RotateOutcome::ReuseDetected(session));
@@ -155,13 +157,19 @@ impl SessionRepository for PgStore {
     }
 
     async fn revoke(&self, id: Uuid, now: DateTime<Utc>) -> AppResult<()> {
-        sqlx::query("UPDATE sessions SET revoked_at = COALESCE(revoked_at, $2) WHERE id = $1")
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let user: Option<i64> = sqlx::query_scalar(
+            "UPDATE sessions SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL RETURNING user_id",
+        )
             .bind(id)
             .bind(now)
-            .execute(&self.pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(db)?;
-        Ok(())
+        if let Some(user_id) = user {
+            session_revocation::record(&mut tx, sf(user_id), &[id], now).await?;
+        }
+        tx.commit().await.map_err(db)
     }
 
     async fn revoke_all_for_user(
@@ -169,15 +177,19 @@ impl SessionRepository for PgStore {
         user_id: Snowflake,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<Uuid>> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
         let rows: Vec<(Uuid,)> = sqlx::query_as(
             "UPDATE sessions SET revoked_at = $2 WHERE user_id = $1 AND revoked_at IS NULL RETURNING id",
         )
         .bind(user_id.as_i64())
         .bind(now)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(db)?;
-        Ok(rows.into_iter().map(|(id,)| id).collect())
+        let ids: Vec<_> = rows.into_iter().map(|(id,)| id).collect();
+        session_revocation::record(&mut tx, user_id, &ids, now).await?;
+        tx.commit().await.map_err(db)?;
+        Ok(ids)
     }
 
     async fn revoke_others(
@@ -186,16 +198,20 @@ impl SessionRepository for PgStore {
         keep: Uuid,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<Uuid>> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
         let rows: Vec<(Uuid,)> = sqlx::query_as(
             "UPDATE sessions SET revoked_at = $3              WHERE user_id = $1 AND id <> $2 AND revoked_at IS NULL RETURNING id",
         )
         .bind(user_id.as_i64())
         .bind(keep)
         .bind(now)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(db)?;
-        Ok(rows.into_iter().map(|(id,)| id).collect())
+        let ids: Vec<_> = rows.into_iter().map(|(id,)| id).collect();
+        session_revocation::record(&mut tx, user_id, &ids, now).await?;
+        tx.commit().await.map_err(db)?;
+        Ok(ids)
     }
 
     async fn list_active(
