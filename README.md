@@ -113,6 +113,24 @@ the token write uses the session's current device rather than an earlier request
 device replacement, delayed/concurrent logout and cleanup rollback with disposable PostgreSQL.
 These tests do not claim real APNs/FCM/PushKit delivery on a device.
 
+Mention-policy directory: `GET /internal/v1/channels/{id}/notification-recipients?author_id=...`
+requires `X-Internal-Token` and returns current permitted viewers independently of mobile tokens.
+Each recipient has `user_id`, `role_ids`, `online`, resolved `level` (0/1/2), `muted`,
+`suppress_everyone` and `suppress_roles`; device/token data is absent. The response also carries
+`channel_id`, `guild_id`, `delivery_mode`, `evaluated_at` and `next_after`.
+`limit` is 1–200 (default100) candidates examined, ordered by user ID. Continue with
+`after=next_after` until null, even after an empty page caused by author/permission filtering.
+Guild membership queries read at most `limit+1` profiles. Threads inherit parent access;
+private-thread access follows the existing creator/manager rules. Ephemeral/P2P delivery returns
+an empty terminal page. Each page resolves current policy and mute expiry independently; it is
+not a historical or cross-page snapshot. Lookup failure returns an error, never an unfiltered
+audience. Push delivery and this endpoint share the same preference resolver.
+
+This endpoint is a prerequisite for messages#23. It does not itself change stored mention counts,
+ACK behavior, silent-message semantics or counter idempotence. Those remain messages-service work.
+`cargo test -p infrastructure --test http_notification_recipients` exercises the actual route with
+disposable PostgreSQL, including users without tokens, pagination, permissions, mutes and privacy.
+
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
 
 API and messages reserve non-overlapping timestamp intervals before generating IDs. Readiness
