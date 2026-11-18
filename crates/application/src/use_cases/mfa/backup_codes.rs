@@ -23,7 +23,7 @@ pub async fn execute(
 ) -> AppResult<Vec<BackupCodeView>> {
     actor.require_user()?;
     let credentials = confirm_password(ports, actor.user_id, password).await?;
-    if credentials.totp_secret.is_none() {
+    if credentials.totp_secret.is_none() && ports.passkeys.list(actor.user_id).await?.is_empty() {
         return Err(mfa_not_enabled());
     }
     if !regenerate {

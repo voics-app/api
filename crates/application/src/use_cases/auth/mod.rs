@@ -9,3 +9,4 @@ pub mod resend_verification;
 pub mod reset_password;
 pub mod tokens;
 pub mod verify_email;
+pub mod webauthn;

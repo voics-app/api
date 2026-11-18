@@ -5,3 +5,4 @@ pub mod jwt;
 pub mod password;
 pub mod secrets;
 pub mod totp;
+pub mod webauthn;

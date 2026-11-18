@@ -111,6 +111,8 @@ pub struct Ports {
     pub ids: Arc<dyn IdGenerator>,
     pub secrets: Arc<dyn SecretGenerator>,
     pub totp: Arc<dyn TotpVerifier>,
+    pub passkeys: Arc<dyn PasskeyRepository>,
+    pub webauthn: Option<Arc<dyn WebauthnVerifier>>,
     pub mailer: Arc<dyn Mailer>,
     /// Per-user and per-address throttles inside use cases (second-factor
     /// attempts, outbound mail); the HTTP layer keeps its own limiter.
