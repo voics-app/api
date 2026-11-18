@@ -118,6 +118,7 @@ impl EventPublisher for DiscardEvents {
 /// Records the message bodies api sends to the `messages` service.
 #[derive(Default)]
 pub struct RecordingMessages {
+    pub get_calls: std::sync::atomic::AtomicUsize,
     pub bodies: std::sync::Mutex<Vec<serde_json::Value>>,
     /// The channel each recorded body was posted to.
     pub channels: std::sync::Mutex<Vec<domain::Snowflake>>,
@@ -157,6 +158,8 @@ impl MessageService for RecordingMessages {
         channel_id: domain::Snowflake,
         message_id: domain::Snowflake,
     ) -> AppResult<Option<StoredMessage>> {
+        self.get_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let stored = self.stored.lock().unwrap();
         Ok(stored
             .get(&(channel_id, message_id))

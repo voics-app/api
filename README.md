@@ -6,6 +6,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
 ## Run locally
 
+`POST /reports` accepts `target: "channel"` with a guild channel ID, category and
+optional note. The caller must currently be able to view the channel. The report
+captures only server-owned ID, guild ID, parent ID, name, type and NSFW flag, without
+fetching messages or members. The admin queue keeps a distinct channel target and
+owner-at-filing association. Public listing reports retain their existing policy.
+
 Prerequisites: Rust 1.99, Docker (for integration tests and local dependencies), and the C compiler,
 Perl and Make required by vendored OpenSSL. On Windows use the MSVC toolchain with Strawberry
 Perl (`OPENSSL_SRC_PERL` can point to a portable Perl executable). The Docker build installs its
