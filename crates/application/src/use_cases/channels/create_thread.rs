@@ -68,7 +68,7 @@ pub async fn execute(
         ));
     }
     let now = ports.clock.now();
-    let mut thread = Channel::new(ports.ids.next_id(), kind, parent.guild_id, now);
+    let mut thread = Channel::new(ports.ids.next_id()?, kind, parent.guild_id, now);
     apply_name(&mut thread, &input.name)?;
     if let Some(seconds) = input.rate_limit_per_user {
         apply_slowmode(&mut thread, seconds)?;

@@ -72,7 +72,7 @@ pub async fn execute(
     let user = require_user(ports, actor.user_id).await?;
     let token = ports.secrets.token(32);
     let interaction = Interaction {
-        id: ports.ids.next_id(),
+        id: ports.ids.next_id()?,
         application_id: application.id,
         kind,
         guild_id: access.channel.guild_id,

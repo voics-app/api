@@ -109,6 +109,7 @@ pub struct Ports {
     pub tokens: Arc<dyn TokenIssuer>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGenerator>,
+    pub id_reservations: Arc<dyn IdReservations>,
     pub secrets: Arc<dyn SecretGenerator>,
     pub totp: Arc<dyn TotpVerifier>,
     pub passkeys: Arc<dyn PasskeyRepository>,

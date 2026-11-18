@@ -55,22 +55,31 @@ pub async fn execute(
     }
     let owner = require_user(ports, actor.user_id).await?;
     let now = ports.clock.now();
-    let guild_id = ports.ids.next_id();
-    let icon = match input.icon.take() {
-        Some(image) => Some(store_hashed(ports, &format!("icons/{guild_id}"), image).await?),
-        None => None,
-    };
-
+    let guild_id = ports.ids.next_id()?;
     let (mut guild, roles, channels) = match &input.template {
         Some(source) => {
-            let mut reserved = Some(guild_id);
-            let built = template::instantiate(
+            if source.roles.len() > template::MAX_ROLES
+                || source.channels.len() > template::MAX_CHANNELS
+            {
+                return Err(AppError::invalid(
+                    "template",
+                    "TEMPLATE_TOO_LARGE",
+                    "The template is too large",
+                ));
+            }
+            let mut reserved = vec![guild_id];
+            for _ in
+                0..source.roles.iter().filter(|role| role.id != 0).count() + source.channels.len()
+            {
+                reserved.push(ports.ids.next_id()?);
+            }
+            let built = template::instantiate_with_ids(
                 source,
                 &input.name,
                 actor.user_id,
                 input.voice_region.clone(),
                 now,
-                || reserved.take().unwrap_or_else(|| ports.ids.next_id()),
+                reserved.into_iter(),
             )
             .map_err(|e| AppError::BadRequest {
                 code: 50_035,
@@ -78,9 +87,12 @@ pub async fn execute(
             })?;
             (built.guild, built.roles, built.channels)
         }
-        None => default_layout(ports, &input, actor.user_id, guild_id, now),
+        None => default_layout(ports, &input, actor.user_id, guild_id, now)?,
     };
-    guild.icon = icon;
+    guild.icon = match input.icon.take() {
+        Some(image) => Some(store_hashed(ports, &format!("icons/{guild_id}"), image).await?),
+        None => None,
+    };
     let member = Member::new(guild_id, actor.user_id, now);
 
     let snapshot = GuildSnapshot {
@@ -119,18 +131,22 @@ fn default_layout(
     owner_id: domain::Snowflake,
     guild_id: domain::Snowflake,
     now: chrono::DateTime<chrono::Utc>,
-) -> (Guild, Vec<Role>, Vec<Channel>) {
-    let channel = |kind: ChannelType, name: &str, position: i32, parent: Option<&Channel>| {
-        let mut c = Channel::new(ports.ids.next_id(), kind, Some(guild_id), now);
+) -> AppResult<(Guild, Vec<Role>, Vec<Channel>)> {
+    let channel = |kind: ChannelType,
+                   name: &str,
+                   position: i32,
+                   parent: Option<&Channel>|
+     -> AppResult<Channel> {
+        let mut c = Channel::new(ports.ids.next_id()?, kind, Some(guild_id), now);
         c.name = Some(name.to_owned());
         c.position = position;
         c.parent_id = parent.map(|p| p.id);
-        c
+        Ok(c)
     };
-    let text_category = channel(ChannelType::GuildCategory, "Text Channels", 0, None);
-    let voice_category = channel(ChannelType::GuildCategory, "Voice Channels", 1, None);
-    let general = channel(ChannelType::GuildText, "general", 0, Some(&text_category));
-    let lounge = channel(ChannelType::GuildVoice, "General", 0, Some(&voice_category));
+    let text_category = channel(ChannelType::GuildCategory, "Text Channels", 0, None)?;
+    let voice_category = channel(ChannelType::GuildCategory, "Voice Channels", 1, None)?;
+    let general = channel(ChannelType::GuildText, "general", 0, Some(&text_category))?;
+    let lounge = channel(ChannelType::GuildVoice, "General", 0, Some(&voice_category))?;
     let guild = Guild {
         id: guild_id,
         name: input.name.trim().to_owned(),
@@ -153,9 +169,9 @@ fn default_layout(
         created_at: now,
     };
     let everyone = Role::everyone(guild_id, Permissions::DEFAULT_EVERYONE);
-    (
+    Ok((
         guild,
         vec![everyone],
         vec![text_category, voice_category, general, lounge],
-    )
+    ))
 }

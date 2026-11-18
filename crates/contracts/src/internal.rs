@@ -144,6 +144,29 @@ pub struct PushTargetsDto {
     pub targets: Vec<PushTargetDto>,
 }
 
+/// A current permitted channel viewer; deliberately contains no device/token data.
+#[derive(Debug, Clone, Serialize)]
+pub struct NotificationRecipientDto {
+    pub user_id: Id,
+    pub role_ids: Vec<Id>,
+    pub online: bool,
+    pub level: u8,
+    pub muted: bool,
+    pub suppress_everyone: bool,
+    pub suppress_roles: bool,
+}
+
+/// Bounded candidates, current policy per request. Empty filtered pages may continue.
+#[derive(Debug, Clone, Serialize)]
+pub struct NotificationRecipientPageDto {
+    pub channel_id: Id,
+    pub guild_id: Option<Id>,
+    pub delivery_mode: String,
+    pub evaluated_at: String,
+    pub recipients: Vec<NotificationRecipientDto>,
+    pub next_after: Option<Id>,
+}
+
 /// One user and the live notification tokens of their devices.
 #[derive(Debug, Clone, Serialize)]
 pub struct ManualPushUserDto {

@@ -76,6 +76,16 @@ including in disabled guilds. The default 90-day retention also applies to
 existing entries on rollout. Migration 0050 adds permanent invites; 0051 adds
 audit policy. No new configuration or secret is needed.
 
+## Server templates
+
+`GET /guilds/templates/{code}` is a public, rate-limited preview of the saved
+template. Creating from it still requires a signed-in user; managing a guild's
+template requires `MANAGE_GUILD`. The five built-ins create their full roles,
+channels and overwrites. `is_dirty` reports differences from the current
+template-visible guild structure, while previews and creation keep using the
+saved snapshot until explicit sync. Duplicate creation, including a database
+race, returns error `30031`. No migration or new environment variable is needed.
+
 ## Configuration
 
 All configuration comes from environment variables, validated at startup. Missing or invalid values stop the process with a message naming the variable.
@@ -93,7 +103,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `JWT_PUBLIC_KEY` | yes | | Ed25519 PEM |
 | `WEBAUTHN_RP_ID` | paired | | Passkey relying-party hostname, e.g. `auth.example.com`; set together with `WEBAUTHN_RP_ORIGIN` |
 | `WEBAUTHN_RP_ORIGIN` | paired | | Exact HTTPS origin for ceremonies, including a non-default port if used. HTTP `localhost` is accepted only with `DISCORDY_ENV=local`. Unset both to disable new WebAuthn ceremonies |
-| `SNOWFLAKE_WORKER_ID` | yes | | 0 to 1023 |
+| `SNOWFLAKE_WORKER_ID` | yes | | Preferred API worker 0–63; allocation uses 1–63 and permanently excludes legacy worker 0 |
 | `PUBLIC_API_URL` | yes | | Base for webhook URLs |
 | `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
 | `CDN_PUBLIC_URL` | yes | | Public asset base |
@@ -115,7 +125,29 @@ All configuration comes from environment variables, validated at startup. Missin
 
 Push (mobile): `POST /api/v1/users/@me/devices/push` with `{platform: "apns"|"fcm", token, environment?: "production"|"sandbox", previews?: bool, only_mentions?: bool}` stores the calling session's token (call it on every start to refresh); `DELETE` on the same path removes it. VoIP (iPhone calls): `POST /api/v1/users/@me/devices/voip` with `{token, environment?: "production"|"sandbox"}` stores the calling session's PushKit token (call it every time PushKit reports it); `DELETE` on the same path removes it. It is separate from the notification token and works when notifications are off. Internal, for the notifier: `GET /internal/v1/channels/{id}/push-targets?author_id=` (each target also lists `voip_tokens`) and `DELETE /internal/v1/push-tokens` (removes the token from both tables). For manual pushes from the admin portal: `GET /internal/v1/users/{id}/push-tokens` and `GET /internal/v1/push-tokens?after=&limit=` (live notification tokens of one user, or a page of all users; `next_after` continues).
 
+Mention-policy directory: `GET /internal/v1/channels/{id}/notification-recipients?author_id=...`
+requires `X-Internal-Token` and returns current permitted viewers independently of mobile tokens.
+Each recipient has `user_id`, `role_ids`, `online`, resolved `level` (0/1/2), `muted`,
+`suppress_everyone` and `suppress_roles`; device/token data is absent. The response also carries
+`channel_id`, `guild_id`, `delivery_mode`, `evaluated_at` and `next_after`.
+`limit` is 1–200 (default100) candidates examined, ordered by user ID. Continue with
+`after=next_after` until null, even after an empty page caused by author/permission filtering.
+Guild membership queries read at most `limit+1` profiles. Threads inherit parent access;
+private-thread access follows the existing creator/manager rules. Ephemeral/P2P delivery returns
+an empty terminal page. Each page resolves current policy and mute expiry independently; it is
+not a historical or cross-page snapshot. Lookup failure returns an error, never an unfiltered
+audience. Push delivery and this endpoint share the same preference resolver.
+
+This endpoint is a prerequisite for messages#23. It does not itself change stored mention counts,
+ACK behavior, silent-message semantics or counter idempotence. Those remain messages-service work.
+`cargo test -p infrastructure --test http_notification_recipients` exercises the actual route with
+disposable PostgreSQL, including users without tokens, pagination, permissions, mutes and privacy.
+
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
+
+API and messages reserve non-overlapping timestamp intervals before generating IDs. Readiness
+includes a valid ID reservation. See [ID allocation and recovery](docs/id-reservations.md) for
+replica capacity, legacy rollout preflight, failure behavior and the mandatory restore barrier.
 
 ## Pending owner actions
 
@@ -126,6 +158,22 @@ Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_request
 - The `.env.example` JWT keys are dev-only and public; production keys must be generated per environment.
 
 ## Session revocation guarantees
+
+`POST /auth/refresh` accepts an optional `request_id` UUID for crash recovery.
+Clients must persist a random UUID with the current refresh token before sending,
+reuse that pair after response loss, and remove the UUID only after saving the
+successor credentials. For five minutes after a committed rotation, identical
+requests recover its immediate unused, unexpired successor in a live session.
+The original token must also remain unexpired. Retries neither create token
+branches nor extend expiry or last-used time. Legacy requests without a UUID,
+mismatched IDs, expired windows and used successors keep strict reuse detection.
+Logout, remote revocation and password changes cannot be undone by a retry.
+
+Migration 0080 stores only the request UUID hash and successor token hash. The
+successor is derived with HMAC-SHA256 from the previous bearer token, a fixed
+purpose label and the UUID; plaintext tokens and request IDs are never stored or
+logged. No new server secret or configuration is required. Roll out the API and
+migration before clients depend on recovery; older clients remain compatible.
 
 Access tokens continue to use Ed25519/EdDSA with `jsonwebtoken` 12. Its RustCrypto dependency chain
 uses `elliptic-curve` 0.14 and `crypto-bigint` 0.7, so the former RUSTSEC-2026-0387 exception is removed.

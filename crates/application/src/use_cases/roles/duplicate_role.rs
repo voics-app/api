@@ -40,7 +40,7 @@ pub async fn execute(
             message: "Maximum number of guild roles reached (250)".into(),
         });
     }
-    let copy = source.duplicate(ports.ids.next_id());
+    let copy = source.duplicate(ports.ids.next_id()?);
 
     let mut writes = WriteSet::new();
     for mut other in ctx

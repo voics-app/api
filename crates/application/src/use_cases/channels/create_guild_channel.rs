@@ -50,7 +50,12 @@ pub async fn execute(
         });
     }
 
-    let mut channel = Channel::new(ports.ids.next_id(), kind, Some(guild_id), ports.clock.now());
+    let mut channel = Channel::new(
+        ports.ids.next_id()?,
+        kind,
+        Some(guild_id),
+        ports.clock.now(),
+    );
     apply_name(&mut channel, &input.name)?;
     apply_topic(&mut channel, input.topic)?;
     if let Some(bitrate) = input.bitrate {
