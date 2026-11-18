@@ -12,14 +12,17 @@ use application::use_cases::admin::{
 use application::use_cases::internal::{
     channel_access, channel_routing, guild_state, introspect, user_ready, users_lookup,
 };
-use application::use_cases::push::{forget_token, manual_targets, targets};
+use application::use_cases::push::{
+    forget_token, manual_targets, notification_recipients, targets,
+};
 use application::{AppError, Resource};
 use contracts::internal::{
     AdminGuildDto, AdminReportDto, AdminReportPageDto, AdminReportUserDto, AdminUserDto,
     AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto, ChannelRoutingDto,
     ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse, ManualPushTargetsDto,
-    ManualPushUserDto, PushTargetDto, PushTargetsDto, PushTokenDto, ResolveReportRequest,
-    SuspendUserRequest, UserReadyDto, UsersLookupRequest, VoipTokenDto,
+    ManualPushUserDto, NotificationRecipientDto, NotificationRecipientPageDto, PushTargetDto,
+    PushTargetsDto, PushTokenDto, ResolveReportRequest, SuspendUserRequest, UserReadyDto,
+    UsersLookupRequest, VoipTokenDto,
 };
 use contracts::objects::{
     ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
@@ -212,6 +215,70 @@ async fn push_targets(
                         environment: token.environment.as_str().to_owned(),
                     })
                     .collect(),
+            })
+            .collect(),
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NotificationRecipientsQuery {
+    author_id: String,
+    after: Option<String>,
+    limit: Option<u32>,
+}
+
+fn notification_id(field: &str, raw: &str) -> Result<Snowflake, ApiError> {
+    match raw.parse::<i64>() {
+        Ok(id) if id >= 0 && raw.bytes().all(|byte| byte.is_ascii_digit()) => {
+            Ok(Snowflake::from_i64(id))
+        }
+        _ => Err(AppError::invalid(
+            field,
+            "BASE_TYPE_BAD_FORMAT",
+            "Must be a decimal ID in the database's signed 64-bit range.",
+        )
+        .into()),
+    }
+}
+
+async fn notification_recipient_page(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(channel_id): Path<String>,
+    Query(params): Query<NotificationRecipientsQuery>,
+) -> Result<Json<NotificationRecipientPageDto>, ApiError> {
+    let page = notification_recipients::execute(
+        &state.ports,
+        notification_id("channel_id", &channel_id)?,
+        notification_id("author_id", &params.author_id)?,
+        params
+            .after
+            .as_deref()
+            .map(|id| notification_id("after", id))
+            .transpose()?,
+        params
+            .limit
+            .unwrap_or(notification_recipients::DEFAULT_LIMIT),
+    )
+    .await?;
+    Ok(Json(NotificationRecipientPageDto {
+        channel_id: Id(page.channel_id),
+        guild_id: page.guild_id.map(Id),
+        delivery_mode: page.delivery_mode.as_str().to_owned(),
+        evaluated_at: timestamp(page.evaluated_at),
+        next_after: page.next_after.map(Id),
+        recipients: page
+            .recipients
+            .into_iter()
+            .map(|recipient| NotificationRecipientDto {
+                user_id: Id(recipient.user_id),
+                role_ids: recipient.role_ids.into_iter().map(Id).collect(),
+                online: recipient.online,
+                level: recipient.level.code(),
+                muted: recipient.muted,
+                suppress_everyone: recipient.suppress_everyone,
+                suppress_roles: recipient.suppress_roles,
             })
             .collect(),
     }))
@@ -463,6 +530,10 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/internal/v1/channels/{id}/delivery", get(channel_delivery))
         .route("/internal/v1/channels/{id}/push-targets", get(push_targets))
+        .route(
+            "/internal/v1/channels/{id}/notification-recipients",
+            get(notification_recipient_page),
+        )
         .route(
             "/internal/v1/push-tokens",
             delete(forget_push_token).get(push_token_page),

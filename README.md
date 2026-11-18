@@ -89,6 +89,24 @@ All configuration comes from environment variables, validated at startup. Missin
 
 Push (mobile): `POST /api/v1/users/@me/devices/push` with `{platform: "apns"|"fcm", token, environment?: "production"|"sandbox", previews?: bool, only_mentions?: bool}` stores the calling session's token (call it on every start to refresh); `DELETE` on the same path removes it. VoIP (iPhone calls): `POST /api/v1/users/@me/devices/voip` with `{token, environment?: "production"|"sandbox"}` stores the calling session's PushKit token (call it every time PushKit reports it); `DELETE` on the same path removes it. It is separate from the notification token and works when notifications are off. Internal, for the notifier: `GET /internal/v1/channels/{id}/push-targets?author_id=` (each target also lists `voip_tokens`) and `DELETE /internal/v1/push-tokens` (removes the token from both tables). For manual pushes from the admin portal: `GET /internal/v1/users/{id}/push-tokens` and `GET /internal/v1/push-tokens?after=&limit=` (live notification tokens of one user, or a page of all users; `next_after` continues).
 
+Mention-policy directory: `GET /internal/v1/channels/{id}/notification-recipients?author_id=...`
+requires `X-Internal-Token` and returns current permitted viewers independently of mobile tokens.
+Each recipient has `user_id`, `role_ids`, `online`, resolved `level` (0/1/2), `muted`,
+`suppress_everyone` and `suppress_roles`; device/token data is absent. The response also carries
+`channel_id`, `guild_id`, `delivery_mode`, `evaluated_at` and `next_after`.
+`limit` is 1–200 (default100) candidates examined, ordered by user ID. Continue with
+`after=next_after` until null, even after an empty page caused by author/permission filtering.
+Guild membership queries read at most `limit+1` profiles. Threads inherit parent access;
+private-thread access follows the existing creator/manager rules. Ephemeral/P2P delivery returns
+an empty terminal page. Each page resolves current policy and mute expiry independently; it is
+not a historical or cross-page snapshot. Lookup failure returns an error, never an unfiltered
+audience. Push delivery and this endpoint share the same preference resolver.
+
+This endpoint is a prerequisite for messages#23. It does not itself change stored mention counts,
+ACK behavior, silent-message semantics or counter idempotence. Those remain messages-service work.
+`cargo test -p infrastructure --test http_notification_recipients` exercises the actual route with
+disposable PostgreSQL, including users without tokens, pagination, permissions, mutes and privacy.
+
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
 
 ## Pending owner actions
