@@ -89,6 +89,20 @@ All configuration comes from environment variables, validated at startup. Missin
 
 Push (mobile): `POST /api/v1/users/@me/devices/push` with `{platform: "apns"|"fcm", token, environment?: "production"|"sandbox", previews?: bool, only_mentions?: bool}` stores the calling session's token (call it on every start to refresh); `DELETE` on the same path removes it. VoIP (iPhone calls): `POST /api/v1/users/@me/devices/voip` with `{token, environment?: "production"|"sandbox"}` stores the calling session's PushKit token (call it every time PushKit reports it); `DELETE` on the same path removes it. It is separate from the notification token and works when notifications are off. Internal, for the notifier: `GET /internal/v1/channels/{id}/push-targets?author_id=` (each target also lists `voip_tokens`) and `DELETE /internal/v1/push-tokens` (removes the token from both tables). For manual pushes from the admin portal: `GET /internal/v1/users/{id}/push-tokens` and `GET /internal/v1/push-tokens?after=&limit=` (live notification tokens of one user, or a page of all users; `next_after` continues).
 
+Token registration may finish before E2EE device registration. Binding a session to a device moves
+its existing notification token too. Removing, evicting or pruning that device atomically removes
+both notification and PushKit tokens for its bound sessions, unbinds those sessions and deletes the
+device with its update event; other devices keep their tokens. The session remains signed in and
+may register a fresh token later. Tokens never registered against a device still expire through the
+token-age prune or session logout. A delayed registration rechecks and locks the live session inside
+its database transaction, so it cannot restore tokens after logout. Device binding/removal and token
+writes serialize per user through a transaction-scoped advisory lock, acquired before session locks;
+the token write uses the session's current device rather than an earlier request snapshot.
+
+`cargo test -p infrastructure --test http_push_lifecycle` covers registration order, device pruning,
+device replacement, delayed/concurrent logout and cleanup rollback with disposable PostgreSQL.
+These tests do not claim real APNs/FCM/PushKit delivery on a device.
+
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
 
 ## Pending owner actions
