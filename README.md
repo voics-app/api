@@ -75,6 +75,9 @@ Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_request
 
 ## Session revocation guarantees
 
+Access tokens continue to use Ed25519/EdDSA with `jsonwebtoken` 12. Its RustCrypto dependency chain
+uses `elliptic-curve` 0.14 and `crypto-bigint` 0.7, so the former RUSTSEC-2026-0387 exception is removed.
+
 Logout, remote logout, logout-all, suspension and refresh-token reuse persist the revoked session,
 remove notification/VoIP tokens, and queue `SESSION_REVOKE` in the same Postgres transaction. An
 outbox failure rolls the revocation back so retrying can still notify connected gateways. Device
