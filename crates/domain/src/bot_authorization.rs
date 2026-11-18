@@ -134,13 +134,25 @@ mod tests {
             BotInstallationRevision::Absent(Some(42)),
             BotInstallationRevision::Installed(42),
         ] {
-            assert_eq!(BotInstallationRevision::parse(&revision.to_wire()), Ok(revision));
+            assert_eq!(
+                BotInstallationRevision::parse(&revision.to_wire()),
+                Ok(revision)
+            );
         }
         assert_ne!(
             BotInstallationRevision::Absent(None),
             BotInstallationRevision::Absent(Some(42))
         );
-        for invalid in ["", "absent", "absent:-1", "absent:01", "installed:0", "installed:+1", "installed:9223372036854775808", "other:1"] {
+        for invalid in [
+            "",
+            "absent",
+            "absent:-1",
+            "absent:01",
+            "installed:0",
+            "installed:+1",
+            "installed:9223372036854775808",
+            "other:1",
+        ] {
             assert!(BotInstallationRevision::parse(invalid).is_err());
         }
     }

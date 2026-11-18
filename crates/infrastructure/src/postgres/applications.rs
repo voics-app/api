@@ -107,7 +107,9 @@ impl ApplicationRepository for PgStore {
             (Some(generation), Some(last)) if generation == last => {
                 Ok(BotInstallationRevision::Installed(generation))
             }
-            _ => Err(AppError::internal("installation generation disagrees with its revision")),
+            _ => Err(AppError::internal(
+                "installation generation disagrees with its revision",
+            )),
         }
     }
     async fn installation(
