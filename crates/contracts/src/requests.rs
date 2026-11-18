@@ -29,6 +29,9 @@ pub struct LoginRequest {
 #[derive(Debug, Deserialize)]
 pub struct RefreshRequest {
     pub refresh_token: String,
+    /// Persisted before the request. Reusing it can recover a lost rotation response.
+    #[serde(default)]
+    pub request_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

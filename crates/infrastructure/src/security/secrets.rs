@@ -3,10 +3,12 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use ed25519_dalek::SigningKey;
+use hmac::{Hmac, Mac};
 use rand::distributions::Alphanumeric;
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use application::ports::SecretGenerator;
 use domain::invite::INVITE_CODE_LENGTH;
@@ -19,6 +21,17 @@ impl SecretGenerator for OsSecrets {
         let mut buffer = vec![0_u8; bytes];
         OsRng.fill_bytes(&mut buffer);
         URL_SAFE_NO_PAD.encode(buffer)
+    }
+
+    fn retryable_refresh_token(&self, previous: &str, request_id: Uuid) -> String {
+        // HMAC accepts keys of any length; old refresh tokens carry 256 bits of
+        // entropy. Domain separation prevents this derivation being reused for
+        // another token purpose. UUID bytes normalize equivalent spellings.
+        let mut mac = Hmac::<Sha256>::new_from_slice(previous.as_bytes())
+            .expect("HMAC accepts arbitrary key lengths");
+        mac.update(b"voics.refresh.successor.v1\0");
+        mac.update(request_id.as_bytes());
+        URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
     }
 
     fn invite_code(&self) -> String {
@@ -50,6 +63,25 @@ impl SecretGenerator for OsSecrets {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retryable_refresh_tokens_are_deterministic_and_bound_to_both_inputs() {
+        let request = Uuid::new_v4();
+        let token = OsSecrets.retryable_refresh_token("old-secret", request);
+        assert_eq!(URL_SAFE_NO_PAD.decode(&token).unwrap().len(), 32);
+        assert_eq!(
+            token,
+            OsSecrets.retryable_refresh_token("old-secret", request)
+        );
+        assert_ne!(
+            token,
+            OsSecrets.retryable_refresh_token("other-secret", request)
+        );
+        assert_ne!(
+            token,
+            OsSecrets.retryable_refresh_token("old-secret", Uuid::new_v4())
+        );
+    }
 
     #[test]
     fn tokens_have_the_requested_entropy_and_encoding() {

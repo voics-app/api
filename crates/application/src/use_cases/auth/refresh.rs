@@ -1,6 +1,6 @@
 use crate::context::Ports;
 use crate::error::{AppError, AppResult, Denial};
-use crate::ports::RotateOutcome;
+use crate::ports::{RefreshReplay, RotateOutcome};
 use crate::support::views::require_user;
 use crate::use_cases::auth::tokens::{access_token, AuthTokens, REFRESH_TOKEN_BYTES};
 use crate::use_cases::devices::delete_device;
@@ -8,10 +8,27 @@ use crate::use_cases::devices::delete_device;
 /// Rotates the refresh token. Presenting an already-rotated token revokes
 /// the whole session family (reuse detection).
 pub async fn execute(ports: &Ports, refresh_token: &str) -> AppResult<AuthTokens> {
+    execute_with_recovery(ports, refresh_token, None).await
+}
+
+/// Recovery is deliberately limited to five minutes after a committed rotation.
+/// Requests without an id keep the original strict single-use semantics.
+pub async fn execute_with_recovery(
+    ports: &Ports,
+    refresh_token: &str,
+    request_id: Option<uuid::Uuid>,
+) -> AppResult<AuthTokens> {
     let now = ports.clock.now();
     let old_hash = ports.secrets.hash(refresh_token);
-    let new_token = ports.secrets.token(REFRESH_TOKEN_BYTES);
+    let new_token = request_id.map_or_else(
+        || ports.secrets.token(REFRESH_TOKEN_BYTES),
+        |id| ports.secrets.retryable_refresh_token(refresh_token, id),
+    );
     let new_hash = ports.secrets.hash(&new_token);
+    let replay = request_id.map(|id| RefreshReplay {
+        request_hash: ports.secrets.hash(&id.to_string()),
+        earliest_rotation: now - chrono::Duration::minutes(5),
+    });
     let session = match ports
         .sessions
         .rotate(
@@ -19,6 +36,7 @@ pub async fn execute(ports: &Ports, refresh_token: &str) -> AppResult<AuthTokens
             &new_hash,
             now + ports.settings.refresh_token_ttl,
             now,
+            replay.as_ref(),
         )
         .await?
     {
