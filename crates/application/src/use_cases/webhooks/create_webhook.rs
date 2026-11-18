@@ -34,7 +34,7 @@ pub async fn execute(
     let guild_id = access.guild()?.guild.id;
     validation::webhook_name(&input.name)?;
 
-    let id = ports.ids.next_id();
+    let id = ports.ids.next_id()?;
     let avatar = match input.avatar {
         Some(image) => Some(store_hashed(ports, &format!("avatars/{id}"), image).await?),
         None => None,

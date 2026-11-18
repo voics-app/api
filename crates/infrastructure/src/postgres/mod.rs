@@ -18,6 +18,7 @@ mod relationships;
 mod reports;
 mod session_revocation;
 mod sessions;
+mod snowflake;
 mod unit_of_work;
 mod users;
 mod webhooks;
@@ -27,6 +28,7 @@ use std::time::Duration;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+pub use snowflake::PgIdReservations;
 pub use unit_of_work::PgUnitOfWork;
 
 /// Opens the connection pool.

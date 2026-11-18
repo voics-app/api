@@ -11,8 +11,11 @@ async fn liveness() -> &'static str {
     "ok"
 }
 
-/// Ready when the primary database answers.
+/// Ready when the primary database answers and ID issuance remains valid.
 async fn readiness(State(state): State<AppState>) -> StatusCode {
+    if !state.ports.ids.is_ready() {
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
     match state.ports.guilds.count().await {
         Ok(_) => StatusCode::OK,
         Err(_) => StatusCode::SERVICE_UNAVAILABLE,

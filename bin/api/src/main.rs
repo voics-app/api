@@ -20,7 +20,7 @@ use infrastructure::events::kafka::KafkaPublisher;
 use infrastructure::events::relay::OutboxRelay;
 use infrastructure::mail::{LogMailer, SmtpMailer, SmtpSettings, SmtpTls};
 use infrastructure::messages_client::HttpMessages;
-use infrastructure::postgres::{connect, migrate, PgStore, PgUnitOfWork};
+use infrastructure::postgres::{connect, migrate, PgIdReservations, PgStore, PgUnitOfWork};
 use infrastructure::presence::ValkeyPresence;
 use infrastructure::ratelimit::ValkeyRateLimiter;
 use infrastructure::security::jwt::Ed25519Tokens;
@@ -69,6 +69,8 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let region = config.default_voice_region.clone();
     let publisher = Arc::new(KafkaPublisher::connect(config.kafka_brokers.clone()).await?);
     let store = Arc::new(PgStore::new(pool.clone()));
+    let id_reservations = Arc::new(PgIdReservations::new(pool.clone()));
+    let ids = SnowflakeIds::start(id_reservations.clone(), config.worker_id).await?;
     let rate_limiter = Arc::new(FallbackRateLimiter::new(Arc::new(
         ValkeyRateLimiter::connect(&config.valkey_url).await?,
     )));
@@ -119,7 +121,8 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         )?),
         clock: Arc::new(SystemClock),
         presence: Arc::new(ValkeyPresence::connect(&config.valkey_url).await?),
-        ids: Arc::new(SnowflakeIds::new(config.worker_id)?),
+        ids,
+        id_reservations,
         secrets: Arc::new(OsSecrets),
         totp: Arc::new(Rfc6238),
         assets: Arc::new(MinioAssets::new(

@@ -46,7 +46,7 @@ pub async fn execute(
         });
     }
     let emoji = Emoji {
-        id: ports.ids.next_id(),
+        id: ports.ids.next_id()?,
         guild_id,
         name: input.name,
         creator_id: Some(actor.user_id),

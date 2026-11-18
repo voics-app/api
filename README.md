@@ -41,7 +41,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `INTERNAL_SERVICE_TOKEN` | yes | | Shared secret for `/internal/v1` (`X-Internal-Token`) |
 | `JWT_PRIVATE_KEY` | yes | | Ed25519 PEM; `\n` escapes allowed |
 | `JWT_PUBLIC_KEY` | yes | | Ed25519 PEM |
-| `SNOWFLAKE_WORKER_ID` | yes | | 0 to 1023 |
+| `SNOWFLAKE_WORKER_ID` | yes | | Preferred API worker 0–63; allocation uses 1–63 and permanently excludes legacy worker 0 |
 | `PUBLIC_API_URL` | yes | | Base for webhook URLs |
 | `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
 | `CDN_PUBLIC_URL` | yes | | Public asset base |
@@ -64,6 +64,10 @@ All configuration comes from environment variables, validated at startup. Missin
 Push (mobile): `POST /api/v1/users/@me/devices/push` with `{platform: "apns"|"fcm", token, environment?: "production"|"sandbox", previews?: bool, only_mentions?: bool}` stores the calling session's token (call it on every start to refresh); `DELETE` on the same path removes it. VoIP (iPhone calls): `POST /api/v1/users/@me/devices/voip` with `{token, environment?: "production"|"sandbox"}` stores the calling session's PushKit token (call it every time PushKit reports it); `DELETE` on the same path removes it. It is separate from the notification token and works when notifications are off. Internal, for the notifier: `GET /internal/v1/channels/{id}/push-targets?author_id=` (each target also lists `voip_tokens`) and `DELETE /internal/v1/push-tokens` (removes the token from both tables). For manual pushes from the admin portal: `GET /internal/v1/users/{id}/push-tokens` and `GET /internal/v1/push-tokens?after=&limit=` (live notification tokens of one user, or a page of all users; `next_after` continues).
 
 Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_requests_total` and `http_request_duration_seconds` (method, route, status class), `db_query_duration_seconds`, and `rate_limit_decisions_total` (scope, result; Valkey token bucket).
+
+API and messages reserve non-overlapping timestamp intervals before generating IDs. Readiness
+includes a valid ID reservation. See [ID allocation and recovery](docs/id-reservations.md) for
+replica capacity, legacy rollout preflight, failure behavior and the mandatory restore barrier.
 
 ## Pending owner actions
 

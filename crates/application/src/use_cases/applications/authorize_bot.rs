@@ -62,7 +62,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: AuthorizeBotInput) -> 
     let mut writes = WriteSet::new();
     if !permissions.is_empty() {
         let role = Role {
-            id: ports.ids.next_id(),
+            id: ports.ids.next_id()?,
             name: application.name.clone(),
             position: 1,
             permissions,

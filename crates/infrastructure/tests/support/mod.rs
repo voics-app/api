@@ -1,6 +1,7 @@
 //! Shared harness for integration tests: a throwaway Postgres container and
-//! the production adapters wired into `Ports`. Only the messages service and
-//! object storage are stubbed, because no test here reaches them.
+//! the production adapters wired into `Ports`. Message delivery, object storage,
+//! and ID generation are test adapters. Production ID allocation has its own
+//! concurrency, expiry and HTTP tests in `id_reservations`.
 
 #![allow(dead_code)]
 
@@ -19,13 +20,32 @@ use application::events::DomainEvent;
 use application::ports::{AssetStorage, EventPublisher, MessageService, StoredMessage};
 
 use application::{AppError, AppResult, Ports, Settings};
+use infrastructure::postgres::PgIdReservations;
 use infrastructure::postgres::{connect, migrate, PgStore, PgUnitOfWork};
 use infrastructure::security::jwt::Ed25519Tokens;
 use infrastructure::security::password::Argon2Passwords;
 use infrastructure::security::secrets::OsSecrets;
 use infrastructure::security::totp::Rfc6238;
 use infrastructure::system::clock::SystemClock;
-use infrastructure::system::ids::SnowflakeIds;
+
+struct TestIds(std::sync::atomic::AtomicU64);
+impl TestIds {
+    fn new() -> Self {
+        Self(std::sync::atomic::AtomicU64::new(
+            (voics_snowflake::unix_ms() - voics_snowflake::EPOCH_MS) << 22,
+        ))
+    }
+}
+impl application::ports::IdGenerator for TestIds {
+    fn next_id(&self) -> AppResult<domain::Snowflake> {
+        Ok(domain::Snowflake::new(
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        ))
+    }
+    fn is_ready(&self) -> bool {
+        true
+    }
+}
 
 pub struct Database {
     /// Keeps the container alive for the duration of the test.
@@ -232,7 +252,8 @@ pub fn ports_with_messages(
         passwords: Arc::new(Argon2Passwords::default()),
         tokens: Arc::new(Ed25519Tokens::from_pem(private_pem, public_pem).expect("jwt keys")),
         clock: Arc::new(SystemClock),
-        ids: Arc::new(SnowflakeIds::new(1).expect("worker id")),
+        ids: Arc::new(TestIds::new()),
+        id_reservations: Arc::new(PgIdReservations::new(pool.clone())),
         secrets: Arc::new(OsSecrets),
         totp: Arc::new(Rfc6238),
         mailer: Arc::new(DiscardMail),

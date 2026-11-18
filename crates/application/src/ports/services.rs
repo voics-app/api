@@ -52,7 +52,16 @@ pub trait Clock: Send + Sync {
 }
 
 pub trait IdGenerator: Send + Sync {
-    fn next_id(&self) -> Snowflake;
+    fn next_id(&self) -> AppResult<Snowflake>;
+    fn is_ready(&self) -> bool;
+}
+
+#[async_trait]
+pub trait IdReservations: Send + Sync {
+    async fn reserve(
+        &self,
+        request: voics_snowflake::ReservationRequest,
+    ) -> AppResult<voics_snowflake::Reservation>;
 }
 
 /// Random secrets and their one-way hashes.
