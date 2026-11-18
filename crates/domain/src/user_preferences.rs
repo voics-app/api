@@ -54,6 +54,7 @@ fn validate(key: &str, value: &Value) -> Result<(), PreferenceError> {
     let ok = match key {
         "accent" => value.as_str().is_some_and(|s| ACCENTS.contains(&s)),
         "reduce_motion"
+        | "hide_age_restricted_channels"
         | "show_avatars_in_compact"
         | "link_previews"
         | "notify_only_mentions"
@@ -107,6 +108,20 @@ pub fn merge(current: &Preferences, patch: &Value) -> Result<Preferences, Prefer
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn age_restriction_is_an_optional_boolean_preference() {
+        let empty = Preferences::new();
+        assert!(!merge(&empty, &json!({}))
+            .unwrap()
+            .contains_key("hide_age_restricted_channels"));
+        let hidden = merge(&empty, &json!({"hide_age_restricted_channels": true})).unwrap();
+        let visible = merge(&hidden, &json!({"hide_age_restricted_channels": false})).unwrap();
+        assert_eq!(visible["hide_age_restricted_channels"], json!(false));
+        for value in [json!(null), json!("false"), json!(0), json!({}), json!([])] {
+            assert!(merge(&hidden, &json!({"hide_age_restricted_channels": value})).is_err());
+        }
+    }
 
     #[test]
     fn merges_key_by_key() {

@@ -32,6 +32,23 @@ fn optional_id(field: &str, raw: Option<&str>) -> Result<Option<Snowflake>, ApiE
 
 fn target(body: &CreateReportRequest) -> Result<ReportTarget, ApiError> {
     match body.target.as_str() {
+        "channel" => {
+            if body.message_id.is_some()
+                || body.user_id.is_some()
+                || body.author_id.is_some()
+                || body.content.is_some()
+            {
+                return Err(AppError::invalid(
+                    "target",
+                    "REPORT_CHANNEL_METADATA_ONLY",
+                    "Channel reports accept only the channel ID, category and note.",
+                )
+                .into());
+            }
+            Ok(ReportTarget::Channel {
+                channel_id: id("channel_id", body.channel_id.as_deref())?,
+            })
+        }
         "message" => Ok(ReportTarget::Message {
             channel_id: id("channel_id", body.channel_id.as_deref())?,
             message_id: id("message_id", body.message_id.as_deref())?,
@@ -45,7 +62,7 @@ fn target(body: &CreateReportRequest) -> Result<ReportTarget, ApiError> {
         _ => Err(AppError::invalid(
             "target",
             "REPORT_TARGET_INVALID",
-            "Must be message or user.",
+            "Must be message, user or channel.",
         )
         .into()),
     }
