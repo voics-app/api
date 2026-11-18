@@ -446,6 +446,7 @@ pub(super) async fn anonymize_user(
 ) -> AppResult<()> {
     sqlx::query(
         "UPDATE users SET username = $2, email = NULL, global_name = NULL, avatar = NULL, bio = NULL, \
+             banner = NULL, pronouns = NULL, theme_colors = NULL, accent_color = NULL, \
              verified = FALSE, mfa_enabled = FALSE, delete_after = NULL, \
              disabled_at = COALESCE(disabled_at, now()) WHERE id = $1",
     )
@@ -454,6 +455,11 @@ pub(super) async fn anonymize_user(
     .execute(&mut *conn)
     .await
     .map_err(db)?;
+    sqlx::query("UPDATE members SET nick = NULL, avatar = NULL, banner = NULL, bio = NULL WHERE user_id = $1")
+        .bind(user_id.as_i64())
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
     for table in [
         "user_credentials",
         "user_backup_codes",

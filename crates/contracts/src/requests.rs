@@ -97,6 +97,14 @@ pub struct UploadKeyPackagesRequest {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyCurrentUserRequest {
+    #[serde(default, deserialize_with = "double_option")]
+    pub banner: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub pronouns: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub theme_colors: Option<Option<[u32; 2]>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub accent_color: Option<Option<u32>>,
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
@@ -429,6 +437,12 @@ pub struct RolePositionRequest {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyMemberRequest {
+    #[serde(default, deserialize_with = "double_option")]
+    pub avatar: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub banner: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub bio: Option<Option<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub nick: Option<Option<String>>,
     #[serde(default)]

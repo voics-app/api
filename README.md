@@ -4,6 +4,16 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
+colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts
+self-only avatar, banner and bio overrides independently of nickname permissions.
+Omitted fields stay unchanged; null clears an override. Images use the existing PNG,
+JPEG, GIF and WebP data-URI upload rules with a 10 MiB decoded limit per image. Public
+DTOs and transactional user/member events include the new fields. Server images use
+`guilds/{guild}/users/{user}/{avatars|banners}/{hash}.{png|gif}`; clients fall back to the
+global profile when overrides are cleared. Migration `0054` requires no new settings.
+See [the profile specification](https://github.com/discordy-voics/docs/blob/feature/community-profiles/specs/2026-11-18-profile-customization.md).
+
 ## Run locally
 
 `POST /reports` accepts `target: "channel"` with a guild channel ID, category and
@@ -11,6 +21,11 @@ optional note. The caller must currently be able to view the channel. The report
 captures only server-owned ID, guild ID, parent ID, name, type and NSFW flag, without
 fetching messages or members. The admin queue keeps a distinct channel target and
 owner-at-filing association. Public listing reports retain their existing policy.
+
+The optional account preference `preferences.hide_age_restricted_channels` accepts
+only booleans and uses the existing settings merge and sync events. Missing means
+false; this does not attest age or change channel permissions. See
+[the channel-gate specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-18-age-restricted-channels.md).
 
 Prerequisites: Rust 1.99, Docker (for integration tests and local dependencies), and the C compiler,
 Perl and Make required by vendored OpenSSL. On Windows use the MSVC toolchain with Strawberry

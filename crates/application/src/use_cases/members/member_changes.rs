@@ -17,14 +17,27 @@ pub async fn commit_member_update(
     ports: &Ports,
     before: &Member,
     after: Member,
+    patch: domain::profile::MemberProfilePatch,
     voice: Option<Option<Snowflake>>,
     audit: AuditContext<'_>,
 ) -> AppResult<MemberProfile> {
     let profile = member_profile(ports, after).await?;
     let member = &profile.member;
     let mut writes = WriteSet::new();
+    // Profile-only edits never rewrite a concurrently changed role or nickname.
+    let mut administration = member.clone();
+    administration.avatar.clone_from(&before.avatar);
+    administration.banner.clone_from(&before.banner);
+    administration.bio.clone_from(&before.bio);
+    if administration != *before {
+        writes.mutate(Mutation::UpsertMember(administration));
+    }
     writes
-        .mutate(Mutation::UpsertMember(member.clone()))
+        .mutate(Mutation::SetMemberProfile {
+            guild_id: member.guild_id,
+            user_id: member.user_id,
+            patch,
+        })
         .emit(DomainEvent::MemberUpdate(profile.clone()));
 
     let added: Vec<String> = member
@@ -100,5 +113,10 @@ pub async fn commit_member_update(
         )?);
     }
     ports.unit_of_work.commit(writes).await?;
-    Ok(profile)
+    let stored = ports
+        .guilds
+        .member(member.guild_id, member.user_id)
+        .await?
+        .ok_or(crate::AppError::NotFound(crate::Resource::Member))?;
+    member_profile(ports, stored).await
 }

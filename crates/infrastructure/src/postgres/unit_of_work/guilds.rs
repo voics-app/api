@@ -121,7 +121,7 @@ pub(super) async fn upsert_member(conn: &mut PgConnection, member: &Member) -> A
         "INSERT INTO members (guild_id, user_id, nick, avatar, joined_at, deaf, mute, communication_disabled_until, \
              pending) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-         ON CONFLICT (guild_id, user_id) DO UPDATE SET nick = EXCLUDED.nick, avatar = EXCLUDED.avatar, \
+         ON CONFLICT (guild_id, user_id) DO UPDATE SET nick = EXCLUDED.nick, \
              deaf = EXCLUDED.deaf, mute = EXCLUDED.mute, \
              communication_disabled_until = EXCLUDED.communication_disabled_until, pending = EXCLUDED.pending",
     )
