@@ -23,7 +23,14 @@ async fn restricted_push_honours_account_hide_and_never_enables_background_previ
         None,
     )
     .await;
-    let channel = channels[0]["id"].as_str().unwrap();
+    let channel = channels
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|channel| channel["type"] == 0)
+        .expect("default guild text channel")["id"]
+        .as_str()
+        .unwrap();
     let (_, invite) = call(
         &app,
         Method::POST,
