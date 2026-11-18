@@ -16,6 +16,7 @@ pub mod outbox;
 mod push_tokens;
 mod relationships;
 mod reports;
+mod session_revocation;
 mod sessions;
 mod unit_of_work;
 mod users;

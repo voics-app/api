@@ -284,3 +284,144 @@ async fn refreshing_moves_last_used_forward() {
         .to_owned();
     assert!(after > before, "{after} should be after {before}");
 }
+
+#[tokio::test]
+async fn refresh_reuse_announces_revocation_and_removes_push_tokens() {
+    let database = start_database().await;
+    let app = app(&database);
+    let login = register(&app, "replay").await;
+    let session_id = current_id(&sessions(&app, &login.access).await);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        "/api/v1/users/@me/devices/push",
+        &login.access,
+        Some(json!({"platform": "fcm", "token": "replay-test-device-token"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let refresh_request = || {
+        request(
+            Method::POST,
+            "/api/v1/auth/refresh",
+            None,
+            Some(json!({"refresh_token": login.refresh})),
+        )
+    };
+    let (status, rotated) = send(&app, refresh_request()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        send(&app, refresh_request()).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        status_of(&app, rotated["access_token"].as_str().unwrap()).await,
+        StatusCode::UNAUTHORIZED
+    );
+    let events = revocations(&database).await;
+    assert_eq!(
+        events.len(),
+        1,
+        "reuse must disconnect an already-connected gateway session"
+    );
+    assert_eq!(events[0]["data"]["session_ids"], json!([session_id]));
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM push_tokens")
+        .fetch_one(&database.pool)
+        .await
+        .expect("push token count");
+    assert_eq!(
+        remaining, 0,
+        "revoked sessions must stop receiving push notifications"
+    );
+}
+
+#[tokio::test]
+async fn logout_all_rolls_back_when_the_disconnect_event_cannot_be_saved() {
+    let database = start_database().await;
+    let app = app(&database);
+    let first = register(&app, "atomic").await;
+    let current = login(&app, "atomic", DESKTOP_UA, "NL").await;
+    sqlx::query("ALTER TABLE outbox ADD CONSTRAINT reject_revocation CHECK (payload->>'type' <> 'SESSION_REVOKE')")
+        .execute(&database.pool).await.expect("inject an outbox failure");
+    let status = call(
+        &app,
+        Method::POST,
+        "/api/v1/users/@me/sessions/logout-all",
+        &current.access,
+        None,
+    )
+    .await
+    .0;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        status_of(&app, &first.access).await,
+        StatusCode::OK,
+        "revocation and its durable disconnect event must commit together"
+    );
+    sqlx::query("ALTER TABLE outbox DROP CONSTRAINT reject_revocation")
+        .execute(&database.pool)
+        .await
+        .expect("restore outbox");
+    assert_eq!(
+        call(
+            &app,
+            Method::POST,
+            "/api/v1/users/@me/sessions/logout-all",
+            &current.access,
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        revocations(&database).await.len(),
+        1,
+        "a retry must still disconnect the session"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_refresh_cannot_revive_a_session_revoked_by_logout_all() {
+    let database = start_database().await;
+    let app = app(&database);
+    let current = register(&app, "concurrent").await;
+    for _ in 0..16 {
+        let other = login(&app, "concurrent", FIREFOX_UA, "NL").await;
+        let (refresh, logout) = tokio::join!(
+            send(
+                &app,
+                request(
+                    Method::POST,
+                    "/api/v1/auth/refresh",
+                    None,
+                    Some(json!({"refresh_token": other.refresh}))
+                )
+            ),
+            call(
+                &app,
+                Method::POST,
+                "/api/v1/users/@me/sessions/logout-all",
+                &current.access,
+                None
+            )
+        );
+        assert_eq!(logout.0, StatusCode::NO_CONTENT);
+        assert!(matches!(
+            refresh.0,
+            StatusCode::OK | StatusCode::UNAUTHORIZED
+        ));
+        assert_eq!(
+            status_of(&app, &other.access).await,
+            StatusCode::UNAUTHORIZED
+        );
+        if refresh.0 == StatusCode::OK {
+            assert_eq!(
+                status_of(&app, refresh.1["access_token"].as_str().unwrap()).await,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        assert_eq!(status_of(&app, &current.access).await, StatusCode::OK);
+    }
+    assert_eq!(revocations(&database).await.len(), 16);
+}
