@@ -24,9 +24,7 @@ use application::use_cases::commands::{
 use application::use_cases::interactions::create_interaction::{self, CreateInteractionInput};
 use application::use_cases::interactions::respond_to_interaction::{self, InteractionResponse};
 use application::Resource;
-use contracts::objects::{
-    ApplicationCommandDto, ApplicationDto, CommandIndexDto, GuildDto, UserDto,
-};
+use contracts::objects::{ApplicationCommandDto, ApplicationDto, CommandIndexDto, UserDto};
 use contracts::requests::{
     ApplicationCommandRequest, CreateApplicationRequest, CreateInteractionRequest,
     InteractionResponseRequest, ModifyApplicationRequest, OAuth2AuthorizeRequest,
@@ -39,10 +37,6 @@ use crate::extract::{Body, Caller};
 use crate::images::{self, IMAGE_BODY_LIMIT};
 use crate::routes::ids::snowflake;
 use crate::state::AppState;
-
-fn region(state: &AppState) -> &str {
-    &state.ports.settings.default_voice_region
-}
 
 async fn create(
     State(state): State<AppState>,
@@ -296,15 +290,30 @@ async fn command_remove(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AuthorizeQuery {
     client_id: String,
+    scope: Option<String>,
+    permissions: Option<String>,
+    guild_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AuthorizeGuildDto {
+    id: Id,
+    name: String,
+    icon: Option<String>,
+    permissions: Perm,
+    bot_permissions: Option<Perm>,
 }
 
 #[derive(Serialize)]
 pub struct AuthorizeInfoDto {
     application: ApplicationDto,
     user: UserDto,
-    guilds: Vec<GuildDto>,
+    guilds: Vec<AuthorizeGuildDto>,
+    scopes: Vec<String>,
+    permissions: Perm,
 }
 
 async fn authorize_info(
@@ -312,13 +321,21 @@ async fn authorize_info(
     Caller(actor): Caller,
     Query(query): Query<AuthorizeQuery>,
 ) -> Result<Json<AuthorizeInfoDto>, ApiError> {
+    if let Some(guild) = &query.guild_id {
+        snowflake(guild, Resource::Guild)?;
+    }
+    let permissions = domain::bot_authorization::requested_permissions(
+        query.permissions.as_deref().unwrap_or("0"),
+    )
+    .map_err(application::AppError::from)?;
     let info = get_authorize_info::execute(
         &state.ports,
         &actor,
         snowflake(&query.client_id, Resource::Application)?,
+        query.scope.as_deref().unwrap_or("bot"),
+        permissions,
     )
     .await?;
-    let region = region(&state);
     Ok(Json(AuthorizeInfoDto {
         application: ApplicationDto::new(
             &info.application.application,
@@ -329,8 +346,16 @@ async fn authorize_info(
         guilds: info
             .guilds
             .iter()
-            .map(|(guild, permissions)| GuildDto::partial(guild, *permissions, region))
+            .map(|(guild, permissions, bot_permissions)| AuthorizeGuildDto {
+                id: Id(guild.id),
+                name: guild.name.clone(),
+                icon: guild.icon.clone(),
+                permissions: Perm(*permissions),
+                bot_permissions: bot_permissions.map(Perm),
+            })
             .collect(),
+        scopes: info.scopes,
+        permissions: Perm(info.permissions),
     }))
 }
 
@@ -338,15 +363,18 @@ async fn authorize(
     State(state): State<AppState>,
     Caller(actor): Caller,
     Body(body): Body<OAuth2AuthorizeRequest>,
-) -> Result<StatusCode, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     let input = AuthorizeBotInput {
         client_id: body.client_id.0,
         guild_id: body.guild_id.0,
-        permissions: body.permissions.0,
+        permissions: domain::bot_authorization::requested_permissions(&body.permissions)
+            .map_err(application::AppError::from)?,
         scope: body.scope,
     };
     authorize_bot::execute(&state.ports, &actor, input).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(
+        json!({ "location": format!("/channels/{}", body.guild_id.0) }),
+    ))
 }
 
 async fn create_interaction_handler(

@@ -109,11 +109,7 @@ async fn applications_commands_authorization_and_webhooks_follow_the_contract() 
         })),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::NO_CONTENT,
-        "the owner can install the bot"
-    );
+    assert_eq!(status, StatusCode::OK, "the owner can install the bot");
 
     let (status, installed) = call(
         &app,

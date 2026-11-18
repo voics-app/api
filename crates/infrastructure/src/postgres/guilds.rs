@@ -19,7 +19,7 @@ use super::PgStore;
 const GUILD_COLUMNS: &str = "id, name, icon, description, owner_id, voice_region, verification_level, \
      default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, system_channel_flags, banner, splash, prune_admin_only, audit_log_enabled, audit_log_retention_days, created_at";
 
-const ROLE_COLUMNS: &str =
+pub(super) const ROLE_COLUMNS: &str =
     "id, guild_id, name, color, hoist, icon, unicode_emoji, position, permissions, \
      managed, mentionable, bot_id";
 

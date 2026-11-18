@@ -5,5 +5,6 @@ pub mod edit_original_response;
 pub mod execute_webhook;
 pub mod get_webhook;
 pub mod list_guild_webhooks;
+pub mod reset_webhook_token;
 pub mod update_webhook;
 pub mod webhook_access;

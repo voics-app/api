@@ -8,6 +8,7 @@ use uuid::Uuid;
 use domain::account::{AccountState, AccountToken, TokenPurpose};
 use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
+use domain::bot_authorization::{BotAuthorization, BotInstallation};
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
 use domain::device::Device;
@@ -373,6 +374,23 @@ pub trait ApplicationRepository: Send + Sync {
     ) -> AppResult<Option<ApplicationCommand>>;
     /// Applications whose bot is a member of `guild_id`.
     async fn installed_in_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Application>>;
+    async fn installation(
+        &self,
+        guild_id: Snowflake,
+        application_id: Snowflake,
+    ) -> AppResult<Option<BotInstallation>>;
+    /// Last installation generation, retained after the bot leaves.
+    async fn installation_revision(
+        &self,
+        guild_id: Snowflake,
+        application_id: Snowflake,
+    ) -> AppResult<Option<i64>>;
+    async fn authorizations(&self, user_id: Snowflake) -> AppResult<Vec<BotAuthorization>>;
+    async fn authorization(
+        &self,
+        user_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<BotAuthorization>>;
 }
 
 #[async_trait]

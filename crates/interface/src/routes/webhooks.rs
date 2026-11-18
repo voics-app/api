@@ -1,8 +1,8 @@
 //! Webhooks (P9): channel webhooks, their management, execution and the
 //! original-response endpoints of interactions.
 
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::http::{header, HeaderName, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
@@ -12,7 +12,7 @@ use application::use_cases::webhooks::create_webhook::{self, CreateWebhookInput}
 use application::use_cases::webhooks::update_webhook::{self, UpdateWebhookInput};
 use application::use_cases::webhooks::{
     delete_original_response, delete_webhook, edit_original_response, execute_webhook, get_webhook,
-    list_guild_webhooks,
+    list_guild_webhooks, reset_webhook_token,
 };
 use application::Resource;
 use contracts::objects::WebhookDto;
@@ -35,7 +35,14 @@ async fn create(
     AuditReason(reason): AuditReason,
     Path(channel): Path<String>,
     Body(body): Body<CreateWebhookRequest>,
-) -> Result<(StatusCode, Json<WebhookDto>), ApiError> {
+) -> Result<
+    (
+        StatusCode,
+        [(HeaderName, &'static str); 1],
+        Json<WebhookDto>,
+    ),
+    ApiError,
+> {
     let input = CreateWebhookInput {
         name: body.name,
         avatar: images::optional(body.avatar)?,
@@ -55,7 +62,33 @@ async fn create(
     let base = token_base(&state);
     Ok((
         StatusCode::CREATED,
+        [(header::CACHE_CONTROL, "no-store")],
         Json(WebhookDto::new(&webhook, Some((&base, &token)))),
+    ))
+}
+
+async fn reset_token(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
+    Path(id): Path<String>,
+) -> Result<([(HeaderName, &'static str); 1], Json<WebhookDto>), ApiError> {
+    let (webhook, token) = reset_webhook_token::execute(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Webhook)?,
+        AuditContext {
+            actor_id: actor.user_id,
+            reason: reason.as_deref(),
+        },
+    )
+    .await?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(WebhookDto::new(
+            &webhook,
+            Some((&token_base(&state), &token)),
+        )),
     ))
 }
 
@@ -180,9 +213,19 @@ async fn delete_original(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/channels/{id}/webhooks", post(create))
+        .route(
+            "/channels/{id}/webhooks",
+            post(create).layer(DefaultBodyLimit::max(images::IMAGE_BODY_LIMIT)),
+        )
         .route("/guilds/{id}/webhooks", get(guild_webhooks))
-        .route("/webhooks/{id}", get(fetch).patch(modify).delete(remove))
+        .route(
+            "/webhooks/{id}",
+            get(fetch)
+                .patch(modify)
+                .delete(remove)
+                .layer(DefaultBodyLimit::max(images::IMAGE_BODY_LIMIT)),
+        )
+        .route("/webhooks/{id}/reset-token", post(reset_token))
         .route("/webhooks/{id}/{token}", post(execute))
         .route(
             "/webhooks/{app_id}/{token}/messages/@original",

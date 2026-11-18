@@ -99,7 +99,7 @@ async fn fixture() -> Fixture {
         })),
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT, "the owner installs the bot");
+    assert_eq!(status, StatusCode::OK, "the owner installs the bot");
 
     let (status, channels) = call(
         &app,

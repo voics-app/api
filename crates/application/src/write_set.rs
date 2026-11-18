@@ -21,6 +21,14 @@ use domain::Snowflake;
 
 use crate::events::DomainEvent;
 
+/// Only explicitly supplied metadata. Credential and identity fields are deliberately absent.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WebhookMetadataPatch {
+    pub name: Option<String>,
+    pub avatar: Option<Option<String>>,
+    pub channel_id: Option<Snowflake>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mutation {
     InsertUser {
@@ -95,6 +103,10 @@ pub enum Mutation {
     DeleteGuild(Snowflake),
     InsertRole(Role),
     UpdateRole(Role),
+    /// Makes room for the managed bot role without rewriting role metadata or permissions.
+    ShiftRolesForBot {
+        guild_id: Snowflake,
+    },
     DeleteRole {
         guild_id: Snowflake,
         role_id: Snowflake,
@@ -177,7 +189,34 @@ pub enum Mutation {
     },
 
     InsertWebhook(Webhook),
-    UpdateWebhook(Webhook),
+    /// Serializes lifecycle changes and rejects actions based on a replaced installation.
+    GuardApplicationInstallation {
+        guild_id: Snowflake,
+        application_id: Snowflake,
+        bot_user_id: Snowflake,
+        expected_generation: Option<i64>,
+        expected_revision: Option<i64>,
+    },
+    RegisterApplicationInstallation {
+        guild_id: Snowflake,
+        application_id: Snowflake,
+        bot_user_id: Snowflake,
+        installed_at: DateTime<Utc>,
+    },
+    RecordBotConsent(domain::bot_authorization::BotConsent),
+    RevokeBotConsent {
+        id: Snowflake,
+        user_id: Snowflake,
+    },
+    UpdateWebhook {
+        id: Snowflake,
+        patch: WebhookMetadataPatch,
+    },
+    /// Rotates only the incoming webhook credential; metadata is preserved.
+    SetWebhookToken {
+        id: Snowflake,
+        token_hash: String,
+    },
     DeleteWebhook(Snowflake),
 }
 

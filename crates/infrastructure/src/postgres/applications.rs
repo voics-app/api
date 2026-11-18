@@ -94,6 +94,39 @@ impl TryFrom<CommandRow> for ApplicationCommand {
 
 #[async_trait]
 impl ApplicationRepository for PgStore {
+    async fn installation_revision(
+        &self,
+        guild_id: Snowflake,
+        application_id: Snowflake,
+    ) -> AppResult<Option<i64>> {
+        sqlx::query_scalar("SELECT last_generation FROM application_installation_versions WHERE guild_id=$1 AND application_id=$2")
+            .bind(guild_id.as_i64()).bind(application_id.as_i64()).fetch_optional(&self.pool).await.map_err(db)
+    }
+    async fn installation(
+        &self,
+        guild_id: Snowflake,
+        application_id: Snowflake,
+    ) -> AppResult<Option<domain::bot_authorization::BotInstallation>> {
+        super::authorizations::installation(&self.pool, guild_id, application_id).await
+    }
+    async fn authorizations(
+        &self,
+        user_id: Snowflake,
+    ) -> AppResult<Vec<domain::bot_authorization::BotAuthorization>> {
+        super::authorizations::authorizations(&self.pool, user_id, None).await
+    }
+    async fn authorization(
+        &self,
+        user_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<domain::bot_authorization::BotAuthorization>> {
+        Ok(
+            super::authorizations::authorizations(&self.pool, user_id, Some(id))
+                .await?
+                .into_iter()
+                .next(),
+        )
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<Application>> {
         let sql = format!("SELECT {APPLICATION_COLUMNS} FROM applications WHERE id = $1");
         let row: Option<ApplicationRow> = sqlx::query_as(&sql)
