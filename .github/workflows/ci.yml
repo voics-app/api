@@ -28,7 +28,7 @@ jobs:
         with:
           repository: discordy-voics/messages
           ref: 8548a6b
-          token: ${{ secrets.DEPS_TOKEN }}
+          token: ${{ secrets.DEPS_TOKEN || github.token }}
           path: messages
       - name: Build loopback messages fixture
         working-directory: messages

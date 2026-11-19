@@ -4,6 +4,13 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+Announcement follows and publication (api#36) are gated by
+`ANNOUNCEMENT_DELIVERY_ENABLED`, default `false`. A follower is a non-executable
+type-2 webhook; publication reserves one delivery per source message and target
+channel in Postgres. The relay checks the reserved destination after a lost
+response and never blindly re-sends an unknown result. This work remains in
+review pending cross-service verification and an operator recovery procedure.
+
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts
 self-only avatar, banner and bio overrides independently of nickname permissions.

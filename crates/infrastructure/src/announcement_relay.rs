@@ -58,17 +58,27 @@ impl AnnouncementRelay {
         let markers: Vec<(i64, i64)> = sqlx::query_as("SELECT source_channel_id, source_message_id FROM announcement_publications WHERE NOT marked AND (marker_checked_at IS NULL OR marker_checked_at < now() - interval '1 minute') ORDER BY marker_checked_at NULLS FIRST, created_at LIMIT 25")
             .fetch_all(&self.pool).await?;
         for (channel, message) in markers {
-            if self
+            let marker = self
                 .messages
                 .mark_crossposted(
                     Snowflake::new(channel as u64),
                     Snowflake::new(message as u64),
                 )
-                .await
-                .is_ok()
-            {
-                sqlx::query("UPDATE announcement_publications SET marked=true WHERE source_channel_id=$1 AND source_message_id=$2")
-                    .bind(channel).bind(message).execute(&self.pool).await?;
+                .await;
+            match marker {
+                Ok(_) => {
+                    sqlx::query("UPDATE announcement_publications SET marked=true WHERE source_channel_id=$1 AND source_message_id=$2")
+                        .bind(channel).bind(message).execute(&self.pool).await?;
+                }
+                Err(application::AppError::NotFound(_)) => {
+                    let mut tx = self.pool.begin().await?;
+                    sqlx::query("UPDATE announcement_deliveries SET state='cancelled' WHERE source_channel_id=$1 AND source_message_id=$2 AND state='pending'")
+                        .bind(channel).bind(message).execute(&mut *tx).await?;
+                    sqlx::query("UPDATE announcement_publications SET marked=true WHERE source_channel_id=$1 AND source_message_id=$2")
+                        .bind(channel).bind(message).execute(&mut *tx).await?;
+                    tx.commit().await?;
+                }
+                Err(_) => {}
             }
             sqlx::query("UPDATE announcement_publications SET marker_checked_at=now() WHERE source_channel_id=$1 AND source_message_id=$2 AND NOT marked")
                 .bind(channel).bind(message).execute(&self.pool).await?;
@@ -92,11 +102,11 @@ impl AnnouncementRelay {
                 .bind(source).bind(original).bind(target).execute(&mut *tx).await?;
             tx.commit().await?;
             let body = json!({"source_channel_id": source.to_string(), "message_id": destination.to_string(), "webhook_id": webhook.to_string(), "webhook_name": name, "snapshot": snapshot});
-            let state = if self
+            let result = self
                 .messages
                 .deliver_crosspost(Snowflake::new(target as u64), body)
-                .await
-                .is_ok()
+                .await;
+            let state = if matches!(result, Ok(ref stored) if stored.id.value() == destination as u64 && stored.body.get("webhook_id").and_then(Value::as_str) == Some(webhook.to_string().as_str()))
             {
                 "delivered"
             } else {
