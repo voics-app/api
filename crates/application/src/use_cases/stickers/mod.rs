@@ -76,6 +76,9 @@ pub async fn create(
     }
     let format = stickers::validate(&image)?;
     let id = ports.ids.next_id()?;
+    if builtins::find(id).is_some() {
+        return Err(AppError::Internal("generated a reserved sticker ID".into()));
+    }
     let extension = match format {
         StickerFormat::Png | StickerFormat::Apng => "png",
         StickerFormat::Gif => "gif",
