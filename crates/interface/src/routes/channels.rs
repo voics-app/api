@@ -348,6 +348,14 @@ async fn thread(
     Path(parent): Path<String>,
     Body(body): Body<CreateThreadRequest>,
 ) -> Result<(StatusCode, Json<ChannelDto>), ApiError> {
+    if body.message.is_some() {
+        return Err(application::AppError::invalid(
+            "message",
+            "NOT_YET_SUPPORTED",
+            "Creating the first message with a thread is not supported; create it separately.",
+        )
+        .into());
+    }
     let kind = body.kind.map(|code| kind_code(code, "type")).transpose()?;
     let input = CreateThreadInput {
         name: body.name,

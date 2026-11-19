@@ -416,6 +416,8 @@ pub struct CreateInviteRequest {
 pub struct CreateThreadRequest {
     pub name: String,
     #[serde(default)]
+    pub message: Option<serde_json::Value>,
+    #[serde(default)]
     pub applied_tags: Vec<String>,
     #[serde(default, rename = "type")]
     pub kind: Option<u8>,
