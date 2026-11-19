@@ -78,6 +78,11 @@ impl UnitOfWork for PgUnitOfWork {
                 .map_err(db)?;
                 committed = DomainEvent::UserUpdate(row.into());
                 &committed
+            } else if let DomainEvent::ChannelUpdate(channel) = event {
+                committed = DomainEvent::ChannelUpdate(
+                    super::channels::committed_channel(conn, channel.id).await?,
+                );
+                &committed
             } else if let DomainEvent::MemberUpdate(profile) = event {
                 committed = DomainEvent::MemberUpdate(
                     super::guilds::committed_member(conn, &profile.member).await?,
@@ -167,6 +172,21 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         } => identity::set_relationship(conn, *user_id, *target_id, *kind, *since).await,
         Mutation::InsertChannel(channel) | Mutation::UpdateChannel(channel) => {
             identity::upsert_channel(conn, channel).await
+        }
+        Mutation::SetVoiceStatus { channel_id, status } => {
+            let result =
+                sqlx::query("UPDATE channels SET status = $2 WHERE id = $1 AND kind IN (2, 13)")
+                    .bind(channel_id.as_i64())
+                    .bind(status)
+                    .execute(conn)
+                    .await
+                    .map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::NotFound(
+                    application::Resource::Channel,
+                ));
+            }
+            Ok(())
         }
         Mutation::DeleteChannel(channel_id) => identity::delete_channel(conn, *channel_id).await,
         Mutation::SetDeliveryOverride {

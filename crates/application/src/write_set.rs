@@ -99,6 +99,10 @@ pub enum Mutation {
     InsertChannel(Channel),
     /// Replaces every column, overwrites and recipients included.
     UpdateChannel(Channel),
+    SetVoiceStatus {
+        channel_id: Snowflake,
+        status: Option<String>,
+    },
     DeleteChannel(Snowflake),
     /// `mode: None` clears the override.
     SetDeliveryOverride {

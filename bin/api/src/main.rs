@@ -131,7 +131,12 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
             config.jwt_public_pem.as_bytes(),
         )?),
         clock: Arc::new(SystemClock),
-        presence: Arc::new(ValkeyPresence::connect(&config.valkey_url).await?),
+        presence: Arc::new(match config.gateway_internal_url.clone() {
+            Some(url) => ValkeyPresence::connect(&config.valkey_url)
+                .await?
+                .with_gateway(url, config.internal_token.clone())?,
+            None => ValkeyPresence::connect(&config.valkey_url).await?,
+        }),
         ids,
         id_reservations,
         secrets: Arc::new(OsSecrets),

@@ -331,6 +331,19 @@ pub struct CreateChannelRequest {
     pub voice_region: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct VoiceStatusRequest {
+    #[serde(deserialize_with = "required_nullable_status")]
+    pub status: Option<String>,
+}
+
+fn required_nullable_status<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyChannelRequest {
     #[serde(default)]

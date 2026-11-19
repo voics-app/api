@@ -137,6 +137,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `SNOWFLAKE_WORKER_ID` | yes | | Preferred API worker 0–63; allocation uses 1–63 and permanently excludes legacy worker 0 |
 | `PUBLIC_API_URL` | yes | | Base for webhook URLs |
 | `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
+| `GATEWAY_INTERNAL_URL` | no | | Internal HTTP(S) gateway service URL for connected-member voice-status authorization. When unset, that authorization path fails closed. |
 | `CDN_PUBLIC_URL` | yes | | Public asset base |
 | `MESSAGES_INTERNAL_URL` | yes | | messages service internal base |
 | `MINIO_ENDPOINT` | yes | | S3 API endpoint |

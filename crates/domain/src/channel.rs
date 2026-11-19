@@ -122,6 +122,7 @@ pub struct Channel {
     pub position: i32,
     pub name: Option<String>,
     pub topic: Option<String>,
+    pub status: Option<String>,
     pub nsfw: bool,
     /// Voice channels only: whether members may send messages to the channel's chat.
     pub text_chat_enabled: bool,
@@ -155,6 +156,7 @@ impl Channel {
             position: 0,
             name: None,
             topic: None,
+            status: None,
             nsfw: false,
             text_chat_enabled: true,
             bitrate: kind.is_voice().then_some(64_000),

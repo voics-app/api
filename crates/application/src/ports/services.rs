@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use domain::Snowflake;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::DomainEvent;
 use crate::write_set::WriteSet;
 
@@ -137,6 +137,17 @@ pub trait PresenceDirectory: Send + Sync {
     async fn online_count(&self, user_ids: &[Snowflake]) -> AppResult<u64>;
     /// Which of `user_ids` hold at least one live gateway session, whatever their status.
     async fn live_ids(&self, user_ids: &[Snowflake]) -> AppResult<Vec<Snowflake>>;
+    /// The gateway owns voice state; inability to check never grants permission.
+    async fn in_voice_channel(
+        &self,
+        _guild_id: Snowflake,
+        _channel_id: Snowflake,
+        _user_id: Snowflake,
+    ) -> AppResult<bool> {
+        Err(AppError::Unavailable(
+            "voice state lookup is not configured".into(),
+        ))
+    }
 }
 
 #[async_trait]

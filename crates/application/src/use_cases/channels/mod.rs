@@ -9,5 +9,6 @@ pub mod list_guild_channels;
 pub mod put_overwrite;
 pub mod remove_recipient;
 pub mod reorder_channels;
+pub mod set_voice_status;
 pub mod trigger_typing;
 pub mod update_channel;
