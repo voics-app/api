@@ -352,6 +352,11 @@ async fn update_guild_channel(
         [
             AuditChange::if_changed("topic", json!(before.topic), json!(channel.topic)),
             AuditChange::if_changed(
+                "forum_settings",
+                json!(before.forum_settings),
+                json!(channel.forum_settings),
+            ),
+            AuditChange::if_changed(
                 "delivery_mode",
                 json!(before.delivery_mode.as_str()),
                 json!(channel.delivery_mode.as_str()),
