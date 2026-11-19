@@ -188,4 +188,47 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     let events: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload::text LIKE '%CHANNEL_UPDATE%' AND payload::text LIKE '%Listening%'")
         .fetch_one(&database.pool).await.unwrap();
     assert_eq!(events, 1);
+
+    let guild_number: i64 = guild_id.parse().unwrap();
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT joins, leaves FROM guild_daily_activity WHERE guild_id = $1")
+            .bind(guild_number)
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+    assert_eq!(counts, (2, 0));
+    let mut tx = database.pool.begin().await.unwrap();
+    sqlx::query("DELETE FROM members WHERE guild_id = $1 AND user_id = $2")
+        .bind(guild_number)
+        .bind(guest_id.parse::<i64>().unwrap())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT joins, leaves FROM guild_daily_activity WHERE guild_id = $1")
+            .bind(guild_number)
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+    assert_eq!(counts, (2, 0), "rolled-back departures are not counted");
+    assert_eq!(
+        call(
+            &app,
+            Method::DELETE,
+            &format!("/api/v1/users/@me/guilds/{guild_id}"),
+            &guest,
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let counts: (i64, i64) =
+        sqlx::query_as("SELECT joins, leaves FROM guild_daily_activity WHERE guild_id = $1")
+            .bind(guild_number)
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+    assert_eq!(counts, (2, 1));
 }
