@@ -1,4 +1,5 @@
 //! Read scheduled events without exposing events in hidden channels.
+use chrono::{DateTime, Utc};
 use domain::channel::ChannelType;
 use domain::permissions::Permissions;
 use domain::scheduled_event::{EventKind, EventStatus, ScheduledEvent, ScheduledEventDetails};
@@ -10,6 +11,146 @@ use crate::events::DomainEvent;
 use crate::support::guild_context::GuildContext;
 use crate::support::images::{store_hashed, ImageUpload};
 use crate::write_set::{Mutation, WriteSet};
+
+#[derive(Default)]
+pub struct EventPatch {
+    pub name: Option<String>,
+    pub description: Option<Option<String>>,
+    pub start: Option<DateTime<Utc>>,
+    pub end: Option<Option<DateTime<Utc>>>,
+    pub kind: Option<EventKind>,
+    pub status: Option<EventStatus>,
+    pub image: Option<Option<ImageUpload>>,
+}
+
+async fn manager(ports: &Ports, actor: &Actor, event: &ScheduledEvent) -> AppResult<GuildContext> {
+    let context = GuildContext::load(ports, event.guild_id, actor.user_id).await?;
+    let permissions = context.permissions();
+    if !permissions.contains(Permissions::MANAGE_EVENTS)
+        && !(event.creator_id == Some(actor.user_id)
+            && permissions.contains(Permissions::CREATE_EVENTS))
+    {
+        return Err(AppError::missing_permissions());
+    }
+    Ok(context)
+}
+
+pub async fn update(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    event_id: Snowflake,
+    patch: EventPatch,
+) -> AppResult<ScheduledEvent> {
+    let before = get(ports, actor, guild_id, event_id).await?;
+    let context = manager(ports, actor, &before).await?;
+    let mut after = before.clone();
+    if let Some(name) = patch.name {
+        after.details.name = name.trim().to_owned();
+    }
+    if let Some(description) = patch.description {
+        after.details.description = description;
+    }
+    if let Some(start) = patch.start {
+        if before.details.status != EventStatus::Scheduled || start <= context.now {
+            return Err(AppError::invalid(
+                "scheduled_start_time",
+                "INVALID_TIME",
+                "Only a scheduled event can be moved to a future time.",
+            ));
+        }
+        after.details.start = start;
+    }
+    if let Some(end) = patch.end {
+        after.details.end = end;
+    }
+    if let Some(kind) = patch.kind {
+        if before.details.status != EventStatus::Scheduled {
+            return Err(AppError::invalid(
+                "entity_type",
+                "INVALID_EVENT",
+                "Only a scheduled event can change location.",
+            ));
+        }
+        after.details.kind = kind;
+    }
+    if let Some(status) = patch.status {
+        if !before.details.status.can_transition_to(status) {
+            return Err(AppError::invalid(
+                "status",
+                "INVALID_STATUS",
+                "Invalid event status transition.",
+            ));
+        }
+        after.details.status = status;
+    }
+    after.details.validate().map_err(|err| {
+        AppError::invalid("event", "INVALID_EVENT", format!("Invalid event: {err:?}"))
+    })?;
+    if let EventKind::Voice { channel_id } | EventKind::Stage { channel_id } = &after.details.kind {
+        let channel = ports
+            .channels
+            .find(*channel_id)
+            .await?
+            .ok_or(AppError::NotFound(Resource::Channel))?;
+        let expected = if matches!(&after.details.kind, EventKind::Stage { .. }) {
+            ChannelType::GuildStageVoice
+        } else {
+            ChannelType::GuildVoice
+        };
+        if channel.guild_id != Some(guild_id) || channel.kind != expected {
+            return Err(AppError::invalid(
+                "channel_id",
+                "INVALID_CHANNEL",
+                "Select a matching channel in this server.",
+            ));
+        }
+        context.require_in_channel(&channel, None, Permissions::VIEW_CHANNEL)?;
+    }
+    if let Some(image) = patch.image {
+        after.image = match image {
+            Some(image) => {
+                Some(store_hashed(ports, &format!("guild-events/{event_id}"), image).await?)
+            }
+            None => None,
+        };
+    }
+    after.revision = before
+        .revision
+        .checked_add(1)
+        .ok_or_else(|| AppError::internal("event revision exhausted"))?;
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::UpdateScheduledEvent {
+            event: after.clone(),
+            expected_revision: before.revision,
+        })
+        .emit(DomainEvent::ScheduledEventUpdate {
+            before,
+            after: after.clone(),
+        });
+    ports.unit_of_work.commit(writes).await?;
+    Ok(after)
+}
+
+pub async fn delete(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    event_id: Snowflake,
+) -> AppResult<()> {
+    let event = get(ports, actor, guild_id, event_id).await?;
+    manager(ports, actor, &event).await?;
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::DeleteScheduledEvent {
+            guild_id,
+            event_id,
+            expected_revision: event.revision,
+        })
+        .emit(DomainEvent::ScheduledEventDelete(event));
+    ports.unit_of_work.commit(writes).await
+}
 
 pub async fn create(
     ports: &Ports,
@@ -71,6 +212,7 @@ pub async fn create(
         details,
         image,
         user_count: 0,
+        revision: 0,
     };
     let mut writes = WriteSet::new();
     writes

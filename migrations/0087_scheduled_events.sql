@@ -9,6 +9,7 @@ CREATE TABLE guild_scheduled_events (
     scheduled_start_time TIMESTAMPTZ NOT NULL,
     scheduled_end_time TIMESTAMPTZ,
     status SMALLINT NOT NULL CHECK (status IN (1, 2, 3, 4)),
+    revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
     entity_type SMALLINT NOT NULL CHECK (entity_type IN (1, 2, 3)),
     location TEXT,
     image TEXT,
@@ -35,6 +36,8 @@ CREATE TABLE guild_scheduled_event_users (
 CREATE TABLE guild_scheduled_event_reminders (
     event_id BIGINT NOT NULL REFERENCES guild_scheduled_events (id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    event_revision BIGINT NOT NULL,
+    scheduled_start_time TIMESTAMPTZ NOT NULL,
     enqueued_at TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (event_id, user_id)
+    PRIMARY KEY (event_id, user_id, event_revision, scheduled_start_time)
 );

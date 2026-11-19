@@ -7,7 +7,7 @@ use domain::scheduled_event::{EventKind, EventStatus, ScheduledEvent, ScheduledE
 use domain::Snowflake;
 use sqlx::{FromRow, PgConnection, PgPool};
 
-const COLUMNS: &str = "e.id, e.guild_id, e.creator_id, e.channel_id, e.name, e.description, e.scheduled_start_time, e.scheduled_end_time, e.status, e.entity_type, e.location, e.image, (SELECT count(*) FROM guild_scheduled_event_users u WHERE u.event_id = e.id) AS user_count";
+const COLUMNS: &str = "e.id, e.guild_id, e.creator_id, e.channel_id, e.name, e.description, e.scheduled_start_time, e.scheduled_end_time, e.status, e.revision, e.entity_type, e.location, e.image, (SELECT count(*) FROM guild_scheduled_event_users u WHERE u.event_id = e.id) AS user_count";
 
 #[derive(FromRow)]
 struct Row {
@@ -20,6 +20,7 @@ struct Row {
     scheduled_start_time: DateTime<Utc>,
     scheduled_end_time: Option<DateTime<Utc>>,
     status: i16,
+    revision: i64,
     entity_type: i16,
     location: Option<String>,
     image: Option<String>,
@@ -50,6 +51,7 @@ impl TryFrom<Row> for ScheduledEvent {
             },
             image: row.image,
             user_count: u64::try_from(row.user_count).map_err(AppError::internal)?,
+            revision: row.revision,
         })
     }
 }
@@ -96,6 +98,54 @@ pub(super) async fn insert(conn: &mut PgConnection, event: &ScheduledEvent) -> A
         .bind(channel).bind(&event.details.name).bind(&event.details.description)
         .bind(event.details.start).bind(event.details.end).bind(event.details.status.code())
         .bind(kind).bind(location).bind(&event.image).execute(conn).await.map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn update(
+    conn: &mut PgConnection,
+    event: &ScheduledEvent,
+    expected_revision: i64,
+) -> AppResult<()> {
+    let (kind, channel, location) = match &event.details.kind {
+        EventKind::Stage { channel_id } => (1_i16, Some(channel_id.as_i64()), None),
+        EventKind::Voice { channel_id } => (2_i16, Some(channel_id.as_i64()), None),
+        EventKind::External { location } => (3_i16, None, Some(location.as_str())),
+    };
+    let changed = sqlx::query("UPDATE guild_scheduled_events SET channel_id=$1, name=$2, description=$3, scheduled_start_time=$4, scheduled_end_time=$5, status=$6, entity_type=$7, location=$8, image=$9, revision=revision+1 WHERE id=$10 AND guild_id=$11 AND revision=$12")
+        .bind(channel).bind(&event.details.name).bind(&event.details.description).bind(event.details.start)
+        .bind(event.details.end).bind(event.details.status.code()).bind(kind).bind(location).bind(&event.image)
+        .bind(event.id.as_i64()).bind(event.guild_id.as_i64()).bind(expected_revision).execute(conn).await.map_err(db)?.rows_affected();
+    if changed == 0 {
+        return Err(AppError::Conflict {
+            code: 0,
+            message: "Event changed; reload and retry.".into(),
+        });
+    }
+    Ok(())
+}
+
+pub(super) async fn delete(
+    conn: &mut PgConnection,
+    guild: Snowflake,
+    event: Snowflake,
+    expected_revision: i64,
+) -> AppResult<()> {
+    let changed = sqlx::query(
+        "DELETE FROM guild_scheduled_events WHERE guild_id=$1 AND id=$2 AND revision=$3",
+    )
+    .bind(guild.as_i64())
+    .bind(event.as_i64())
+    .bind(expected_revision)
+    .execute(conn)
+    .await
+    .map_err(db)?
+    .rows_affected();
+    if changed == 0 {
+        return Err(AppError::Conflict {
+            code: 0,
+            message: "Event changed; reload and retry.".into(),
+        });
+    }
     Ok(())
 }
 

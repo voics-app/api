@@ -30,6 +30,11 @@ pub struct PrivateChannelView {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomainEvent {
     ScheduledEventCreate(domain::scheduled_event::ScheduledEvent),
+    ScheduledEventUpdate {
+        before: domain::scheduled_event::ScheduledEvent,
+        after: domain::scheduled_event::ScheduledEvent,
+    },
+    ScheduledEventDelete(domain::scheduled_event::ScheduledEvent),
     ScheduledEventInterest {
         guild_id: Snowflake,
         event_id: Snowflake,

@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use application::use_cases::scheduled_events;
 use application::Resource;
 use contracts::objects::scheduled_event as dto;
-use contracts::wire::Id;
+use contracts::wire::{double_option, Id};
 use domain::scheduled_event::{EventKind, EventStatus, ScheduledEventDetails};
 
 use crate::error::ApiError;
@@ -34,6 +34,93 @@ struct CreateRequest {
     scheduled_start_time: DateTime<Utc>,
     scheduled_end_time: Option<DateTime<Utc>>,
     image: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct ModifyRequest {
+    name: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    description: Option<Option<String>>,
+    entity_type: Option<u8>,
+    #[serde(default, deserialize_with = "double_option")]
+    channel_id: Option<Option<Id>>,
+    #[serde(default, deserialize_with = "double_option")]
+    entity_metadata: Option<Option<Metadata>>,
+    scheduled_start_time: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "double_option")]
+    scheduled_end_time: Option<Option<DateTime<Utc>>>,
+    #[serde(default, deserialize_with = "double_option")]
+    image: Option<Option<String>>,
+    status: Option<i16>,
+}
+
+async fn modify(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((guild, event)): Path<(String, String)>,
+    Body(body): Body<ModifyRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let kind = match (body.entity_type, body.channel_id, body.entity_metadata) {
+        (None, None, None) => None,
+        (Some(1), Some(Some(channel)), None | Some(None)) => Some(EventKind::Stage {
+            channel_id: channel.0,
+        }),
+        (Some(2), Some(Some(channel)), None | Some(None)) => Some(EventKind::Voice {
+            channel_id: channel.0,
+        }),
+        (Some(3), None | Some(None), Some(Some(metadata))) => Some(EventKind::External {
+            location: metadata.location,
+        }),
+        _ => {
+            return Err(application::AppError::invalid(
+                "entity_type",
+                "INVALID_EVENT",
+                "Specify the type and matching channel or external location together.",
+            )
+            .into())
+        }
+    };
+    let status = body
+        .status
+        .map(|code| {
+            EventStatus::from_code(code).ok_or_else(|| {
+                application::AppError::invalid("status", "INVALID_STATUS", "Unknown event status.")
+            })
+        })
+        .transpose()?;
+    let patch = scheduled_events::EventPatch {
+        name: body.name,
+        description: body.description,
+        start: body.scheduled_start_time,
+        end: body.scheduled_end_time,
+        kind,
+        status,
+        image: images::patch(body.image)?,
+    };
+    let event = scheduled_events::update(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        snowflake(&event, Resource::GuildScheduledEvent)?,
+        patch,
+    )
+    .await?;
+    Ok(Json(dto(&event)))
+}
+
+async fn remove(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((guild, event)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    scheduled_events::delete(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        snowflake(&event, Resource::GuildScheduledEvent)?,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn create(
@@ -157,7 +244,13 @@ pub fn routes() -> Router<AppState> {
                 .post(create)
                 .layer(DefaultBodyLimit::max(images::IMAGE_BODY_LIMIT)),
         )
-        .route("/guilds/{id}/scheduled-events/{event}", get(get_one))
+        .route(
+            "/guilds/{id}/scheduled-events/{event}",
+            get(get_one)
+                .patch(modify)
+                .delete(remove)
+                .layer(DefaultBodyLimit::max(images::IMAGE_BODY_LIMIT)),
+        )
         .route(
             "/guilds/{id}/scheduled-events/{event}/users/@me",
             get(interest).put(add_interest).delete(remove_interest),

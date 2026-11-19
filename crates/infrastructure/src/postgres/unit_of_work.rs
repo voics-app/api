@@ -136,6 +136,15 @@ impl UnitOfWork for PgUnitOfWork {
 
 async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<()> {
     match mutation {
+        Mutation::UpdateScheduledEvent {
+            event,
+            expected_revision,
+        } => super::scheduled_events::update(conn, event, *expected_revision).await,
+        Mutation::DeleteScheduledEvent {
+            guild_id,
+            event_id,
+            expected_revision,
+        } => super::scheduled_events::delete(conn, *guild_id, *event_id, *expected_revision).await,
         Mutation::SetScheduledEventInterest { .. } => unreachable!("interest handled in commit"),
         Mutation::InsertScheduledEvent(event) => super::scheduled_events::insert(conn, event).await,
         Mutation::InsertUser {

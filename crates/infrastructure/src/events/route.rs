@@ -51,6 +51,47 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
     };
 
     match event {
+        DomainEvent::ScheduledEventDelete(event) => emit(
+            TOPIC_GUILD,
+            event.guild_id,
+            "GUILD_SCHEDULED_EVENT_DELETE",
+            Some(event.guild_id),
+            scheduled_channel(event),
+            None,
+            contracts::objects::scheduled_event(event),
+        ),
+        DomainEvent::ScheduledEventUpdate { before, after } => {
+            if scheduled_channel(before) != scheduled_channel(after) {
+                emit(
+                    TOPIC_GUILD,
+                    before.guild_id,
+                    "GUILD_SCHEDULED_EVENT_DELETE",
+                    Some(before.guild_id),
+                    scheduled_channel(before),
+                    None,
+                    contracts::objects::scheduled_event(before),
+                );
+                emit(
+                    TOPIC_GUILD,
+                    after.guild_id,
+                    "GUILD_SCHEDULED_EVENT_CREATE",
+                    Some(after.guild_id),
+                    scheduled_channel(after),
+                    None,
+                    contracts::objects::scheduled_event(after),
+                );
+            } else {
+                emit(
+                    TOPIC_GUILD,
+                    after.guild_id,
+                    "GUILD_SCHEDULED_EVENT_UPDATE",
+                    Some(after.guild_id),
+                    scheduled_channel(after),
+                    None,
+                    contracts::objects::scheduled_event(after),
+                );
+            }
+        }
         DomainEvent::ScheduledEventInterest {
             guild_id,
             event_id,
@@ -521,6 +562,14 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
         ),
     }
     out
+}
+
+fn scheduled_channel(event: &domain::scheduled_event::ScheduledEvent) -> Option<Snowflake> {
+    match &event.details.kind {
+        domain::scheduled_event::EventKind::Stage { channel_id }
+        | domain::scheduled_event::EventKind::Voice { channel_id } => Some(*channel_id),
+        domain::scheduled_event::EventKind::External { .. } => None,
+    }
 }
 
 fn to_value<T: Serialize>(value: T) -> Value {

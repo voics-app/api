@@ -51,7 +51,7 @@ async fn interest_counts_and_membership_cleanup_round_trip() {
         .unwrap());
     assert_eq!(store.scheduled_events(guild).await.unwrap().len(), 1);
 
-    sqlx::query("INSERT INTO guild_scheduled_event_reminders (event_id, user_id, enqueued_at) VALUES (20, 2, now())")
+    sqlx::query("INSERT INTO guild_scheduled_event_reminders (event_id, user_id, event_revision, scheduled_start_time, enqueued_at) SELECT id, 2, revision, scheduled_start_time, now() FROM guild_scheduled_events WHERE id = 20")
         .execute(pool).await.unwrap();
 
     sqlx::query("DELETE FROM members WHERE guild_id = 10 AND user_id = 2")
