@@ -14,6 +14,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  announcement-bridge:
+    # Draft-only: pin the companion branch until both changes can be reviewed together.
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: api
+      - name: Checkout companion messages revision
+        uses: actions/checkout@v4
+        with:
+          repository: discordy-voics/messages
+          ref: 8548a6b
+          token: ${{ secrets.DEPS_TOKEN }}
+          path: messages
+      - name: Build loopback messages fixture
+        working-directory: messages
+        run: cargo build --locked -p discordy-messages-interface --example announcement_fixture
+      - name: Exercise API to messages with a lost response
+        working-directory: api
+        env:
+          MESSAGES_FIXTURE_BIN: ${{ github.workspace }}/messages/target/debug/examples/announcement_fixture
+        run: cargo test --locked -p infrastructure --test http_announcement_bridge -- --ignored
+
   gitflow:
     if: github.event_name == 'pull_request'
     uses: discordy-voics/.github/.github/workflows/gitflow-guard.yml@main
