@@ -9,6 +9,7 @@ use crate::objects::{
     UserSettingsDto,
 };
 use crate::wire::{Id, Perm};
+use domain::guild::GuildSnapshot;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct IntrospectRequest {
@@ -31,13 +32,50 @@ pub struct UsersLookupRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct UserReadyDto {
     pub user: UserDto,
-    pub guilds: Vec<GuildFullDto>,
+    pub guilds: Vec<InternalGuildFullDto>,
     pub private_channels: Vec<ChannelDto>,
     pub relationships: Vec<RelationshipDto>,
     pub user_settings: UserSettingsDto,
     pub user_guild_settings: Vec<GuildNotificationSettingsDto>,
     /// The user's private notes keyed by the noted user's id.
     pub notes: BTreeMap<String, String>,
+}
+
+/// Gateway-only membership state. It must be stripped before any client dispatch.
+#[derive(Debug, Clone, Serialize)]
+pub struct InternalGuildFullDto {
+    #[serde(flatten)]
+    pub guild: GuildFullDto,
+    pub thread_members: BTreeMap<String, InternalThreadMembersDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InternalThreadMembersDto {
+    pub version: u64,
+    pub user_ids: Vec<Id>,
+}
+
+impl InternalGuildFullDto {
+    pub fn new(snapshot: &GuildSnapshot, default_region: &str) -> Self {
+        let thread_members = snapshot
+            .channels
+            .iter()
+            .filter(|channel| channel.kind.is_thread())
+            .map(|channel| {
+                (
+                    channel.id.to_string(),
+                    InternalThreadMembersDto {
+                        version: channel.thread_membership_version,
+                        user_ids: channel.thread_member_ids.iter().copied().map(Id).collect(),
+                    },
+                )
+            })
+            .collect();
+        Self {
+            guild: GuildFullDto::new(snapshot, default_region),
+            thread_members,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -453,6 +453,84 @@ async fn thread_directory_inherits_parent_access_and_hides_private_threads_from_
 
 struct UnavailablePresence;
 
+#[tokio::test]
+async fn private_thread_invitation_and_leave_change_http_access_and_notification_audience() {
+    let database = start_database().await;
+    let app = app(&database);
+    let (owner, owner_id) = account(&app, "threadowner").await;
+    let (member, member_id) = account(&app, "threadmember").await;
+    let (_, parent) = guild(&app, &owner, &[&member]).await;
+    let created = ok_call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{parent}/threads"),
+        &owner,
+        Some(json!({"name":"Private", "type":12})),
+    )
+    .await;
+    let thread = created["id"].as_str().unwrap();
+    assert_eq!(created["member_count"], 1);
+    let thread_path = format!("/api/v1/channels/{thread}");
+    assert_eq!(
+        call(&app, Method::GET, &thread_path, &member, None).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let list = ok_call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{parent}/threads"),
+        &member,
+        None,
+    )
+    .await;
+    assert!(list.as_array().unwrap().is_empty());
+
+    let membership = format!("/api/v1/channels/{thread}/thread-members/{member_id}");
+    assert_eq!(
+        call(&app, Method::PUT, &membership, &owner, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let visible = ok_call(&app, Method::GET, &thread_path, &member, None).await;
+    assert_eq!(visible["member_count"], 2);
+    let list = ok_call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{parent}/threads"),
+        &member,
+        None,
+    )
+    .await;
+    assert_eq!(list.as_array().unwrap().len(), 1);
+    assert_eq!(
+        page(&app, thread, &owner_id, "").await["recipients"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    assert_eq!(
+        call(
+            &app,
+            Method::DELETE,
+            &format!("/api/v1/channels/{thread}/thread-members/@me"),
+            &member,
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&app, Method::GET, &thread_path, &member, None).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert!(page(&app, thread, &owner_id, "").await["recipients"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
 #[async_trait::async_trait]
 impl application::ports::PresenceDirectory for UnavailablePresence {
     async fn online_count(&self, _users: &[domain::Snowflake]) -> application::AppResult<u64> {
