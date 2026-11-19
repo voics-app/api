@@ -1,9 +1,8 @@
 use domain::channel::ChannelType;
-use domain::relationship::RelationshipType;
 use domain::Snowflake;
 
 use crate::context::{Actor, Ports};
-use crate::error::{AppError, AppResult, Denial, Resource};
+use crate::error::{AppError, AppResult, Resource};
 use crate::events::DomainEvent;
 use crate::support::channel_access::ChannelAccess;
 use crate::support::system_messages::{self, RECIPIENT_ADD};
@@ -42,14 +41,9 @@ pub async fn execute(
     let added = require_user(ports, user_id)
         .await
         .map_err(|_| AppError::NotFound(Resource::User))?;
-    let blocked = ports
-        .relationships
-        .get(user_id, actor.user_id)
-        .await?
-        .map(|r| r.kind)
-        == Some(RelationshipType::Blocked);
-    if blocked {
-        return Err(AppError::Forbidden(Denial::CannotMessageUser));
+    for sender in &channel.recipient_ids {
+        crate::support::dm_privacy::require_initiation(ports, *sender, user_id).await?;
+        crate::support::dm_privacy::require_initiation(ports, user_id, *sender).await?;
     }
     let existing = channel.recipient_ids.clone();
     channel.recipient_ids.push(user_id);

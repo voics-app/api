@@ -52,6 +52,12 @@ fn validate_recent_reaction(item: &Value) -> bool {
 
 fn validate(key: &str, value: &Value) -> Result<(), PreferenceError> {
     let ok = match key {
+        "default_guilds_restricted" => value.is_boolean(),
+        "guild_dm_restrictions" => value.as_object().is_some_and(|o| {
+            o.len() <= 200
+                && o.iter()
+                    .all(|(k, v)| is_snowflake(k) && (v.is_boolean() || v.is_null()))
+        }),
         "accent" => value.as_str().is_some_and(|s| ACCENTS.contains(&s)),
         "reduce_motion"
         | "hide_age_restricted_channels"
@@ -99,7 +105,26 @@ pub fn merge(current: &Preferences, patch: &Value) -> Result<Preferences, Prefer
     let mut next = current.clone();
     for (key, value) in patch {
         validate(key, value)?;
-        next.insert(key.clone(), value.clone());
+        if key == "guild_dm_restrictions" {
+            let mut merged = next
+                .get(key)
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            for (guild, restricted) in value.as_object().expect("validated map") {
+                if restricted.is_null() {
+                    merged.remove(guild);
+                } else {
+                    merged.insert(guild.clone(), restricted.clone());
+                }
+            }
+            if merged.len() > 200 {
+                return Err(err(key, "Too many server restrictions."));
+            }
+            next.insert(key.clone(), Value::Object(merged));
+        } else {
+            next.insert(key.clone(), value.clone());
+        }
     }
     Ok(next)
 }
@@ -108,6 +133,23 @@ pub fn merge(current: &Preferences, patch: &Value) -> Result<Preferences, Prefer
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn guild_dm_preferences_are_typed_and_bounded() {
+        let empty = Preferences::new();
+        assert!(merge(
+            &empty,
+            &json!({"default_guilds_restricted": true, "guild_dm_restrictions": {"123": false}})
+        )
+        .is_ok());
+        for invalid in [
+            json!({"default_guilds_restricted": "yes"}),
+            json!({"guild_dm_restrictions": {"x": true}}),
+            json!({"guild_dm_restrictions": {"123": "no"}}),
+        ] {
+            assert!(merge(&empty, &invalid).is_err());
+        }
+    }
 
     #[test]
     fn age_restriction_is_an_optional_boolean_preference() {

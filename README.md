@@ -319,3 +319,7 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
+### Guild-related DM initiation
+
+User settings `preferences.default_guilds_restricted` defaults to `false`. `preferences.guild_dm_restrictions` is a sparse map of server ID to boolean; an entry overrides the default, and a PATCH merges entries (use null to remove one). New one-to-one and group conversations, including additions to groups, check every affected sender/recipient pair. Friends and pairs with an existing one-to-one DM remain allowed. If any shared server allows DMs, initiation is allowed; if there is no shared server, the existing unrestricted behavior remains. Blocks still take precedence. This setting does not revoke existing conversations or established P2P connections and is not a general stranger-DM or spam filter.

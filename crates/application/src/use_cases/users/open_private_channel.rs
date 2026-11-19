@@ -1,5 +1,4 @@
 use domain::channel::{Channel, ChannelType};
-use domain::relationship::RelationshipType;
 use domain::Snowflake;
 
 use crate::context::{Actor, Ports};
@@ -35,18 +34,16 @@ pub async fn execute(
     if users.len() != others.len() {
         return Err(AppError::NotFound(Resource::User));
     }
-    for other in &others {
-        let blocked = ports
-            .relationships
-            .get(*other, actor.user_id)
-            .await?
-            .map(|r| r.kind)
-            == Some(RelationshipType::Blocked);
-        if blocked {
-            return Err(AppError::Forbidden(Denial::CannotMessageUser));
+    // Evaluate every pair in a new group so adding recipients cannot bypass a
+    // member's guild-DM preference. A reused DM remains an existing conversation.
+    let participants: Vec<_> = std::iter::once(actor.user_id)
+        .chain(others.iter().copied())
+        .collect();
+    for recipient in &others {
+        for sender in &participants {
+            crate::support::dm_privacy::require_initiation(ports, *sender, *recipient).await?;
         }
     }
-
     if let [other] = others.as_slice() {
         if let Some(existing) = ports.channels.find_dm(actor.user_id, *other).await? {
             return private_view(ports, existing).await;
