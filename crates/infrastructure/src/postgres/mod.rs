@@ -35,6 +35,7 @@ use std::time::Duration;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+pub use scheduled_events::enqueue_due_reminders;
 pub use snowflake::PgIdReservations;
 pub use unit_of_work::PgUnitOfWork;
 

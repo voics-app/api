@@ -292,7 +292,10 @@ pub async fn set_interest(
     interested: bool,
 ) -> AppResult<()> {
     let event = get(ports, actor, guild_id, event_id).await?;
-    if interested && event.details.status != EventStatus::Scheduled {
+    if interested
+        && (event.details.status != EventStatus::Scheduled
+            || event.details.start <= ports.clock.now())
+    {
         return Err(AppError::invalid(
             "event",
             "EVENT_NOT_SCHEDULED",

@@ -51,7 +51,7 @@ async fn interest_counts_and_membership_cleanup_round_trip() {
         .unwrap());
     assert_eq!(store.scheduled_events(guild).await.unwrap().len(), 1);
 
-    sqlx::query("INSERT INTO guild_scheduled_event_reminders (event_id, user_id, event_revision, scheduled_start_time, enqueued_at) SELECT id, 2, revision, scheduled_start_time, now() FROM guild_scheduled_events WHERE id = 20")
+    sqlx::query("INSERT INTO guild_scheduled_event_reminders (event_id, user_id, event_revision, scheduled_start_time, enqueued_at) SELECT id, 2, schedule_revision, scheduled_start_time, now() FROM guild_scheduled_events WHERE id = 20")
         .execute(pool).await.unwrap();
 
     sqlx::query("DELETE FROM members WHERE guild_id = 10 AND user_id = 2")
@@ -96,4 +96,46 @@ async fn external_event_cannot_be_stored_without_a_location() {
     let result = sqlx::query("INSERT INTO guild_scheduled_events (id, guild_id, name, scheduled_start_time, scheduled_end_time, status, entity_type) VALUES (20, 10, 'Meetup', now() + interval '1 hour', now() + interval '2 hours', 1, 3)")
         .execute(pool).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn competing_workers_enqueue_one_reminder_per_schedule_and_user() {
+    let database = support::start_database().await;
+    let pool = &database.pool;
+    sqlx::query("INSERT INTO users (id, username, created_at) VALUES (1, 'owner', now())")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO guilds (id, name, owner_id, created_at) VALUES (10, 'guild', 1, now())",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES (10, 1, now())")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO guild_scheduled_events (id, guild_id, name, scheduled_start_time, scheduled_end_time, status, entity_type, location) VALUES (20, 10, 'Meetup', now() - interval '1 minute', now() + interval '1 hour', 1, 3, 'Park')")
+        .execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO guild_scheduled_event_users (guild_id, event_id, user_id) VALUES (10, 20, 1)",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    let (first, second) = tokio::join!(
+        infrastructure::postgres::enqueue_due_reminders(pool),
+        infrastructure::postgres::enqueue_due_reminders(pool)
+    );
+    assert_eq!(first.unwrap() + second.unwrap(), 1);
+    assert_eq!(
+        infrastructure::postgres::enqueue_due_reminders(pool)
+            .await
+            .unwrap(),
+        0
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_START' AND payload->'data'->>'guild_scheduled_event_id' = '20'")
+        .fetch_one(pool).await.unwrap();
+    assert_eq!(count, 1);
 }

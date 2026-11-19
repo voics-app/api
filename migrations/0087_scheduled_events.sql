@@ -10,6 +10,8 @@ CREATE TABLE guild_scheduled_events (
     scheduled_end_time TIMESTAMPTZ,
     status SMALLINT NOT NULL CHECK (status IN (1, 2, 3, 4)),
     revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    schedule_revision BIGINT NOT NULL DEFAULT 0 CHECK (schedule_revision >= 0),
+    reminders_processed_revision BIGINT,
     entity_type SMALLINT NOT NULL CHECK (entity_type IN (1, 2, 3)),
     location TEXT,
     image TEXT,
