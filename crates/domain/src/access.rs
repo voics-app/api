@@ -79,10 +79,24 @@ impl<'a> GuildAccess<'a> {
         } else {
             permissions
         };
-        if !channel.kind.is_thread() || permissions == Permissions::ALL {
-            return permissions;
+        let permissions = if !channel.kind.is_thread() || permissions == Permissions::ALL {
+            permissions
+        } else {
+            self.thread_permissions(member, channel, permissions)
+        };
+        // Apply this after thread inheritance and administrator expansion so
+        // neither can restore a pending member's ability to send.
+        if member.pending {
+            // Downstream services treat ADMINISTRATOR as an implicit grant of
+            // every bit, so remove it from this already-expanded bitfield too.
+            permissions.without(
+                Permissions::SEND_MESSAGES
+                    | Permissions::SEND_MESSAGES_IN_THREADS
+                    | Permissions::ADMINISTRATOR,
+            )
+        } else {
+            permissions
         }
-        self.thread_permissions(member, channel, permissions)
     }
 
     /// In threads SEND_MESSAGES_IN_THREADS replaces SEND_MESSAGES, and private
@@ -242,6 +256,26 @@ mod tests {
         assert!(!access
             .in_channel(&alice, &parent, None)
             .contains(Permissions::SEND_MESSAGES));
+    }
+
+    #[test]
+    fn pending_members_cannot_send_even_with_administrator_or_thread_permissions() {
+        let (guild, mut roles) = (guild(), roles());
+        roles.push(role(23, 4, Permissions::ADMINISTRATOR));
+        let access = GuildAccess::new(&guild, &roles, Utc::now());
+        let parent = channel(100, ChannelType::GuildText);
+        let thread = channel(101, ChannelType::PublicThread);
+        for role_ids in [&[][..], &[23][..]] {
+            let mut user = member(2, role_ids);
+            user.pending = true;
+            for channel in [&parent, &thread] {
+                let permissions = access.in_channel(&user, channel, Some(&parent));
+                assert!(permissions.contains(Permissions::VIEW_CHANNEL));
+                assert!(!permissions.contains(Permissions::SEND_MESSAGES));
+                assert!(!permissions.contains(Permissions::SEND_MESSAGES_IN_THREADS));
+                assert!(!permissions.contains(Permissions::ADMINISTRATOR));
+            }
+        }
     }
 
     #[test]
