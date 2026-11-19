@@ -10,7 +10,7 @@ use axum::{Json, Router};
 
 use application::use_cases::account::{delete, disable};
 use application::use_cases::relationships::{
-    list_relationships, put_relationship, remove_relationship, send_friend_request,
+    list_relationships, personal, put_relationship, remove_relationship, send_friend_request,
 };
 use application::use_cases::users::update_current_user::UpdateCurrentUserInput;
 use application::use_cases::users::update_settings::UpdateSettingsInput;
@@ -404,6 +404,66 @@ async fn delete_relationship(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn favourites(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+) -> Result<Json<Vec<Id>>, ApiError> {
+    Ok(Json(
+        personal::favourites(&state.ports, &actor)
+            .await?
+            .into_iter()
+            .map(Id)
+            .collect(),
+    ))
+}
+async fn add_favourite(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(target): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    personal::set_favourite(&state.ports, &actor, parse_id(&target)?, true).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+async fn remove_favourite(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(target): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    personal::set_favourite(&state.ports, &actor, parse_id(&target)?, false).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+#[derive(serde::Serialize)]
+struct FriendInviteResponse {
+    token: String,
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+async fn create_friend_invite(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+) -> Result<Json<FriendInviteResponse>, ApiError> {
+    let (token, expires_at) = personal::create_invite(&state.ports, &actor).await?;
+    Ok(Json(FriendInviteResponse { token, expires_at }))
+}
+async fn revoke_friend_invites(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+) -> Result<StatusCode, ApiError> {
+    personal::revoke_invites(&state.ports, &actor).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+#[derive(serde::Deserialize)]
+struct UseFriendInvite {
+    token: String,
+}
+async fn use_friend_invite(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Body(body): Body<UseFriendInvite>,
+) -> Result<StatusCode, ApiError> {
+    personal::use_invite(&state.ports, &actor, &body.token).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -438,6 +498,16 @@ pub fn routes() -> Router<AppState> {
             "/users/@me/relationships/{id}",
             put(put_relationship_handler).delete(delete_relationship),
         )
+        .route("/users/@me/favourites", get(favourites))
+        .route(
+            "/users/@me/favourites/{id}",
+            put(add_favourite).delete(remove_favourite),
+        )
+        .route(
+            "/users/@me/friend-invites",
+            post(create_friend_invite).delete(revoke_friend_invites),
+        )
+        .route("/friend-invites", post(use_friend_invite))
         .route("/users/{id}", get(public_user))
         .route("/users/{id}/profile", get(user_profile))
 }

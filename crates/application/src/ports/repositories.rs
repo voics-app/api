@@ -219,6 +219,25 @@ pub trait DeviceRepository: Send + Sync {
 #[async_trait]
 pub trait RelationshipRepository: Send + Sync {
     async fn list(&self, user_id: Snowflake) -> AppResult<Vec<Relationship>>;
+    async fn favourites(&self, user_id: Snowflake) -> AppResult<Vec<Snowflake>>;
+    async fn set_favourite(
+        &self,
+        user_id: Snowflake,
+        target_id: Snowflake,
+        favourite: bool,
+    ) -> AppResult<bool>;
+    async fn create_friend_invite(
+        &self,
+        owner: Snowflake,
+        hash: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<()>;
+    async fn friend_invite_owner(
+        &self,
+        hash: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<Snowflake>>;
+    async fn revoke_friend_invites(&self, owner: Snowflake) -> AppResult<()>;
     async fn get(
         &self,
         user_id: Snowflake,
