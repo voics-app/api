@@ -112,6 +112,12 @@ async fn soundboard_crud_enforces_membership_and_validates_audio() {
     .await
     .unwrap();
     assert_eq!(events, 3);
+    let (audits,): (i64,) =
+        sqlx::query_as("SELECT count(*) FROM audit_log WHERE action IN (130,131,132)")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    assert_eq!(audits, 3);
     let sound = base64::engine::general_purpose::STANDARD.encode(wav());
     for index in 0..7 {
         let response = call(

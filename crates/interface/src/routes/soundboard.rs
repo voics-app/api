@@ -1,7 +1,8 @@
 use crate::error::ApiError;
-use crate::extract::{Body, Caller};
+use crate::extract::{AuditReason, Body, Caller};
 use crate::routes::ids::snowflake;
 use crate::state::AppState;
+use application::support::audit::AuditContext;
 use application::use_cases::soundboard;
 use application::Resource;
 use axum::extract::{DefaultBodyLimit, Path, State};
@@ -92,6 +93,7 @@ async fn audio(
 async fn create(
     State(state): State<AppState>,
     Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
     Path(guild): Path<String>,
     Body(body): Body<CreateSound>,
 ) -> Result<(StatusCode, Json<Metadata>), ApiError> {
@@ -105,6 +107,10 @@ async fn create(
         body.name,
         body.volume,
         bytes,
+        AuditContext {
+            actor_id: actor.user_id,
+            reason: reason.as_deref(),
+        },
     )
     .await?;
     Ok((StatusCode::CREATED, Json(Metadata::from(&sound))))
@@ -112,6 +118,7 @@ async fn create(
 async fn modify(
     State(state): State<AppState>,
     Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
     Path((guild, sound)): Path<(String, String)>,
     Body(body): Body<ModifySound>,
 ) -> Result<Json<Metadata>, ApiError> {
@@ -122,6 +129,10 @@ async fn modify(
         snowflake(&sound, Resource::SoundboardSound)?,
         body.name,
         body.volume,
+        AuditContext {
+            actor_id: actor.user_id,
+            reason: reason.as_deref(),
+        },
     )
     .await?;
     Ok(Json(Metadata::from(&found)))
@@ -129,6 +140,7 @@ async fn modify(
 async fn delete(
     State(state): State<AppState>,
     Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
     Path((guild, sound)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
     soundboard::delete(
@@ -136,6 +148,10 @@ async fn delete(
         &actor,
         snowflake(&guild, Resource::Guild)?,
         snowflake(&sound, Resource::SoundboardSound)?,
+        AuditContext {
+            actor_id: actor.user_id,
+            reason: reason.as_deref(),
+        },
     )
     .await?;
     Ok(StatusCode::NO_CONTENT)

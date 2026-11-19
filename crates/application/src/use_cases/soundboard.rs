@@ -1,13 +1,16 @@
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Resource};
 use crate::events::DomainEvent;
+use crate::support::audit::AuditContext;
 use crate::support::guild_context::GuildContext;
 use crate::write_set::{Mutation, WriteSet};
+use domain::audit::{AuditAction, AuditChange};
 use domain::permissions::Permissions;
 use domain::soundboard::{
     valid_audio, valid_name, valid_volume, SoundboardMetadata, SoundboardSound,
 };
 use domain::Snowflake;
+use serde_json::json;
 
 fn editable(ctx: &GuildContext, sound: &SoundboardSound) -> AppResult<()> {
     let p = ctx.permissions();
@@ -65,6 +68,7 @@ pub async fn create(
     name: String,
     volume: f32,
     audio: Vec<u8>,
+    audit: AuditContext<'_>,
 ) -> AppResult<SoundboardSound> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     if !ctx
@@ -94,7 +98,14 @@ pub async fn create(
         .mutate(Mutation::InsertSoundboardSound(sound.clone()))
         .emit(DomainEvent::SoundboardCreate {
             sound: SoundboardMetadata::from(&sound),
-        });
+        })
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::SoundboardCreate,
+            Some(sound.id),
+            vec![AuditChange::new("name", None, Some(json!(sound.name)))],
+        )?);
     ports.unit_of_work.commit(writes).await?;
     Ok(sound)
 }
@@ -105,6 +116,7 @@ pub async fn update(
     id: Snowflake,
     name: Option<String>,
     volume: Option<f32>,
+    audit: AuditContext<'_>,
 ) -> AppResult<SoundboardSound> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     let mut sound = ports
@@ -113,6 +125,7 @@ pub async fn update(
         .await?
         .ok_or(AppError::NotFound(Resource::SoundboardSound))?;
     editable(&ctx, &sound)?;
+    let before = SoundboardMetadata::from(&sound);
     if let Some(name) = name {
         sound.name = name;
     }
@@ -125,7 +138,22 @@ pub async fn update(
         .mutate(Mutation::UpdateSoundboardSound(sound.clone()))
         .emit(DomainEvent::SoundboardUpdate {
             sound: SoundboardMetadata::from(&sound),
-        });
+        })
+        .audit(
+            audit.entry(
+                ports,
+                guild_id,
+                AuditAction::SoundboardUpdate,
+                Some(sound.id),
+                [
+                    AuditChange::if_changed("name", json!(before.name), json!(sound.name)),
+                    AuditChange::if_changed("volume", json!(before.volume), json!(sound.volume)),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            )?,
+        );
     ports.unit_of_work.commit(writes).await?;
     Ok(sound)
 }
@@ -134,6 +162,7 @@ pub async fn delete(
     actor: &Actor,
     guild_id: Snowflake,
     id: Snowflake,
+    audit: AuditContext<'_>,
 ) -> AppResult<()> {
     let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
     let sound = ports
@@ -151,6 +180,13 @@ pub async fn delete(
         .emit(DomainEvent::SoundboardDelete {
             guild_id,
             sound_id: id,
-        });
+        })
+        .audit(audit.entry(
+            ports,
+            guild_id,
+            AuditAction::SoundboardDelete,
+            Some(id),
+            vec![AuditChange::new("name", Some(json!(sound.name)), None)],
+        )?);
     ports.unit_of_work.commit(writes).await
 }
