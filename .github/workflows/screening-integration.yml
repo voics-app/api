@@ -5,6 +5,9 @@ on:
       - 'crates/**'
       - 'migrations/**'
       - '.github/workflows/screening-integration.yml'
+concurrency:
+  group: screening-integration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   screening:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}

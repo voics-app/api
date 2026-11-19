@@ -162,6 +162,27 @@ async fn join_and_accept_current_rules_before_sending() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_ne!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
+    let overwrite = format!("/api/v1/channels/{channel}/permissions/{role_id}");
+    let (status, _) = call(
+        &app,
+        Method::PUT,
+        &overwrite,
+        &owner,
+        Some(json!({"type":0,"allow":"8192","deny":"0"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = call(&app, Method::DELETE, &overwrite, &owner, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, result) = call(
         &app,
         Method::POST,

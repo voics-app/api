@@ -184,6 +184,10 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             revision,
             role_ids,
         } => {
+            // Channel overwrite writers take this same guild lock. Inspecting
+            // them under it prevents a role from granting moderation via an
+            // overwrite while a member selects it.
+            super::community::lock(conn, *guild_id).await?;
             let (current,): (i64,) = sqlx::query_as("SELECT onboarding_revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE")
                 .bind(guild_id.as_i64()).fetch_one(&mut *conn).await.map_err(db)?;
             if current != *revision {
@@ -229,6 +233,14 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
                     return Err(application::AppError::Conflict {
                         code: 40001,
                         message: "An onboarding role is no longer eligible.".into(),
+                    });
+                }
+                let unsafe_overwrite: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM permission_overwrites p JOIN channels c ON c.id = p.channel_id WHERE c.guild_id = $1 AND p.kind = 0 AND p.target_id = $2 AND (p.allow_bits & $3) <> 0)")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).bind(!(application::use_cases::guilds::onboarding::SAFE_ROLE_BITS as i64)).fetch_one(&mut *conn).await.map_err(db)?;
+                if unsafe_overwrite {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role has a privileged channel overwrite.".into(),
                     });
                 }
                 sqlx::query("INSERT INTO member_roles (guild_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
