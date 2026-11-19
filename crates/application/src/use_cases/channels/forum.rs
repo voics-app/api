@@ -146,6 +146,16 @@ mod tests {
     }
 
     #[test]
+    fn validates_emoji_shapes() {
+        assert!(validate_emoji(&json!({"emoji_id": null, "emoji_name": "heart"}), "emoji").is_ok());
+        assert!(validate_emoji(&json!({"emoji_id": "123", "emoji_name": null}), "emoji").is_ok());
+        assert!(validate_emoji(&json!({"emoji_id": 123}), "emoji").is_err());
+        assert!(
+            validate_emoji(&json!({"emoji_id": "123", "emoji_name": "heart"}), "emoji").is_err()
+        );
+    }
+
+    #[test]
     fn validates_required_known_and_moderated_tags() {
         let channel = forum();
         assert!(validate_applied(&channel, &[], false).is_err());
