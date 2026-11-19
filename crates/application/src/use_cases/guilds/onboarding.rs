@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use domain::guild::MemberProfile;
-use domain::permissions::Permissions;
+use domain::permissions::{OverwriteKind, Permissions};
 use domain::Snowflake;
 use serde_json::{json, Value};
 
@@ -72,6 +72,7 @@ pub async fn set(
     if object.len() != 2 || questions.len() > 5 || (enabled && questions.is_empty()) {
         return Err(invalid());
     }
+    let guild_channels = ports.channels.list_for_guild(guild_id).await?;
     for question in questions {
         let q = question.as_object().ok_or_else(invalid)?;
         let title = q.get("title").and_then(Value::as_str).ok_or_else(invalid)?;
@@ -99,6 +100,17 @@ pub async fn set(
                 let role = ctx.role(id)?;
                 ctx.require_manageable_role(role)?;
                 if id == guild_id || role.managed || role.permissions.bits() & !SAFE_ROLE_BITS != 0
+                {
+                    return Err(invalid());
+                }
+                if guild_channels
+                    .iter()
+                    .flat_map(|channel| &channel.overwrites)
+                    .any(|overwrite| {
+                        overwrite.kind == OverwriteKind::Role
+                            && overwrite.id == id
+                            && overwrite.allow.bits() & !SAFE_ROLE_BITS != 0
+                    })
                 {
                     return Err(invalid());
                 }
