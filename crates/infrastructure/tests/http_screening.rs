@@ -87,6 +87,16 @@ async fn join_and_accept_current_rules_before_sending() {
     let onboarding_path = format!("/api/v1/guilds/{guild_id}/onboarding");
     let (status, onboarding) = call(&app, Method::PUT, &onboarding_path, &owner, Some(json!({"enabled":true,"questions":[{"title":"What interests you?","options":[{"label":"Chat","role_id":role_id,"channel_id":channel}]}]}))).await;
     assert_eq!(status, StatusCode::OK);
+    let (_, privileged) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild_id}/roles"),
+        &owner,
+        Some(json!({"name":"Administrator","permissions":"8"})),
+    )
+    .await;
+    let (status, _) = call(&app, Method::PUT, &onboarding_path, &owner, Some(json!({"enabled":true,"questions":[{"title":"Escalate?","options":[{"label":"Admin","role_id":privileged["id"],"channel_id":null}]}]}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let welcome_path = format!("/api/v1/guilds/{guild_id}/welcome-screen");
     let (status, _) = call(&app, Method::PUT, &welcome_path, &owner, Some(json!({"enabled":true,"description":"Welcome!","channels":[{"channel_id":channel,"description":"Say hello"}]}))).await;
     assert_eq!(status, StatusCode::OK);
@@ -172,6 +182,8 @@ async fn join_and_accept_current_rules_before_sending() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&app, Method::PUT, &onboarding_path, &owner, Some(json!({"enabled":true,"questions":[{"title":"What interests you?","options":[{"label":"Chat","role_id":role_id,"channel_id":channel}]}]}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, _) = call(
         &app,
         Method::POST,
