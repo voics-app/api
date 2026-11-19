@@ -156,8 +156,33 @@ async fn delete(
     .await?;
     Ok(StatusCode::NO_CONTENT)
 }
+#[derive(Deserialize)]
+struct SendSound {
+    sound_id: String,
+    source_guild_id: String,
+}
+async fn send_sound(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(channel): Path<String>,
+    Body(body): Body<SendSound>,
+) -> Result<StatusCode, ApiError> {
+    soundboard::authorize_send(
+        &state.ports,
+        &actor,
+        snowflake(&channel, Resource::Channel)?,
+        snowflake(&body.source_guild_id, Resource::Guild)?,
+        snowflake(&body.sound_id, Resource::SoundboardSound)?,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/channels/{id}/send-soundboard-sound",
+            axum::routing::post(send_sound),
+        )
         .route(
             "/guilds/{id}/soundboard-sounds",
             get(list).post(create).layer(DefaultBodyLimit::max(700_000)),

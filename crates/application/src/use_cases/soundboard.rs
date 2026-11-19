@@ -2,9 +2,11 @@ use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Resource};
 use crate::events::DomainEvent;
 use crate::support::audit::AuditContext;
+use crate::support::channel_access::ChannelAccess;
 use crate::support::guild_context::GuildContext;
 use crate::write_set::{Mutation, WriteSet};
 use domain::audit::{AuditAction, AuditChange};
+use domain::channel::ChannelType;
 use domain::permissions::Permissions;
 use domain::soundboard::{
     valid_audio, valid_name, valid_volume, SoundboardMetadata, SoundboardSound,
@@ -189,4 +191,48 @@ pub async fn delete(
             vec![AuditChange::new("name", Some(json!(sound.name)), None)],
         )?);
     ports.unit_of_work.commit(writes).await
+}
+
+/// Authorizes a play request; actual RTP publication is independently gated by the SFU.
+pub async fn authorize_send(
+    ports: &Ports,
+    actor: &Actor,
+    channel_id: Snowflake,
+    source_guild_id: Snowflake,
+    sound_id: Snowflake,
+) -> AppResult<()> {
+    let access = ChannelAccess::visible(ports, channel_id, actor.user_id).await?;
+    // Stage publication status is not yet authoritative across the gateway and SFU.
+    if access.channel.kind != ChannelType::GuildVoice {
+        return Err(AppError::missing_access());
+    }
+    access.require(Permissions::CONNECT | Permissions::SPEAK | Permissions::USE_SOUNDBOARD)?;
+    let guild_id = access
+        .channel
+        .guild_id
+        .ok_or_else(AppError::missing_access)?;
+    if source_guild_id != guild_id {
+        access.require(Permissions::USE_EXTERNAL_SOUNDS)?;
+        GuildContext::load(ports, source_guild_id, actor.user_id).await?;
+    }
+    ports
+        .soundboards
+        .find_sound(source_guild_id, sound_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::SoundboardSound))?;
+    if !ports
+        .presence
+        .in_voice_channel(guild_id, channel_id, actor.user_id)
+        .await?
+    {
+        return Err(AppError::missing_access());
+    }
+    if !ports
+        .presence
+        .can_publish_soundboard(guild_id, channel_id, actor.user_id)
+        .await?
+    {
+        return Err(AppError::missing_permissions());
+    }
+    Ok(())
 }

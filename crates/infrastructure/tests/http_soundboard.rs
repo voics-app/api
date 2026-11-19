@@ -8,6 +8,28 @@ use support::http::{call, request, send};
 use support::{jwt_keys, ports, start_database};
 use tower::ServiceExt;
 
+struct ConnectedVoice;
+#[async_trait::async_trait]
+impl application::ports::PresenceDirectory for ConnectedVoice {
+    async fn online_count(&self, _: &[domain::Snowflake]) -> application::AppResult<u64> {
+        Ok(0)
+    }
+    async fn live_ids(
+        &self,
+        _: &[domain::Snowflake],
+    ) -> application::AppResult<Vec<domain::Snowflake>> {
+        Ok(vec![])
+    }
+    async fn in_voice_channel(
+        &self,
+        _: domain::Snowflake,
+        _: domain::Snowflake,
+        _: domain::Snowflake,
+    ) -> application::AppResult<bool> {
+        Ok(true)
+    }
+}
+
 fn wav() -> Vec<u8> {
     let mut data = Vec::from(&b"RIFF"[..]);
     data.extend_from_slice(&38u32.to_le_bytes());
@@ -42,8 +64,10 @@ async fn register(app: &axum::Router, email: &str, username: &str) -> String {
 async fn soundboard_crud_enforces_membership_and_validates_audio() {
     let db = start_database().await;
     let (private, public) = jwt_keys();
+    let mut test_ports = ports(&db.pool, &public, &private);
+    test_ports.presence = std::sync::Arc::new(ConnectedVoice);
     let app = interface::router(AppState {
-        ports: ports(&db.pool, &public, &private),
+        ports: test_ports,
         internal_token: support::http::INTERNAL_TOKEN.into(),
         rate_limiter: std::sync::Arc::new(support::AllowAll),
         rate_policy: Default::default(),
@@ -72,6 +96,25 @@ async fn soundboard_crud_enforces_membership_and_validates_audio() {
     assert_eq!(status, StatusCode::CREATED);
     let id = body["id"].as_str().unwrap();
     assert!(body.get("audio").is_none());
+    let (_, voice) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild}/channels"),
+        &owner,
+        Some(json!({"name":"voice", "type":2})),
+    )
+    .await;
+    let channel = voice["id"].as_str().unwrap();
+    let send_path = format!("/api/v1/channels/{channel}/send-soundboard-sound");
+    let request_body = json!({"sound_id":id,"source_guild_id":guild});
+    // Membership is confirmed, but publication capability is unavailable and must fail closed.
+    assert_eq!(
+        call(&app, Method::POST, &send_path, &owner, Some(request_body))
+            .await
+            .0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+
     let detail = format!("{path}/{id}");
     let audio_path = format!("{detail}/audio");
     let response = app
