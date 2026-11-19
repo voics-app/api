@@ -130,7 +130,7 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
         user: guest_id.parse().unwrap(),
         channel: voice_id.parse().unwrap(),
     });
-    let app = mk_app(app_ports);
+    let app = mk_app(app_ports.clone());
     let insights_path = format!("/api/v1/guilds/{guild_id}/insights?period=7");
     assert_eq!(
         call(&app, Method::GET, &insights_path, &guest, None)
@@ -146,6 +146,42 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     assert_eq!(days.last().unwrap()["membership_complete"], false);
     assert!(days.last().unwrap()["messages"].is_null());
     assert!(days.last().unwrap()["voice_minutes"].is_null());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let upstream = axum::Router::new().route(
+        "/internal/v1/guilds/{guild}/message-activity/{day}",
+        axum::routing::get(
+            |axum::extract::Path((_guild, day)): axum::extract::Path<(String, i64)>,
+             headers: axum::http::HeaderMap| async move {
+                assert_eq!(
+                    headers.get("x-internal-token").unwrap(),
+                    support::http::INTERNAL_TOKEN
+                );
+                axum::Json(json!({"utc_day": day, "count": 4, "coverage_complete": false}))
+            },
+        ),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let mut with_messages = app_ports.clone();
+    with_messages.messages = Arc::new(infrastructure::messages_client::HttpMessages::new(
+        format!("http://{addr}/").parse().unwrap(),
+        support::http::INTERNAL_TOKEN.into(),
+    ));
+    let with_messages_app = mk_app(with_messages);
+    let (status, observed) = call(
+        &with_messages_app,
+        Method::GET,
+        &insights_path,
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(observed["days"][6]["messages"], 4);
+    assert_eq!(observed["days"][6]["message_complete"], false);
+    assert_eq!(observed["message_coverage"], false);
+    server.abort();
+    let _ = server.await;
     assert_eq!(
         call(
             &app,
@@ -177,6 +213,18 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
         .await
         .0,
         StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            Method::PATCH,
+            &settings_path,
+            &owner,
+            Some(json!({"enabled":null}))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
     );
     let (status, settings) = call(
         &app,
@@ -336,4 +384,80 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
             .await
             .unwrap();
     assert_eq!(counts, (2, 1));
+
+    let checkpoint_body = json!({
+        "guild_id": guild_id, "user_id": guest_id, "session_id": "http-session",
+        "generation_id": uuid::Uuid::new_v4(), "observed_at": chrono::Utc::now(), "connected": true
+    });
+    let checkpoint_request = |token: Option<&str>| {
+        let mut builder = axum::http::Request::builder()
+            .method(Method::POST)
+            .uri("/internal/v1/voice/activity-checkpoints")
+            .header("content-type", "application/json");
+        if let Some(token) = token {
+            builder = builder.header("x-internal-token", token);
+        }
+        builder
+            .body(axum::body::Body::from(checkpoint_body.to_string()))
+            .unwrap()
+    };
+    assert_eq!(
+        send(&app, checkpoint_request(None)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        send(
+            &app,
+            checkpoint_request(Some(support::http::INTERNAL_TOKEN))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+
+    let midnight = chrono::Utc::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let mut checkpoint = application::ports::VoiceCheckpoint {
+        guild_id: guild_id.parse().unwrap(),
+        user_id: guest_id.parse().unwrap(),
+        session_id: "voice-session".into(),
+        generation_id: uuid::Uuid::new_v4(),
+        observed_at: midnight - chrono::Duration::seconds(10),
+        connected: true,
+    };
+    app_ports
+        .guilds
+        .voice_checkpoint(checkpoint.clone())
+        .await
+        .unwrap();
+    checkpoint.observed_at = midnight + chrono::Duration::seconds(10);
+    app_ports
+        .guilds
+        .voice_checkpoint(checkpoint.clone())
+        .await
+        .unwrap();
+    app_ports
+        .guilds
+        .voice_checkpoint(checkpoint.clone())
+        .await
+        .unwrap();
+    let voice: Vec<(chrono::NaiveDate, i64)> = sqlx::query_as("SELECT day, voice_millis FROM guild_daily_activity WHERE guild_id=$1 AND voice_millis > 0 ORDER BY day")
+        .bind(guild_number).fetch_all(&database.pool).await.unwrap();
+    assert_eq!(voice.len(), 2);
+    assert_eq!(voice[0].1, 10_000);
+    assert_eq!(voice[1].1, 10_000);
+    checkpoint.observed_at += chrono::Duration::minutes(2);
+    checkpoint.connected = false;
+    app_ports.guilds.voice_checkpoint(checkpoint).await.unwrap();
+    let total: i64 = sqlx::query_scalar(
+        "SELECT sum(voice_millis)::bigint FROM guild_daily_activity WHERE guild_id=$1",
+    )
+    .bind(guild_number)
+    .fetch_one(&database.pool)
+    .await
+    .unwrap();
+    assert_eq!(total, 20_000, "long unobserved gaps are not invented");
 }

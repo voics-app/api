@@ -32,6 +32,13 @@ pub async fn execute(
             "Status may contain at most 500 characters.",
         ));
     }
+    if status.as_ref().is_some_and(|value| value.contains('\0')) {
+        return Err(AppError::invalid(
+            "status",
+            "INVALID_STRING",
+            "Status cannot contain a null character.",
+        ));
+    }
     if !access
         .permissions
         .contains(Permissions::SET_VOICE_CHANNEL_STATUS)

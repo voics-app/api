@@ -250,6 +250,7 @@ pub trait GuildRepository: Send + Sync {
         id: Snowflake,
         since: chrono::NaiveDate,
     ) -> AppResult<(DateTime<Utc>, Vec<MembershipActivity>)>;
+    async fn voice_checkpoint(&self, checkpoint: VoiceCheckpoint) -> AppResult<()>;
     async fn update_widget_settings(
         &self,
         id: Snowflake,
@@ -320,6 +321,17 @@ pub struct MembershipActivity {
     pub day: chrono::NaiveDate,
     pub joins: i64,
     pub leaves: i64,
+    pub voice_millis: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoiceCheckpoint {
+    pub guild_id: Snowflake,
+    pub user_id: Snowflake,
+    pub session_id: String,
+    pub generation_id: Uuid,
+    pub observed_at: DateTime<Utc>,
+    pub connected: bool,
 }
 
 /// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,

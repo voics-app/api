@@ -12,7 +12,7 @@ CREATE TABLE guild_daily_activity (
     joins BIGINT NOT NULL DEFAULT 0 CHECK (joins >= 0),
     leaves BIGINT NOT NULL DEFAULT 0 CHECK (leaves >= 0),
     messages BIGINT NOT NULL DEFAULT 0 CHECK (messages >= 0),
-    voice_seconds BIGINT NOT NULL DEFAULT 0 CHECK (voice_seconds >= 0),
+    voice_millis BIGINT NOT NULL DEFAULT 0 CHECK (voice_millis >= 0),
     PRIMARY KEY (guild_id, day)
 );
 
@@ -21,6 +21,18 @@ CREATE TABLE guild_activity_collection (
     started_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 INSERT INTO guild_activity_collection DEFAULT VALUES;
+
+-- A gateway generation separates sessions observed before and after process loss.
+CREATE TABLE guild_voice_checkpoints (
+    guild_id BIGINT NOT NULL REFERENCES guilds(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    session_id TEXT NOT NULL CHECK (char_length(session_id) BETWEEN 1 AND 128),
+    generation_id UUID NOT NULL,
+    observed_at TIMESTAMPTZ NOT NULL,
+    connected BOOLEAN NOT NULL,
+    PRIMARY KEY (guild_id, user_id, session_id, generation_id)
+);
+CREATE INDEX guild_voice_checkpoints_retention_idx ON guild_voice_checkpoints (observed_at);
 
 CREATE FUNCTION count_guild_membership_change() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE

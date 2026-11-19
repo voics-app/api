@@ -183,6 +183,22 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let prune_every = std::time::Duration::from_secs(config.device_prune_interval_secs);
 
     tokio::spawn(OutboxRelay::new(pool.clone(), publisher.clone()).run());
+    let activity_pool = pool.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            if let Err(error) = sqlx::query("DELETE FROM guild_voice_checkpoints WHERE observed_at < now() - interval '45 days'")
+                .execute(&activity_pool).await {
+                tracing::warn!(%error, "voice checkpoint retention failed");
+            }
+            if let Err(error) = sqlx::query("DELETE FROM guild_daily_activity WHERE day < (now() AT TIME ZONE 'UTC')::date - 45")
+                .execute(&activity_pool).await {
+                tracing::warn!(%error, "guild activity retention failed");
+            }
+        }
+    });
     tokio::spawn(async move {
         const AUDIT_RETENTION_INTERVAL_SECS: u64 = 3600;
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(

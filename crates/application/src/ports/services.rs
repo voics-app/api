@@ -102,6 +102,16 @@ pub struct StoredMessage {
 /// Messages are owned by the `messages` service.
 #[async_trait]
 pub trait MessageService: Send + Sync {
+    /// Observed message markers and whether this UTC day has verified coverage.
+    async fn guild_message_count(
+        &self,
+        _guild_id: Snowflake,
+        _utc_day: i64,
+    ) -> AppResult<(u64, bool)> {
+        Err(AppError::Unavailable(
+            "guild message activity is not configured".into(),
+        ))
+    }
     /// Creates a message on behalf of a bot, webhook or interaction.
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage>;
     async fn edit(

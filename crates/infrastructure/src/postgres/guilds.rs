@@ -221,6 +221,49 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn voice_checkpoint(
+        &self,
+        checkpoint: application::ports::VoiceCheckpoint,
+    ) -> AppResult<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let inserted = sqlx::query("INSERT INTO guild_voice_checkpoints (guild_id, user_id, session_id, generation_id, observed_at, connected) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING")
+            .bind(checkpoint.guild_id.as_i64()).bind(checkpoint.user_id.as_i64())
+            .bind(&checkpoint.session_id).bind(checkpoint.generation_id).bind(checkpoint.observed_at).bind(checkpoint.connected)
+            .execute(&mut *tx).await.map_err(db)?.rows_affected();
+        if inserted == 0 {
+            let (previous, connected): (DateTime<Utc>, bool) = sqlx::query_as("SELECT observed_at, connected FROM guild_voice_checkpoints WHERE guild_id=$1 AND user_id=$2 AND session_id=$3 AND generation_id=$4 FOR UPDATE")
+                .bind(checkpoint.guild_id.as_i64()).bind(checkpoint.user_id.as_i64())
+                .bind(&checkpoint.session_id).bind(checkpoint.generation_id)
+                .fetch_one(&mut *tx).await.map_err(db)?;
+            if checkpoint.observed_at > previous {
+                let elapsed = checkpoint.observed_at - previous;
+                // Long gaps have unknown state: do not invent time between samples.
+                if connected && elapsed <= chrono::Duration::seconds(60) {
+                    let mut cursor = previous;
+                    while cursor < checkpoint.observed_at {
+                        let next_date = cursor.date_naive().succ_opt().ok_or_else(|| {
+                            application::AppError::internal("voice date overflow")
+                        })?;
+                        let next_midnight = next_date
+                            .and_hms_opt(0, 0, 0)
+                            .ok_or_else(|| application::AppError::internal("invalid midnight"))?
+                            .and_utc();
+                        let end = checkpoint.observed_at.min(next_midnight);
+                        let millis = (end - cursor).num_milliseconds();
+                        sqlx::query("INSERT INTO guild_daily_activity (guild_id, day, voice_millis) VALUES ($1,$2,$3) ON CONFLICT (guild_id, day) DO UPDATE SET voice_millis = guild_daily_activity.voice_millis + EXCLUDED.voice_millis")
+                            .bind(checkpoint.guild_id.as_i64()).bind(cursor.date_naive()).bind(millis)
+                            .execute(&mut *tx).await.map_err(db)?;
+                        cursor = end;
+                    }
+                }
+                sqlx::query("UPDATE guild_voice_checkpoints SET observed_at=$5, connected=$6 WHERE guild_id=$1 AND user_id=$2 AND session_id=$3 AND generation_id=$4")
+                    .bind(checkpoint.guild_id.as_i64()).bind(checkpoint.user_id.as_i64())
+                    .bind(&checkpoint.session_id).bind(checkpoint.generation_id).bind(checkpoint.observed_at).bind(checkpoint.connected)
+                    .execute(&mut *tx).await.map_err(db)?;
+            }
+        }
+        tx.commit().await.map_err(db)
+    }
     async fn membership_activity(
         &self,
         id: Snowflake,
@@ -231,16 +274,17 @@ impl GuildRepository for PgStore {
                 .fetch_one(&self.pool)
                 .await
                 .map_err(db)?;
-        let rows: Vec<(chrono::NaiveDate, i64, i64)> = sqlx::query_as("SELECT day, joins, leaves FROM guild_daily_activity WHERE guild_id = $1 AND day >= $2 ORDER BY day")
+        let rows: Vec<(chrono::NaiveDate, i64, i64, i64)> = sqlx::query_as("SELECT day, joins, leaves, voice_millis FROM guild_daily_activity WHERE guild_id = $1 AND day >= $2 ORDER BY day")
             .bind(id.as_i64()).bind(since).fetch_all(&self.pool).await.map_err(db)?;
         Ok((
             started,
             rows.into_iter()
                 .map(
-                    |(day, joins, leaves)| application::ports::MembershipActivity {
+                    |(day, joins, leaves, voice_millis)| application::ports::MembershipActivity {
                         day,
                         joins,
                         leaves,
+                        voice_millis,
                     },
                 )
                 .collect(),
