@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   oauth-flow:
-    runs-on: ubuntu-latest
+    runs-on: vm-runner
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
