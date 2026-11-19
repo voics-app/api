@@ -100,9 +100,43 @@ async fn delete(
     service(&state)?.delete(actor.user_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+#[derive(Deserialize)]
+struct CollectionVisibility {
+    provider: String,
+    visible: bool,
+}
+#[derive(Deserialize)]
+struct CollectionProvider {
+    provider: String,
+}
+async fn update_collection(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Body(body): Body<CollectionVisibility>,
+) -> Result<StatusCode, ApiError> {
+    update(
+        State(state),
+        Caller(actor),
+        Path(body.provider),
+        Body(Visibility {
+            visible: body.visible,
+        }),
+    )
+    .await
+}
+async fn delete_collection(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Body(body): Body<CollectionProvider>,
+) -> Result<StatusCode, ApiError> {
+    delete(State(state), Caller(actor), Path(body.provider)).await
+}
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/users/@me/connections", get(list))
+        .route(
+            "/users/@me/connections",
+            get(list).put(update_collection).delete(delete_collection),
+        )
         .route(
             "/users/@me/connections/{provider}",
             put(update).delete(delete),

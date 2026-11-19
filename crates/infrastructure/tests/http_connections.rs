@@ -147,9 +147,9 @@ async fn github_flow_visibility_and_replay() {
     assert_eq!(public, json!([]));
     assert_eq!(
         client
-            .put(format!("{base}/api/v1/users/@me/connections/github"))
+            .put(format!("{base}/api/v1/users/@me/connections"))
             .bearer_auth(access)
-            .json(&json!({"visible":true}))
+            .json(&json!({"provider":"github", "visible":true}))
             .send()
             .await
             .unwrap()
@@ -166,8 +166,9 @@ async fn github_flow_visibility_and_replay() {
     assert_eq!(public[0]["name"], "test-user");
     assert_eq!(
         client
-            .delete(format!("{base}/api/v1/users/@me/connections/github"))
+            .delete(format!("{base}/api/v1/users/@me/connections"))
             .bearer_auth(access)
+            .json(&json!({"provider":"github"}))
             .send()
             .await
             .unwrap()
