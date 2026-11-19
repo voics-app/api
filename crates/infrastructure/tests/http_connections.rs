@@ -167,7 +167,9 @@ async fn github_flow_visibility_and_replay() {
         .unwrap();
     assert_eq!(mine[0]["name"], "test-user");
     assert_eq!(mine[0]["visible"], false);
-    let public: serde_json::Value = bearer(format!("{base}/api/v1/users/{id}/connections"))
+    let public: serde_json::Value = client
+        .get(format!("{base}/api/v1/users/{id}/connections"))
+        .bearer_auth(second_access)
         .send()
         .await
         .unwrap()
@@ -186,7 +188,9 @@ async fn github_flow_visibility_and_replay() {
             .status(),
         StatusCode::NO_CONTENT
     );
-    let public: serde_json::Value = bearer(format!("{base}/api/v1/users/{id}/connections"))
+    let public: serde_json::Value = client
+        .get(format!("{base}/api/v1/users/{id}/connections"))
+        .bearer_auth(second_access)
         .send()
         .await
         .unwrap()
