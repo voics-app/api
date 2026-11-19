@@ -10,6 +10,18 @@ CREATE TABLE announcement_followers (
 
 CREATE INDEX announcement_followers_target_idx ON announcement_followers (target_channel_id);
 
+-- A source channel can disappear without deleting the target channel. Remove
+-- its follower webhook as well, so it cannot remain as a dangling integration.
+CREATE FUNCTION delete_announcement_follower_webhook() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM webhooks WHERE id = OLD.webhook_id;
+    RETURN OLD;
+END;
+$$;
+CREATE TRIGGER announcement_follower_delete_webhook
+    AFTER DELETE ON announcement_followers FOR EACH ROW
+    EXECUTE FUNCTION delete_announcement_follower_webhook();
+
 -- Every destination has one stable delivery identity. A claimed send whose
 -- outcome is uncertain must not be retried until the destination write can be
 -- checked using that identity.

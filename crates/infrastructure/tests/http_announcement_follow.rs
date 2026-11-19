@@ -105,4 +105,22 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call(
+        &app,
+        Method::DELETE,
+        &format!("/api/v1/channels/{source_id}"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/webhooks/{hook_id}"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
