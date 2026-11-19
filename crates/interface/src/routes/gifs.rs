@@ -93,8 +93,9 @@ impl GifProvider {
             }
             bytes.extend_from_slice(&chunk);
         }
-        let value: Value = serde_json::from_slice(&bytes)
+        let raw: Value = serde_json::from_slice(&bytes)
             .map_err(|_| AppError::Unavailable("invalid GIF response".into()))?;
+        let value = sanitize(endpoint, &raw, &self.key);
         let mut cache = self.cache.lock().expect("GIF cache");
         if cache.len() >= 128 {
             cache.clear();
@@ -102,6 +103,45 @@ impl GifProvider {
         cache.insert(cache_key, (Instant::now(), value.clone()));
         Ok(value)
     }
+}
+
+/// Only expose fields consumed by the picker. Never forward opaque provider metadata.
+fn sanitize(endpoint: &str, raw: &Value, key: &str) -> Value {
+    fn safe_text<'a>(v: Option<&'a Value>, key: &str, max: usize) -> Option<&'a str> {
+        v.and_then(Value::as_str)
+            .filter(|s| !s.is_empty() && s.len() <= max && !s.contains(key))
+    }
+    fn safe_url(v: Option<&Value>, key: &str) -> Option<String> {
+        let text = safe_text(v, key, 2048)?;
+        let url = reqwest::Url::parse(text).ok()?;
+        if url.scheme() != "https"
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.fragment().is_some()
+            || url.path().contains('%')
+            || url
+                .query_pairs()
+                .any(|(k, v)| k.contains(key) || v.contains(key))
+        {
+            return None;
+        }
+        Some(text.to_owned())
+    }
+    if endpoint == "categories" {
+        let tags: Vec<_> = raw.get("tags").and_then(Value::as_array).into_iter().flatten().take(50).filter_map(|tag| {
+            Some(serde_json::json!({"name": safe_text(tag.get("name"), key, 100)?, "searchterm": safe_text(tag.get("searchterm"), key, 100)?}))
+        }).collect();
+        return serde_json::json!({"tags": tags});
+    }
+    let results: Vec<_> = raw.get("results").and_then(Value::as_array).into_iter().flatten().take(24).filter_map(|item| {
+        let id = safe_text(item.get("id"), key, 100)?;
+        let formats = item.get("media_formats")?;
+        let gif = safe_url(formats.get("gif").and_then(|v| v.get("url")), key)?;
+        let tiny = safe_url(formats.get("tinygif").and_then(|v| v.get("url")), key).unwrap_or_else(|| gif.clone());
+        let description = safe_text(item.get("content_description"), key, 200).unwrap_or("GIF");
+        Some(serde_json::json!({"id": id, "content_description": description, "media_formats": {"gif": {"url": gif}, "tinygif": {"url": tiny}}}))
+    }).collect();
+    serde_json::json!({"results": results})
 }
 
 #[derive(Deserialize)]
@@ -157,7 +197,7 @@ mod tests {
                 counted.fetch_add(1, Ordering::SeqCst);
                 assert_eq!(q.get("key").map(String::as_str), Some("fixture-key"));
                 assert_eq!(q.get("q").map(String::as_str), Some("happy cat"));
-                Json(serde_json::json!({"results": [{"id": "1", "media_formats": {"gif": {"url": "https://example.test/1.gif"}}}]}))
+                Json(serde_json::json!({"path": "fixture-key", "results": [{"id": "1", "secret": "fixture-key", "media_formats": {"gif": {"url": "https://example.test/1.gif"}}}]}))
             }
         }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -175,6 +215,19 @@ mod tests {
         );
         provider.get("search", Some("happy cat")).await.unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!provider
+            .get("search", Some("happy cat"))
+            .await
+            .unwrap()
+            .to_string()
+            .contains("fixture-key"));
+        let categories = sanitize(
+            "categories",
+            &serde_json::json!({"path": "?key=fixture-key", "tags": [{"name": "Cats", "searchterm": "cats", "path": "fixture-key"}]}),
+            "fixture-key",
+        );
+        assert!(!categories.to_string().contains("fixture-key"));
+        assert!(sanitize("search", &serde_json::json!({"results": [{"id": "1", "media_formats": {"gif": {"url": "https://example.test/a.gif?key=fixture%2Dkey"}}}]}), "fixture-key")["results"].as_array().unwrap().is_empty());
         let disabled = GifProvider {
             base: None,
             ..provider
