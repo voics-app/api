@@ -36,6 +36,12 @@ pub struct UpdateChannelInput {
     pub archived: Option<bool>,
     pub locked: Option<bool>,
     pub auto_archive_duration: Option<u32>,
+    pub available_tags: Option<serde_json::Value>,
+    pub default_sort_order: Option<Option<u8>>,
+    pub default_forum_layout: Option<u8>,
+    pub default_reaction_emoji: Option<Option<serde_json::Value>>,
+    pub require_tags: Option<bool>,
+    pub applied_tags: Option<Vec<String>>,
 }
 
 pub async fn execute(
@@ -122,6 +128,24 @@ async fn update_thread(
         return Err(AppError::missing_permissions());
     }
     let mut thread = access.channel.clone();
+    if let Some(tags) = input.applied_tags.as_ref() {
+        let parent_id = thread.parent_id.ok_or_else(|| {
+            AppError::invalid(
+                "applied_tags",
+                "CHANNEL_TYPE_INVALID",
+                "Thread has no parent.",
+            )
+        })?;
+        let parent = ports.channels.find(parent_id).await?.ok_or_else(|| {
+            AppError::invalid(
+                "applied_tags",
+                "CHANNEL_TYPE_INVALID",
+                "Thread parent not found.",
+            )
+        })?;
+        super::forum::validate_applied(&parent, tags, manages)?;
+        thread.applied_tags = tags.clone();
+    }
     if let Some(name) = input.name {
         apply_name(&mut thread, &name)?;
     }
@@ -179,6 +203,62 @@ async fn update_guild_channel(
     access.require(Permissions::MANAGE_CHANNELS)?;
     let before = &access.channel;
     let mut channel = before.clone();
+    let has_forum_fields = input.available_tags.is_some()
+        || input.default_sort_order.is_some()
+        || input.default_forum_layout.is_some()
+        || input.default_reaction_emoji.is_some()
+        || input.require_tags.is_some();
+    if has_forum_fields && channel.kind != ChannelType::GuildForum {
+        return Err(AppError::invalid(
+            "available_tags",
+            "CHANNEL_TYPE_INVALID",
+            "Forum settings require a forum channel.",
+        ));
+    }
+    if input.applied_tags.is_some() {
+        return Err(AppError::invalid(
+            "applied_tags",
+            "CHANNEL_TYPE_INVALID",
+            "Tags apply to forum posts.",
+        ));
+    }
+    if let Some(tags) = input.available_tags {
+        channel.forum_settings["available_tags"] =
+            super::forum::normalize_tags(ports, before, tags)?;
+    }
+    if let Some(sort) = input.default_sort_order {
+        if sort.is_some_and(|v| v > 1) {
+            return Err(AppError::invalid(
+                "default_sort_order",
+                "BASE_TYPE_CHOICES",
+                "Invalid sort order.",
+            ));
+        }
+        channel.forum_settings["default_sort_order"] = json!(sort);
+    }
+    if let Some(layout) = input.default_forum_layout {
+        if layout > 2 {
+            return Err(AppError::invalid(
+                "default_forum_layout",
+                "BASE_TYPE_CHOICES",
+                "Invalid layout.",
+            ));
+        }
+        channel.forum_settings["default_forum_layout"] = json!(layout);
+    }
+    if let Some(reaction) = input.default_reaction_emoji {
+        if reaction.as_ref().is_some_and(|v| !v.is_object()) {
+            return Err(AppError::invalid(
+                "default_reaction_emoji",
+                "BASE_TYPE_CHOICES",
+                "Expected an emoji object.",
+            ));
+        }
+        channel.forum_settings["default_reaction_emoji"] = json!(reaction);
+    }
+    if let Some(required) = input.require_tags {
+        channel.forum_settings["require_tags"] = json!(required);
+    }
     if let Some(name) = input.name {
         apply_name(&mut channel, &name)?;
     }

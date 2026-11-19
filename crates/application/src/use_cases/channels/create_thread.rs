@@ -21,6 +21,7 @@ pub struct CreateThreadInput {
     pub auto_archive_duration: Option<u32>,
     pub invitable: Option<bool>,
     pub rate_limit_per_user: Option<u32>,
+    pub applied_tags: Vec<String>,
 }
 
 /// `POST /channels/{id}/threads`.
@@ -59,6 +60,26 @@ pub async fn execute(
         Permissions::CREATE_PUBLIC_THREADS
     };
     access.require(required)?;
+    if parent.kind == ChannelType::GuildForum {
+        if kind != ChannelType::PublicThread {
+            return Err(AppError::invalid(
+                "type",
+                "CHANNEL_TYPE_INVALID",
+                "Forum posts must be public.",
+            ));
+        }
+        super::forum::validate_applied(
+            parent,
+            &input.applied_tags,
+            access.permissions.contains(Permissions::MANAGE_THREADS),
+        )?;
+    } else if !input.applied_tags.is_empty() {
+        return Err(AppError::invalid(
+            "applied_tags",
+            "CHANNEL_TYPE_INVALID",
+            "Tags require a forum channel.",
+        ));
+    }
     let duration = input.auto_archive_duration.unwrap_or(1440);
     if !AUTO_ARCHIVE_DURATIONS.contains(&duration) {
         return Err(AppError::invalid(
@@ -73,6 +94,7 @@ pub async fn execute(
     if let Some(seconds) = input.rate_limit_per_user {
         apply_slowmode(&mut thread, seconds)?;
     }
+    thread.applied_tags = input.applied_tags;
     thread.parent_id = Some(parent.id);
     thread.owner_id = Some(actor.user_id);
     thread.nsfw = parent.nsfw;

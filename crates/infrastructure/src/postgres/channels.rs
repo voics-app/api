@@ -18,7 +18,7 @@ use super::error::db;
 use super::PgStore;
 
 pub(super) const CHANNEL_COLUMNS: &str = "id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
-     rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at";
+     rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, forum_settings, applied_tags, created_at";
 
 #[derive(FromRow)]
 pub(super) struct ChannelRow {
@@ -39,6 +39,8 @@ pub(super) struct ChannelRow {
     delivery_mode: String,
     voice_region: Option<String>,
     thread_metadata: Option<serde_json::Value>,
+    forum_settings: serde_json::Value,
+    applied_tags: Vec<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -75,6 +77,8 @@ pub(super) fn assemble(
         delivery_mode: mode(&row.delivery_mode),
         voice_region: row.voice_region,
         thread_metadata: row.thread_metadata.and_then(thread_metadata_from_json),
+        forum_settings: row.forum_settings,
+        applied_tags: row.applied_tags,
         created_at: row.created_at,
     }
 }

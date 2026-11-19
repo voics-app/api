@@ -209,6 +209,12 @@ async fn modify(
         archived: body.archived,
         locked: body.locked,
         auto_archive_duration: body.auto_archive_duration,
+        available_tags: body.available_tags,
+        default_sort_order: body.default_sort_order,
+        default_forum_layout: body.default_forum_layout,
+        default_reaction_emoji: body.default_reaction_emoji,
+        require_tags: body.require_tags,
+        applied_tags: body.applied_tags,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,
@@ -349,6 +355,7 @@ async fn thread(
         auto_archive_duration: body.auto_archive_duration,
         invitable: body.invitable,
         rate_limit_per_user: body.rate_limit_per_user,
+        applied_tags: body.applied_tags,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,

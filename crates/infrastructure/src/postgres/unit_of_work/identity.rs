@@ -258,14 +258,15 @@ pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -
     crate::postgres::community::check_update(conn, channel).await?;
     sqlx::query(
         "INSERT INTO channels (id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
-             rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) \
+             rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, forum_settings, applied_tags, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) \
          ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, guild_id = EXCLUDED.guild_id, \
              position = EXCLUDED.position, name = EXCLUDED.name, topic = EXCLUDED.topic, nsfw = EXCLUDED.nsfw, \
              text_chat_enabled = EXCLUDED.text_chat_enabled, bitrate = EXCLUDED.bitrate, user_limit = EXCLUDED.user_limit, \
              rate_limit_per_user = EXCLUDED.rate_limit_per_user, parent_id = EXCLUDED.parent_id, \
              owner_id = EXCLUDED.owner_id, icon = EXCLUDED.icon, delivery_mode = EXCLUDED.delivery_mode, \
-             voice_region = EXCLUDED.voice_region, thread_metadata = EXCLUDED.thread_metadata",
+             voice_region = EXCLUDED.voice_region, thread_metadata = EXCLUDED.thread_metadata, \
+             forum_settings = EXCLUDED.forum_settings, applied_tags = EXCLUDED.applied_tags",
     )
     .bind(channel.id.as_i64())
     .bind(i16::from(channel.kind.code()))
@@ -284,6 +285,8 @@ pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -
     .bind(channel.delivery_mode.as_str())
     .bind(&channel.voice_region)
     .bind(channel.thread_metadata.as_ref().map(thread_metadata_json))
+    .bind(&channel.forum_settings)
+    .bind(&channel.applied_tags)
     .bind(channel.created_at)
     .execute(&mut *conn)
     .await
