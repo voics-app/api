@@ -134,10 +134,17 @@ async fn guild_administration_follows_the_contract() {
 
     // A server manager can create, edit and remove a sticker; an ordinary member cannot.
     let path = format!("/api/v1/guilds/{guild_id}/stickers");
-    let request = json!({"name": "wave", "tags": "wave", "image": "data:application/json;base64,eyJ2IjoiNS4wIiwidyI6MzIwLCJoIjozMjAsImxheWVycyI6W119"});
-    let (status, _) = call(&app, Method::POST, &path, &guest, Some(request.clone())).await;
+    let sticker_request = json!({"name": "wave", "tags": "wave", "image": "data:application/json;base64,eyJ2IjoiNS4wIiwidyI6MzIwLCJoIjozMjAsImxheWVycyI6W119"});
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &path,
+        &guest,
+        Some(sticker_request.clone()),
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    let (status, sticker) = call(&app, Method::POST, &path, &owner, Some(request)).await;
+    let (status, sticker) = call(&app, Method::POST, &path, &owner, Some(sticker_request)).await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(sticker["format_type"], 3);
     let sticker_path = format!("{path}/{}", sticker["id"].as_str().unwrap());
