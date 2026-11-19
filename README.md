@@ -10,8 +10,9 @@ modify and delete events; channel events require a visible matching voice or sta
 Interest writes are idempotent. Changes and their gateway dispatches share the Postgres
 transaction. Migration `0087` also records start-reminder claims; a bounded worker writes
 user-targeted outbox records and the desktop rechecks access and interest before displaying.
-Offline/mobile push delivery is not yet connected. These paths need end-to-end verification
-before release; see `http_scheduled_events` and `postgres_scheduled_events` tests.
+The proposed notifier consumer sends generic mobile pushes after a second eligibility check,
+but its restart and overload delivery guarantees are limited. These paths need integrated
+verification before release; see `http_scheduled_events` and `postgres_scheduled_events` tests.
 
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts
