@@ -16,6 +16,12 @@ CREATE TABLE guild_daily_activity (
     PRIMARY KEY (guild_id, day)
 );
 
+CREATE TABLE guild_activity_collection (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO guild_activity_collection DEFAULT VALUES;
+
 CREATE FUNCTION count_guild_membership_change() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     affected_guild BIGINT;

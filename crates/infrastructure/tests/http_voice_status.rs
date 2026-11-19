@@ -112,11 +112,52 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
         StatusCode::OK
     );
 
+    assert_eq!(
+        call(
+            &app,
+            Method::PUT,
+            &format!("/api/v1/channels/{voice_id}/voice-status"),
+            &guest,
+            Some(json!({"status":"must not be saved"})),
+        )
+        .await
+        .0,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "an unavailable gateway does not grant connected-member access"
+    );
+
     app_ports.presence = Arc::new(VoicePresence {
         user: guest_id.parse().unwrap(),
         channel: voice_id.parse().unwrap(),
     });
     let app = mk_app(app_ports);
+    let insights_path = format!("/api/v1/guilds/{guild_id}/insights?period=7");
+    assert_eq!(
+        call(&app, Method::GET, &insights_path, &guest, None)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, insights) = call(&app, Method::GET, &insights_path, &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let days = insights["days"].as_array().unwrap();
+    assert_eq!(days.len(), 7);
+    assert_eq!(days.last().unwrap()["new_members"], 2);
+    assert_eq!(days.last().unwrap()["membership_complete"], false);
+    assert!(days.last().unwrap()["messages"].is_null());
+    assert!(days.last().unwrap()["voice_minutes"].is_null());
+    assert_eq!(
+        call(
+            &app,
+            Method::GET,
+            &format!("/api/v1/guilds/{guild_id}/insights?period=8"),
+            &owner,
+            None
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
     let widget_path = format!("/api/v1/guilds/{guild_id}/widget.json");
     assert_eq!(
         send(&app, request(Method::GET, &widget_path, None, None))

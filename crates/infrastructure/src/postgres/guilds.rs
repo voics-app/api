@@ -221,6 +221,31 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn membership_activity(
+        &self,
+        id: Snowflake,
+        since: chrono::NaiveDate,
+    ) -> AppResult<(DateTime<Utc>, Vec<application::ports::MembershipActivity>)> {
+        let started: DateTime<Utc> =
+            sqlx::query_scalar("SELECT started_at FROM guild_activity_collection WHERE singleton")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(db)?;
+        let rows: Vec<(chrono::NaiveDate, i64, i64)> = sqlx::query_as("SELECT day, joins, leaves FROM guild_daily_activity WHERE guild_id = $1 AND day >= $2 ORDER BY day")
+            .bind(id.as_i64()).bind(since).fetch_all(&self.pool).await.map_err(db)?;
+        Ok((
+            started,
+            rows.into_iter()
+                .map(
+                    |(day, joins, leaves)| application::ports::MembershipActivity {
+                        day,
+                        joins,
+                        leaves,
+                    },
+                )
+                .collect(),
+        ))
+    }
     async fn public_widget(
         &self,
         id: Snowflake,

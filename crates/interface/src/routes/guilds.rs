@@ -14,8 +14,8 @@ use application::use_cases::audit::list_audit_log;
 use application::use_cases::guilds::create_guild::CreateGuildInput;
 use application::use_cases::guilds::update_guild::UpdateGuildInput;
 use application::use_cases::guilds::{
-    create_guild, delete_guild, get_guild, leave_guild, list_current_user_guilds, update_guild,
-    widget,
+    create_guild, delete_guild, get_guild, insights, leave_guild, list_current_user_guilds,
+    update_guild, widget,
 };
 use application::{AppError, Resource};
 use contracts::objects::{AuditLogDto, GuildDto, GuildFullDto};
@@ -134,9 +134,45 @@ async fn leave(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WidgetPatch {
+    #[serde(default, deserialize_with = "optional_bool")]
     enabled: Option<bool>,
     #[serde(default, deserialize_with = "contracts::wire::double_option")]
     channel_id: Option<Option<Id>>,
+}
+
+#[derive(Deserialize)]
+struct InsightsQuery {
+    period: Option<u32>,
+}
+
+async fn guild_insights(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Query(query): Query<InsightsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let period = query.period.unwrap_or(7);
+    let days = insights::execute(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Guild)?,
+        period,
+    )
+    .await?;
+    let days: Vec<_> = days.into_iter().map(|day| json!({
+        "date": day.day.to_string(), "new_members": day.joins, "leavers": day.leaves,
+        "membership_complete": day.membership_complete, "messages": null, "voice_minutes": null
+    })).collect();
+    Ok(Json(
+        json!({"period": period, "days": days, "message_coverage": false, "voice_coverage": false}),
+    ))
+}
+
+fn optional_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    bool::deserialize(deserializer).map(Some)
 }
 
 fn widget_settings_json(settings: application::ports::WidgetSettings) -> Json<Value> {
@@ -247,6 +283,7 @@ pub fn routes() -> Router<AppState> {
                 .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
         )
         .route("/guilds/{id}/audit-logs", get(audit_logs))
+        .route("/guilds/{id}/insights", get(guild_insights))
         .route("/guilds/{id}/widget.json", get(widget_public))
         .route("/guilds/{id}/widget", get(widget_get).patch(widget_patch))
         .route("/users/@me/guilds", get(my_guilds))

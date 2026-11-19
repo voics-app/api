@@ -245,6 +245,11 @@ pub trait GuildRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
     async fn widget_settings(&self, id: Snowflake) -> AppResult<Option<WidgetSettings>>;
     async fn public_widget(&self, id: Snowflake) -> AppResult<Option<PublicWidget>>;
+    async fn membership_activity(
+        &self,
+        id: Snowflake,
+        since: chrono::NaiveDate,
+    ) -> AppResult<(DateTime<Utc>, Vec<MembershipActivity>)>;
     async fn update_widget_settings(
         &self,
         id: Snowflake,
@@ -308,6 +313,13 @@ pub struct PublicWidget {
     pub id: Snowflake,
     pub name: String,
     pub icon: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MembershipActivity {
+    pub day: chrono::NaiveDate,
+    pub joins: i64,
+    pub leaves: i64,
 }
 
 /// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,
