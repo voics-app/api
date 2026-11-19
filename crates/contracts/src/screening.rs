@@ -18,3 +18,9 @@ pub struct SetScreeningRequest {
 pub struct AcceptScreeningRequest {
     pub revision: i64,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct SubmitOnboardingRequest {
+    pub revision: i64,
+    pub choices: Vec<usize>,
+}

@@ -178,6 +178,64 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertGuild(guild) | Mutation::UpdateGuild(guild) => {
             guilds::upsert_guild(conn, guild).await
         }
+        Mutation::ApplyOnboarding {
+            guild_id,
+            user_id,
+            revision,
+            role_ids,
+        } => {
+            let (current,): (i64,) = sqlx::query_as("SELECT onboarding_revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE")
+                .bind(guild_id.as_i64()).fetch_one(&mut *conn).await.map_err(db)?;
+            if current != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding changed; review it again.".into(),
+                });
+            }
+            let (pending,): (bool,) = sqlx::query_as(
+                "SELECT pending FROM members WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+            )
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(db)?;
+            if pending {
+                return Err(application::AppError::missing_permissions());
+            }
+            let result = sqlx::query("INSERT INTO guild_onboarding_completions (guild_id, user_id, revision) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(revision).execute(&mut *conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding has already been completed.".into(),
+                });
+            }
+            for role_id in role_ids {
+                let row: Option<(i64, bool)> = sqlx::query_as("SELECT permissions, managed FROM roles WHERE guild_id = $1 AND id = $2 FOR SHARE")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).fetch_optional(&mut *conn).await.map_err(db)?;
+                let Some((permissions, managed)) = row else {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role no longer exists.".into(),
+                    });
+                };
+                if managed
+                    || *role_id == *guild_id
+                    || (permissions as u64
+                        & !application::use_cases::guilds::onboarding::SAFE_ROLE_BITS)
+                        != 0
+                {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role is no longer eligible.".into(),
+                    });
+                }
+                sqlx::query("INSERT INTO member_roles (guild_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                    .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(role_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+            }
+            Ok(())
+        }
         Mutation::CheckScreeningRevision { guild_id, revision } => {
             let current: (i64,) = sqlx::query_as(
                 "SELECT revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE",

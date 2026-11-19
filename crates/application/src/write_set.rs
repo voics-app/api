@@ -108,6 +108,12 @@ pub enum Mutation {
     },
 
     InsertGuild(Guild),
+    ApplyOnboarding {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        revision: i64,
+        role_ids: Vec<Snowflake>,
+    },
     CheckScreeningRevision {
         guild_id: Snowflake,
         revision: i64,

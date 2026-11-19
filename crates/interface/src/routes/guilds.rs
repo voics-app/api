@@ -18,7 +18,9 @@ use application::use_cases::guilds::{
 use application::{AppError, Resource};
 use contracts::objects::{AuditLogDto, GuildDto, GuildFullDto};
 use contracts::requests::{CreateGuildRequest, ModifyGuildRequest};
-use contracts::screening::{AcceptScreeningRequest, ScreeningDto, SetScreeningRequest};
+use contracts::screening::{
+    AcceptScreeningRequest, ScreeningDto, SetScreeningRequest, SubmitOnboardingRequest,
+};
 use contracts::wire::Id;
 use domain::audit::AuditAction;
 
@@ -117,6 +119,56 @@ async fn put_welcome(
             &actor,
             snowflake(&id, Resource::Guild)?,
             body,
+        )
+        .await?,
+    ))
+}
+
+async fn get_onboarding(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::onboarding::get(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+        )
+        .await?,
+    ))
+}
+
+async fn put_onboarding(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::onboarding::set(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body,
+        )
+        .await?,
+    ))
+}
+
+async fn submit_onboarding(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<SubmitOnboardingRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::onboarding::submit(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body.revision,
+            body.choices,
         )
         .await?,
     ))
@@ -288,6 +340,11 @@ pub fn routes() -> Router<AppState> {
             "/guilds/{id}/welcome-screen",
             get(get_welcome).put(put_welcome),
         )
+        .route(
+            "/guilds/{id}/onboarding",
+            get(get_onboarding).put(put_onboarding),
+        )
+        .route("/guilds/{id}/onboarding/complete", post(submit_onboarding))
         .route("/guilds", post(create))
         .route(
             "/guilds/{id}",

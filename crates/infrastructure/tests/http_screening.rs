@@ -75,6 +75,18 @@ async fn join_and_accept_current_rules_before_sending() {
         .unwrap()["id"]
         .as_str()
         .unwrap();
+    let (_, role) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild_id}/roles"),
+        &owner,
+        Some(json!({"name":"Explorer","permissions":"0"})),
+    )
+    .await;
+    let role_id = role["id"].as_str().unwrap();
+    let onboarding_path = format!("/api/v1/guilds/{guild_id}/onboarding");
+    let (status, onboarding) = call(&app, Method::PUT, &onboarding_path, &owner, Some(json!({"enabled":true,"questions":[{"title":"What interests you?","options":[{"label":"Chat","role_id":role_id,"channel_id":channel}]}]}))).await;
+    assert_eq!(status, StatusCode::OK);
     let welcome_path = format!("/api/v1/guilds/{guild_id}/welcome-screen");
     let (status, _) = call(&app, Method::PUT, &welcome_path, &owner, Some(json!({"enabled":true,"description":"Welcome!","channels":[{"channel_id":channel,"description":"Say hello"}]}))).await;
     assert_eq!(status, StatusCode::OK);
@@ -98,6 +110,16 @@ async fn join_and_accept_current_rules_before_sending() {
     assert_eq!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
     let (_, shown) = call(&app, Method::GET, &path, &guest, None).await;
     assert_eq!(shown["pending"], true);
+    let complete = format!("{onboarding_path}/complete");
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     let (status, welcome) = call(&app, Method::GET, &welcome_path, &guest, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(welcome["channels"][0]["channel_id"], channel);
@@ -140,4 +162,37 @@ async fn join_and_accept_current_rules_before_sending() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_ne!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
+    let (status, result) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["channel_ids"], json!([channel]));
+    let (status, member) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{guild_id}/members/{guest_id}"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(member["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|id| id == role_id));
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }
