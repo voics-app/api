@@ -106,13 +106,16 @@ pub(super) async fn delete_role(
 }
 
 pub(super) async fn insert_member(conn: &mut PgConnection, member: &Member) -> AppResult<()> {
-    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES ($1, $2, $3)")
-        .bind(member.guild_id.as_i64())
-        .bind(member.user_id.as_i64())
-        .bind(member.joined_at)
-        .execute(&mut *conn)
-        .await
-        .map_err(db)?;
+    sqlx::query(
+        "INSERT INTO members (guild_id, user_id, joined_at, pending) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(member.guild_id.as_i64())
+    .bind(member.user_id.as_i64())
+    .bind(member.joined_at)
+    .bind(member.pending)
+    .execute(&mut *conn)
+    .await
+    .map_err(db)?;
     upsert_member(conn, member).await
 }
 
