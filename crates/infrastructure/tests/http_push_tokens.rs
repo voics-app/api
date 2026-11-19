@@ -709,3 +709,56 @@ async fn manual_push_pages_through_every_user_with_a_live_token() {
         "each user with a token once, in id order, none without"
     );
 }
+
+#[tokio::test]
+async fn badge_visibility_is_private_and_cannot_grant_badges() {
+    let database = start_database().await;
+    let app = app(&database);
+    let (alice, alice_id) = register(&app, "badgealice").await;
+    let (bob, _) = register(&app, "badgebob").await;
+    sqlx::query("INSERT INTO user_badges (user_id, badge_id) VALUES ($1, 'fixture_one'), ($1, 'fixture_two')")
+        .bind(alice_id.parse::<i64>().unwrap()).execute(&database.pool).await.unwrap();
+    let (status, _) = call(
+        &app,
+        Method::PUT,
+        "/api/v1/users/@me/badges/fixture_one",
+        &alice,
+        Some(json!({"visible": false})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, own) = call(&app, Method::GET, "/api/v1/users/@me/badges", &alice, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        own,
+        json!([{"id":"fixture_one","visible":false},{"id":"fixture_two","visible":true}])
+    );
+    let (status, public) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/users/{alice_id}/badges"),
+        &bob,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(public, json!(["fixture_two"]));
+    let (status, _) = call(
+        &app,
+        Method::PUT,
+        "/api/v1/users/@me/badges/fixture_one",
+        &bob,
+        Some(json!({"visible": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, public) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/users/{alice_id}/badges"),
+        &bob,
+        None,
+    )
+    .await;
+    assert_eq!(public, json!(["fixture_two"]));
+}
