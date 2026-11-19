@@ -274,6 +274,12 @@ impl GuildRepository for PgStore {
         question: &str,
     ) -> AppResult<Option<domain::ban_appeal::BanAppeal>> {
         let mut tx = self.pool.begin().await.map_err(db)?;
+        // Serialize against anonymization so deleted accounts cannot leave new appeal text.
+        let active_user: Option<i64> = sqlx::query_scalar("SELECT id FROM users WHERE id=$1 AND disabled_at IS NULL AND delete_after IS NULL FOR UPDATE")
+            .bind(user_id.as_i64()).fetch_optional(&mut *tx).await.map_err(db)?;
+        if active_user.is_none() {
+            return Ok(None);
+        }
         let ban: Option<DateTime<Utc>> = sqlx::query_scalar(
             "SELECT created_at FROM bans WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
         )
