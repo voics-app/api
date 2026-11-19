@@ -114,13 +114,14 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     let deliveries: i64 = sqlx::query_scalar("SELECT count(*) FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
         .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
     assert_eq!(deliveries, 1);
-    infrastructure::announcement_relay::AnnouncementRelay::new(
+    messages
+        .lose_crosspost_response
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let relay = infrastructure::announcement_relay::AnnouncementRelay::new(
         database.pool.clone(),
         messages.clone(),
-    )
-    .run_once()
-    .await
-    .unwrap();
+    );
+    relay.run_once().await.unwrap();
     let bodies = messages.bodies.lock().unwrap();
     let delivered = bodies.last().unwrap();
     assert_eq!(delivered["webhook_id"], hook_id);
@@ -128,7 +129,21 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     drop(bodies);
     let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
         .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(state, "unknown");
+    relay.run_once().await.unwrap();
+    let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
+        .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
     assert_eq!(state, "delivered");
+    assert_eq!(
+        messages
+            .bodies
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|body| body.get("snapshot").is_some())
+            .count(),
+        1
+    );
     let (status, _) = call(&app, Method::POST, &crosspost_uri, token, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, outsider) = send(

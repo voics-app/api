@@ -34,6 +34,25 @@ impl AnnouncementRelay {
         // resend it automatically, even if the destination was later deleted.
         sqlx::query("UPDATE announcement_deliveries SET state='unknown' WHERE state='claimed' AND claimed_at < now() - interval '5 minutes'")
             .execute(&self.pool).await?;
+        // A response can be lost after messages stored the reserved identity.
+        // Presence with the expected webhook proves success; absence is not
+        // proof of failure because the delivered message may have been deleted.
+        let unknown: Vec<(i64, i64, i64, i64, i64)> = sqlx::query_as("SELECT source_channel_id, source_message_id, target_channel_id, destination_message_id, webhook_id FROM announcement_deliveries WHERE state='unknown' ORDER BY claimed_at LIMIT 25")
+            .fetch_all(&self.pool).await?;
+        for (source, original, target, destination, webhook) in unknown {
+            let found = self
+                .messages
+                .get(
+                    Snowflake::new(target as u64),
+                    Snowflake::new(destination as u64),
+                )
+                .await;
+            if matches!(found, Ok(Some(ref message)) if message.body.get("webhook_id").and_then(Value::as_str) == Some(webhook.to_string().as_str()))
+            {
+                sqlx::query("UPDATE announcement_deliveries SET state='delivered' WHERE source_channel_id=$1 AND source_message_id=$2 AND target_channel_id=$3 AND state='unknown'")
+                    .bind(source).bind(original).bind(target).execute(&self.pool).await?;
+            }
+        }
         let markers: Vec<(i64, i64)> = sqlx::query_as("SELECT source_channel_id, source_message_id FROM announcement_publications WHERE NOT marked ORDER BY created_at LIMIT 25")
             .fetch_all(&self.pool).await?;
         for (channel, message) in markers {

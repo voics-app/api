@@ -119,6 +119,7 @@ impl EventPublisher for DiscardEvents {
 #[derive(Default)]
 pub struct RecordingMessages {
     pub get_calls: std::sync::atomic::AtomicUsize,
+    pub lose_crosspost_response: std::sync::atomic::AtomicBool,
     pub bodies: std::sync::Mutex<Vec<serde_json::Value>>,
     /// The channel each recorded body was posted to.
     pub channels: std::sync::Mutex<Vec<domain::Snowflake>>,
@@ -136,12 +137,23 @@ impl MessageService for RecordingMessages {
         body: serde_json::Value,
     ) -> AppResult<StoredMessage> {
         let id: domain::Snowflake = body["message_id"].as_str().unwrap().parse().unwrap();
+        let webhook = body["webhook_id"].clone();
         self.channels.lock().unwrap().push(channel_id);
         self.bodies.lock().unwrap().push(body);
-        Ok(StoredMessage {
-            id,
-            body: serde_json::json!({"id":id.to_string()}),
-        })
+        let stored = serde_json::json!({"id":id.to_string(), "webhook_id":webhook});
+        self.stored
+            .lock()
+            .unwrap()
+            .insert((channel_id, id), stored.clone());
+        if self
+            .lose_crosspost_response
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(AppError::Unavailable(
+                "fixture lost successful delivery response".into(),
+            ));
+        }
+        Ok(StoredMessage { id, body: stored })
     }
     async fn mark_crossposted(
         &self,
