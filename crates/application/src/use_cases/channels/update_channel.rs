@@ -290,12 +290,8 @@ async fn update_guild_channel(
         channel.forum_settings["default_forum_layout"] = json!(layout);
     }
     if let Some(reaction) = input.default_reaction_emoji {
-        if reaction.as_ref().is_some_and(|v| !v.is_object()) {
-            return Err(AppError::invalid(
-                "default_reaction_emoji",
-                "BASE_TYPE_CHOICES",
-                "Expected an emoji object.",
-            ));
+        if let Some(value) = reaction.as_ref() {
+            super::forum::validate_emoji(value, "default_reaction_emoji")?;
         }
         channel.forum_settings["default_reaction_emoji"] = json!(reaction);
     }
