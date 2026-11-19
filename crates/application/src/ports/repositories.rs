@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use domain::account::{AccountState, AccountToken, TokenPurpose};
-use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
+use domain::application::{Application, ApplicationCommand, FollowedChannel, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
 use domain::bot_authorization::{BotAuthorization, BotInstallation, BotInstallationRevision};
 use domain::channel::Channel;
@@ -409,6 +409,8 @@ pub trait InteractionRepository: Send + Sync {
 pub trait WebhookRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Webhook>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Webhook>>;
+    async fn list_followed_for_guild(&self, guild_id: Snowflake)
+        -> AppResult<Vec<FollowedChannel>>;
 }
 
 /// Push tokens of the mobile app, one per login session.

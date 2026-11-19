@@ -5,7 +5,7 @@ use sqlx::FromRow;
 
 use application::ports::WebhookRepository;
 use application::{AppError, AppResult};
-use domain::application::{Webhook, WebhookKind};
+use domain::application::{FollowedChannel, Webhook, WebhookKind};
 use domain::Snowflake;
 
 use super::convert::{sf, sf_opt};
@@ -50,6 +50,22 @@ impl TryFrom<WebhookRow> for Webhook {
 
 #[async_trait]
 impl WebhookRepository for PgStore {
+    async fn list_followed_for_guild(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<FollowedChannel>> {
+        let rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+            "SELECT f.source_channel_id, f.target_channel_id, f.webhook_id FROM announcement_followers f JOIN webhooks w ON w.id = f.webhook_id WHERE w.guild_id = $1 ORDER BY f.source_channel_id, f.target_channel_id"
+        ).bind(guild_id.as_i64()).fetch_all(&self.pool).await.map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|(source, target, webhook)| FollowedChannel {
+                source_channel_id: sf(source),
+                target_channel_id: sf(target),
+                webhook_id: sf(webhook),
+            })
+            .collect())
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<Webhook>> {
         let sql = format!("SELECT {WEBHOOK_COLUMNS} FROM webhooks WHERE id = $1");
         let row: Option<WebhookRow> = sqlx::query_as(&sql)

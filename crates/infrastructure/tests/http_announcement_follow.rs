@@ -87,6 +87,18 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(hook["type"], 2);
     assert!(hook.get("token").is_none());
+    let (status, following) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{target_guild_id}/followed-channels"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(following[0]["channel_id"], source_id);
+    assert_eq!(following[0]["webhook_channel_id"], target_id);
+    assert_eq!(following[0]["webhook_id"], hook_id);
     let (status, outsider) = send(
         &app,
         request(
@@ -99,6 +111,15 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let outsider_token = outsider["access_token"].as_str().unwrap();
+    let (status, _) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{target_guild_id}/followed-channels"),
+        outsider_token,
+        None,
+    )
+    .await;
+    assert!(status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND);
     let (status, _) = call(
         &app,
         Method::POST,

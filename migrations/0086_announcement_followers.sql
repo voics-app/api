@@ -1,5 +1,5 @@
 -- A channel-following webhook has no reusable bearer token.  Deleting either
--- channel or the webhook removes the relationship and any pending deliveries.
+-- channel or the webhook removes the relationship and cancels pending deliveries.
 CREATE TABLE announcement_followers (
     source_channel_id BIGINT NOT NULL REFERENCES channels (id) ON DELETE CASCADE,
     target_channel_id BIGINT NOT NULL REFERENCES channels (id) ON DELETE CASCADE,
@@ -14,6 +14,9 @@ CREATE INDEX announcement_followers_target_idx ON announcement_followers (target
 -- its follower webhook as well, so it cannot remain as a dangling integration.
 CREATE FUNCTION delete_announcement_follower_webhook() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+    UPDATE announcement_deliveries SET state = 'cancelled'
+      WHERE source_channel_id = OLD.source_channel_id
+        AND target_channel_id = OLD.target_channel_id AND state = 'pending';
     DELETE FROM webhooks WHERE id = OLD.webhook_id;
     RETURN OLD;
 END;
@@ -31,11 +34,9 @@ CREATE TABLE announcement_deliveries (
     target_channel_id BIGINT NOT NULL,
     destination_message_id BIGINT NOT NULL UNIQUE,
     payload JSONB NOT NULL,
-    state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'claimed', 'delivered', 'unknown')),
+    state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'claimed', 'delivered', 'unknown', 'cancelled')),
     claimed_at TIMESTAMPTZ,
-    PRIMARY KEY (source_channel_id, source_message_id, target_channel_id),
-    FOREIGN KEY (source_channel_id, target_channel_id)
-        REFERENCES announcement_followers (source_channel_id, target_channel_id) ON DELETE CASCADE
+    PRIMARY KEY (source_channel_id, source_message_id, target_channel_id)
 );
 
 CREATE INDEX announcement_deliveries_pending_idx

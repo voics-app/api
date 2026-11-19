@@ -320,6 +320,13 @@ pub enum WebhookKind {
     Application,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FollowedChannel {
+    pub source_channel_id: Snowflake,
+    pub target_channel_id: Snowflake,
+    pub webhook_id: Snowflake,
+}
+
 impl WebhookKind {
     pub const fn code(self) -> u8 {
         match self {

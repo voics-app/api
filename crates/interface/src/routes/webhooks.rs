@@ -12,7 +12,7 @@ use application::use_cases::webhooks::create_webhook::{self, CreateWebhookInput}
 use application::use_cases::webhooks::update_webhook::{self, UpdateWebhookInput};
 use application::use_cases::webhooks::{
     delete_original_response, delete_webhook, edit_original_response, execute_webhook,
-    follow_channel, get_webhook, list_guild_webhooks, reset_webhook_token,
+    follow_channel, get_webhook, list_followed_channels, list_guild_webhooks, reset_webhook_token,
 };
 use application::Resource;
 use contracts::objects::WebhookDto;
@@ -47,6 +47,24 @@ async fn follow(
     Ok(Json(
         serde_json::json!({"channel_id": source.to_string(), "webhook_id": hook.id.to_string()}),
     ))
+}
+
+async fn followed_channels(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let items =
+        list_followed_channels::execute(&state.ports, &actor, snowflake(&guild, Resource::Guild)?)
+            .await?;
+    Ok(Json(serde_json::json!(items
+        .iter()
+        .map(|item| serde_json::json!({
+            "channel_id": item.source_channel_id.to_string(),
+            "webhook_channel_id": item.target_channel_id.to_string(),
+            "webhook_id": item.webhook_id.to_string(),
+        }))
+        .collect::<Vec<_>>())))
 }
 
 async fn create(
@@ -234,6 +252,7 @@ async fn delete_original(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/channels/{id}/followers", post(follow))
+        .route("/guilds/{id}/followed-channels", get(followed_channels))
         .route(
             "/channels/{id}/webhooks",
             post(create).layer(DefaultBodyLimit::max(images::IMAGE_BODY_LIMIT)),
