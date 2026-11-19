@@ -79,6 +79,19 @@ struct GithubUser {
 fn upstream() -> AppError {
     AppError::Unavailable("GitHub account verification failed".into())
 }
+fn insert_error(error: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(database) = &error {
+        if database.code().as_deref() == Some("23505")
+            && database.constraint() == Some("user_connections_provider_account_id_key")
+        {
+            return AppError::Conflict {
+                code: 0,
+                message: "Account is already linked".into(),
+            };
+        }
+    }
+    AppError::internal(error)
+}
 fn invalid_state() -> AppError {
     AppError::invalid(
         "state",
@@ -172,7 +185,7 @@ impl Connections for GithubConnections {
             return Err(invalid_state());
         }
         sqlx::query("INSERT INTO user_connections (user_id,provider,account_id,name) VALUES ($1,'github',$2,$3) ON CONFLICT (user_id,provider) DO UPDATE SET account_id=EXCLUDED.account_id,name=EXCLUDED.name,visible=FALSE")
-            .bind(user).bind(profile.id.to_string()).bind(profile.login).execute(&mut *tx).await.map_err(|_| AppError::Conflict { code: 0, message: "Account is already linked".into() })?;
+            .bind(user).bind(profile.id.to_string()).bind(profile.login).execute(&mut *tx).await.map_err(insert_error)?;
         tx.commit().await.map_err(AppError::internal)?;
         Ok(())
     }
@@ -226,5 +239,17 @@ impl Connections for GithubConnections {
             .map_err(AppError::internal)?;
         tx.commit().await.map_err(AppError::internal)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unrelated_database_failures_are_internal() {
+        assert!(matches!(
+            insert_error(sqlx::Error::RowNotFound),
+            AppError::Internal(_)
+        ));
     }
 }

@@ -88,6 +88,7 @@ async fn github_flow_visibility_and_replay() {
         )
         .unwrap(),
     ));
+    let purge_ports = ports.clone();
     let app = interface::router(AppState {
         ports,
         internal_token: support::http::INTERNAL_TOKEN.into(),
@@ -96,6 +97,9 @@ async fn github_flow_visibility_and_replay() {
     });
     let (status, registration) = send(&app, request(Method::POST, "/api/v1/auth/register", None, Some(json!({"email":"alice@example.com","username":"alice","password":"a-long-enough-passphrase"})))).await;
     assert_eq!(status, StatusCode::CREATED);
+    let (status, second) = send(&app, request(Method::POST, "/api/v1/auth/register", None, Some(json!({"email":"bob@example.com","username":"bob","password":"a-long-enough-passphrase"})))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let second_access = second["access_token"].as_str().unwrap();
     let access = registration["access_token"].as_str().unwrap();
     let id = registration["user"]["id"].as_str().unwrap();
     let (status, start) = call(
@@ -126,6 +130,32 @@ async fn github_flow_visibility_and_replay() {
     assert_eq!(
         client.get(&callback).send().await.unwrap().status(),
         StatusCode::BAD_REQUEST
+    );
+    // A provider identity already linked to another user produces a conflict.
+    let second_start: serde_json::Value = client
+        .post(format!(
+            "{base}/api/v1/users/@me/connections/github/authorize"
+        ))
+        .bearer_auth(second_access)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let second_redirect = client
+        .get(second_start["url"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    let second_callback = second_redirect.headers()["location"]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        client.get(second_callback).send().await.unwrap().status(),
+        StatusCode::CONFLICT
     );
     let bearer = |url: String| client.get(url).bearer_auth(access);
     let mine: serde_json::Value = bearer(format!("{base}/api/v1/users/@me/connections"))
@@ -206,6 +236,51 @@ async fn github_flow_visibility_and_replay() {
         .await
         .unwrap();
     assert_eq!(remaining, json!([]));
+    // Re-link and create another pending state, then verify anonymization removes both.
+    let restart: serde_json::Value = client
+        .post(format!(
+            "{base}/api/v1/users/@me/connections/github/authorize"
+        ))
+        .bearer_auth(access)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let redirect = client
+        .get(restart["url"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    let callback = redirect.headers()["location"].to_str().unwrap().to_owned();
+    assert_eq!(
+        client.get(callback).send().await.unwrap().status(),
+        StatusCode::OK
+    );
+    let pending: serde_json::Value = client
+        .post(format!(
+            "{base}/api/v1/users/@me/connections/github/authorize"
+        ))
+        .bearer_auth(access)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(pending["url"].is_string());
+    let mut writes = application::write_set::WriteSet::new();
+    writes.mutate(application::write_set::Mutation::AnonymizeUser {
+        user_id: id.parse().unwrap(),
+        username: "deleted-alice".into(),
+    });
+    purge_ports.unit_of_work.commit(writes).await.unwrap();
+    let stored: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM user_connections WHERE user_id=$1), (SELECT count(*) FROM connection_oauth_states WHERE user_id=$1)")
+        .bind(id.parse::<i64>().unwrap()).fetch_one(&db.pool).await.unwrap();
+    assert_eq!(stored, (0, 0));
     api_task.abort();
     provider_task.abort();
 }
