@@ -94,9 +94,26 @@ async fn new_guild_dms_resolve_preferences_and_preserve_existing_conversations()
     let (dave, dave_id) = register(&app, "dave").await;
     let (eve, eve_id) = register(&app, "eve").await;
     let (frank, _frank_id) = register(&app, "frank").await;
+    let (george, _) = register(&app, "george").await;
     let (status, existing) = open(&app, &carol, &[&bob_id]).await;
     assert_eq!(status, StatusCode::OK);
     let one = guild(&app, &bob, &[&alice, &carol, &dave, &eve, &frank]).await;
+    settings(
+        &app,
+        &bob,
+        json!({"guild_dm_restrictions": {(one.clone()): true}}),
+    )
+    .await;
+    assert_eq!(
+        open(&app, &alice, &[&bob_id]).await.0,
+        StatusCode::FORBIDDEN,
+        "a server override restricts even with permissive default"
+    );
+    assert_eq!(
+        open(&app, &george, &[&bob_id]).await.0,
+        StatusCode::OK,
+        "no shared server retains direct access"
+    );
     settings(&app, &bob, json!({"default_guilds_restricted": true})).await;
     let (status, _) = call(
         &app,

@@ -2,7 +2,7 @@ use domain::channel::{Channel, ChannelType};
 use domain::Snowflake;
 
 use crate::context::{Actor, Ports};
-use crate::error::{AppError, AppResult, Denial, Resource};
+use crate::error::{AppError, AppResult, Resource};
 use crate::events::{DomainEvent, PrivateChannelView};
 use crate::support::views::private_view;
 use crate::write_set::{Mutation, WriteSet};
