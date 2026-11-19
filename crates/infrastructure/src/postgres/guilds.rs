@@ -271,6 +271,7 @@ impl GuildRepository for PgStore {
         guild_id: Snowflake,
         user_id: Snowflake,
         answer: &str,
+        question: &str,
     ) -> AppResult<Option<domain::ban_appeal::BanAppeal>> {
         let mut tx = self.pool.begin().await.map_err(db)?;
         let ban: Option<DateTime<Utc>> = sqlx::query_scalar(
@@ -284,8 +285,8 @@ impl GuildRepository for PgStore {
         let Some(ban) = ban else { return Ok(None) };
         sqlx::query("UPDATE ban_appeals SET status='closed', resolved_at=now() WHERE guild_id=$1 AND user_id=$2 AND status='open' AND ban_created_at<>$3")
             .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(ban).execute(&mut *tx).await.map_err(db)?;
-        let row: Option<AppealRow> = sqlx::query_as(&format!("INSERT INTO ban_appeals (id,guild_id,user_id,ban_created_at,question,answer) SELECT $1,$2,$3,$4,question,$5 FROM ban_appeal_forms WHERE guild_id=$2 ON CONFLICT DO NOTHING RETURNING {APPEAL_COLUMNS}"))
-            .bind(id.as_i64()).bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(ban).bind(answer).fetch_optional(&mut *tx).await.map_err(db)?;
+        let row: Option<AppealRow> = sqlx::query_as(&format!("INSERT INTO ban_appeals (id,guild_id,user_id,ban_created_at,question,answer) SELECT $1,$2,$3,$4,question,$5 FROM ban_appeal_forms WHERE guild_id=$2 AND question=$6 ON CONFLICT DO NOTHING RETURNING {APPEAL_COLUMNS}"))
+            .bind(id.as_i64()).bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(ban).bind(answer).bind(question).fetch_optional(&mut *tx).await.map_err(db)?;
         tx.commit().await.map_err(db)?;
         Ok(row.map(Into::into))
     }

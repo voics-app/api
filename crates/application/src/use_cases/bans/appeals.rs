@@ -48,19 +48,27 @@ pub async fn submit(
     actor: &Actor,
     guild: Snowflake,
     answer: &str,
+    question: &str,
 ) -> AppResult<BanAppeal> {
     actor.require_user()?;
     valid("answer", answer, 2000)?;
+    valid("question", question, 500)?;
     if ports.guilds.ban(guild, actor.user_id).await?.is_none() {
         return Err(AppError::missing_access());
     }
     ports
         .guilds
-        .submit_appeal(ports.ids.next_id()?, guild, actor.user_id, answer.trim())
+        .submit_appeal(
+            ports.ids.next_id()?,
+            guild,
+            actor.user_id,
+            answer.trim(),
+            question,
+        )
         .await?
         .ok_or_else(|| AppError::Conflict {
             code: 0,
-            message: "Appeal unavailable or already open".into(),
+            message: "Question changed, appeal unavailable or already open".into(),
         })
 }
 pub async fn list(ports: &Ports, actor: &Actor, guild: Snowflake) -> AppResult<Vec<BanAppeal>> {

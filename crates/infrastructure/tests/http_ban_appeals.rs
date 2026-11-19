@@ -153,12 +153,48 @@ async fn banned_user_submits_and_moderator_accepts_appeal() {
     let (status, form) = call(&w.app, Method::GET, &format!("{base}/form"), &w.ann, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(form["question"], "Why should we unban you?");
+    assert_eq!(
+        call(
+            &w.app,
+            Method::PUT,
+            &format!("{base}/form"),
+            &w.owner,
+            Some(json!({"question":"Changed question"}))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &w.app,
+            Method::POST,
+            &base,
+            &w.ann,
+            Some(json!({"answer":"Old answer", "question":"Why should we unban you?"}))
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(
+            &w.app,
+            Method::PUT,
+            &format!("{base}/form"),
+            &w.owner,
+            Some(json!({"question":"Why should we unban you?"}))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
     let (status, appeal) = call(
         &w.app,
         Method::POST,
         &base,
         &w.ann,
-        Some(json!({"answer":"I understand the rules."})),
+        Some(json!({"answer":"I understand the rules.", "question":"Why should we unban you?"})),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
@@ -168,7 +204,7 @@ async fn banned_user_submits_and_moderator_accepts_appeal() {
             Method::POST,
             &base,
             &w.ann,
-            Some(json!({"answer":"again"}))
+            Some(json!({"answer":"again", "question":"Why should we unban you?"}))
         )
         .await
         .0,
@@ -275,7 +311,7 @@ async fn review_permission_is_independent_and_stale_appeal_cannot_unban_a_new_ba
         Method::POST,
         &base,
         &w.ann,
-        Some(json!({"answer":"Sorry"})),
+        Some(json!({"answer":"Sorry", "question":"Explain"})),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{appeal}");
@@ -313,7 +349,7 @@ async fn review_permission_is_independent_and_stale_appeal_cannot_unban_a_new_ba
         Method::POST,
         &base,
         &w.ann,
-        Some(json!({"answer":"Please reconsider"})),
+        Some(json!({"answer":"Please reconsider", "question":"Explain"})),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{second}");
@@ -400,14 +436,14 @@ async fn concurrent_submissions_leave_exactly_one_open_appeal() {
             Method::POST,
             &base,
             &w.ann,
-            Some(json!({"answer":"one"}))
+            Some(json!({"answer":"one", "question":"Explain"}))
         ),
         call(
             &w.app,
             Method::POST,
             &base,
             &w.ann,
-            Some(json!({"answer":"two"}))
+            Some(json!({"answer":"two", "question":"Explain"}))
         )
     );
     assert!(matches!(

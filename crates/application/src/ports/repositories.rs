@@ -250,6 +250,7 @@ pub trait GuildRepository: Send + Sync {
         guild_id: Snowflake,
         user_id: Snowflake,
         answer: &str,
+        question: &str,
     ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
     async fn appeal(
         &self,
