@@ -42,6 +42,7 @@ pub struct UpdateChannelInput {
     pub default_reaction_emoji: Option<Option<serde_json::Value>>,
     pub require_tags: Option<bool>,
     pub applied_tags: Option<Vec<String>>,
+    pub flags: Option<u32>,
 }
 
 pub async fn execute(
@@ -128,6 +129,25 @@ async fn update_thread(
         return Err(AppError::missing_permissions());
     }
     let mut thread = access.channel.clone();
+    if let Some(flags) = input.flags {
+        if !manages {
+            return Err(AppError::missing_permissions());
+        }
+        let parent_id = thread.parent_id.ok_or_else(|| {
+            AppError::invalid("flags", "CHANNEL_TYPE_INVALID", "Thread has no parent.")
+        })?;
+        let parent = ports.channels.find(parent_id).await?.ok_or_else(|| {
+            AppError::invalid("flags", "CHANNEL_TYPE_INVALID", "Thread parent not found.")
+        })?;
+        if parent.kind != ChannelType::GuildForum || flags & !2 != 0 {
+            return Err(AppError::invalid(
+                "flags",
+                "CHANNEL_TYPE_INVALID",
+                "Only forum posts can be pinned.",
+            ));
+        }
+        thread.forum_settings["pinned"] = json!(flags & 2 != 0);
+    }
     if let Some(tags) = input.applied_tags.as_ref() {
         let parent_id = thread.parent_id.ok_or_else(|| {
             AppError::invalid(
@@ -213,6 +233,13 @@ async fn update_guild_channel(
             "available_tags",
             "CHANNEL_TYPE_INVALID",
             "Forum settings require a forum channel.",
+        ));
+    }
+    if input.flags.is_some() {
+        return Err(AppError::invalid(
+            "flags",
+            "CHANNEL_TYPE_INVALID",
+            "Only forum posts can be pinned.",
         ));
     }
     if input.applied_tags.is_some() {

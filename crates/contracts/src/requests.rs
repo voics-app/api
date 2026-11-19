@@ -379,6 +379,8 @@ pub struct ModifyChannelRequest {
     pub require_tags: Option<bool>,
     #[serde(default)]
     pub applied_tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub flags: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]

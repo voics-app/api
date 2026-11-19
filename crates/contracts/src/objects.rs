@@ -402,6 +402,8 @@ pub struct ChannelDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub applied_tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub flags: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_sort_order: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_forum_layout: Option<Value>,

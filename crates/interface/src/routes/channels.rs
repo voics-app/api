@@ -215,6 +215,7 @@ async fn modify(
         default_reaction_emoji: body.default_reaction_emoji,
         require_tags: body.require_tags,
         applied_tags: body.applied_tags,
+        flags: body.flags,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,
