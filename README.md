@@ -319,6 +319,9 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
 # Optional GIF provider
 
 GIF search is disabled unless `GIF_PROVIDER_URL`, `GIF_PROVIDER_KEY` and comma-separated exact `GIF_MEDIA_HOSTS` are set. The URL is the base of a Tenor v2-compatible service exposing `featured`, `search` and `categories`. The API calls it server-side with the key, limits public requests through the existing rate limiter, and keeps up to 128 filtered JSON responses in memory for 60 seconds. The key is never returned to clients. Preview links are signed by messages and served by its existing media proxy. Enable only after confirming the provider permits proxy requests and response caching; these assumptions do not apply to GIPHY or standard KLIPY integrations. No provider or credentials are shipped. A provider agreement, key provisioning, and a live end-to-end check remain prerequisites before enabling this feature.
+
+Profile badges are separate from user flags. `GET /api/v1/users/@me/badges` lists the authenticated account's granted badge IDs and visibility; `PUT /api/v1/users/@me/badges/{id}` with `{"visible":false}` or `true` changes an existing grant only. `GET /api/v1/users/{id}/badges` returns only visible badge IDs. Grants are provisioned by trusted operators in `user_badges`; this API does not grant badges. No production badge catalog is defined yet.
