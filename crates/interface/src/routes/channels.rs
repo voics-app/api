@@ -350,7 +350,43 @@ async fn forum_posts(
     let posts =
         list_forum_posts::execute(&state.ports, &actor, snowflake(&parent, Resource::Channel)?)
             .await?;
-    Ok(Json(posts.iter().map(ChannelDto::guild).collect()))
+    let ids: Vec<_> = posts
+        .iter()
+        .filter(|post| post.delivery_mode == DeliveryMode::Standard)
+        .map(|post| post.id)
+        .collect();
+    let summaries = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        state.ports.messages.forum_summaries(&ids),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or_default();
+    let result = posts
+        .iter()
+        .map(|post| {
+            let mut dto = ChannelDto::guild(post);
+            if let Some(summary) = summaries.iter().find(|value| {
+                value.get("channel_id").and_then(serde_json::Value::as_str)
+                    == Some(post.id.to_string().as_str())
+            }) {
+                dto.message_count = summary
+                    .get("message_count")
+                    .and_then(serde_json::Value::as_u64);
+                dto.last_message_id = summary
+                    .get("last_message_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+                dto.forum_first_message = summary
+                    .get("first_message")
+                    .filter(|value| !value.is_null())
+                    .cloned();
+            }
+            dto
+        })
+        .collect();
+    Ok(Json(result))
 }
 
 async fn thread(
@@ -360,14 +396,6 @@ async fn thread(
     Path(parent): Path<String>,
     Body(body): Body<CreateThreadRequest>,
 ) -> Result<(StatusCode, Json<ChannelDto>), ApiError> {
-    if body.message.is_some() {
-        return Err(application::AppError::invalid(
-            "message",
-            "NOT_YET_SUPPORTED",
-            "Creating the first message with a thread is not supported; create it separately.",
-        )
-        .into());
-    }
     let kind = body.kind.map(|code| kind_code(code, "type")).transpose()?;
     let input = CreateThreadInput {
         name: body.name,
@@ -376,6 +404,8 @@ async fn thread(
         invitable: body.invitable,
         rate_limit_per_user: body.rate_limit_per_user,
         applied_tags: body.applied_tags,
+        message: body.message,
+        request_id: body.request_id,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,
@@ -389,7 +419,17 @@ async fn thread(
         audit,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(ChannelDto::guild(&channel))))
+    let status = if channel
+        .forum_settings
+        .get("pending")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        StatusCode::ACCEPTED
+    } else {
+        StatusCode::CREATED
+    };
+    Ok((status, Json(ChannelDto::guild(&channel))))
 }
 
 async fn typing(

@@ -411,6 +411,14 @@ pub struct ChannelDto {
     pub default_reaction_emoji: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub require_tags: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forum_post_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forum_first_message: Option<Value>,
 }
 
 impl ChannelDto {
@@ -496,6 +504,14 @@ impl ChannelDto {
                         .cloned()
                         .unwrap_or(Value::Null)
                 }),
+            message_count: None,
+            last_message_id: None,
+            forum_first_message: None,
+            forum_post_status: channel
+                .forum_settings
+                .get("status")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
             require_tags: (channel.kind == domain::channel::ChannelType::GuildForum).then(|| {
                 channel
                     .forum_settings

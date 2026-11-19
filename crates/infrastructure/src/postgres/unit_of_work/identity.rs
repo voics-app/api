@@ -337,6 +337,23 @@ pub(super) async fn delete_channel(
     channel_id: Snowflake,
 ) -> AppResult<()> {
     crate::postgres::community::check_delete(conn, channel_id).await?;
+    // Keep only the idempotency tombstone so a late retry cannot recreate a deleted post.
+    let tombstone = sqlx::query("UPDATE channels SET name = NULL, topic = NULL, applied_tags = '{}', thread_metadata = NULL, forum_settings = jsonb_build_object('request_key', forum_settings->'request_key', 'request_hash', forum_settings->'request_hash', 'pending', true, 'status', 'deleted') WHERE id = $1 AND kind = 11 AND forum_settings ? 'request_key'")
+        .bind(channel_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+    if tombstone.rows_affected() != 0 {
+        for table in [
+            "channel_recipients",
+            "permission_overwrites",
+            "channel_delivery_overrides",
+        ] {
+            sqlx::query(&format!("DELETE FROM {table} WHERE channel_id = $1"))
+                .bind(channel_id.as_i64())
+                .execute(&mut *conn)
+                .await
+                .map_err(db)?;
+        }
+        return Ok(());
+    }
     sqlx::query("DELETE FROM channels WHERE id = $1")
         .bind(channel_id.as_i64())
         .execute(conn)

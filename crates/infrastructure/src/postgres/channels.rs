@@ -154,6 +154,32 @@ impl PgStore {
 
 #[async_trait]
 impl ChannelRepository for PgStore {
+    async fn find_forum_request(
+        &self,
+        _guild_id: Snowflake,
+        parent_id: Snowflake,
+        owner_id: Snowflake,
+        request_key: &str,
+    ) -> AppResult<Option<Channel>> {
+        let sql = format!("SELECT {CHANNEL_COLUMNS} FROM channels WHERE parent_id = $1 AND owner_id = $2 AND forum_settings->>'request_key' = $3 LIMIT 1");
+        let row: Option<ChannelRow> = sqlx::query_as(&sql)
+            .bind(parent_id.as_i64())
+            .bind(owner_id.as_i64())
+            .bind(request_key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)?;
+        match row {
+            Some(row) => Ok(hydrate(&self.pool, vec![row]).await.map_err(db)?.pop()),
+            None => Ok(None),
+        }
+    }
+    async fn transition_forum_post(&self, id: Snowflake, from: &str, to: &str) -> AppResult<bool> {
+        let result = sqlx::query("UPDATE channels SET forum_settings = jsonb_set(forum_settings, '{status}', to_jsonb($3::text)) WHERE id = $1 AND forum_settings->>'status' = $2")
+            .bind(id.as_i64()).bind(from).bind(to).execute(&self.pool).await.map_err(db)?;
+        Ok(result.rows_affected() == 1)
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Channel>> {
         let sql = format!("SELECT {CHANNEL_COLUMNS} FROM channels WHERE id = $1");
         let row: Option<ChannelRow> = sqlx::query_as(&sql)
@@ -168,8 +194,11 @@ impl ChannelRepository for PgStore {
     }
 
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Channel>> {
-        self.channels_where("guild_id = $1", guild_id.as_i64())
-            .await
+        self.channels_where(
+            "guild_id = $1 AND COALESCE(forum_settings->>'status', '') <> 'deleted'",
+            guild_id.as_i64(),
+        )
+        .await
     }
 
     async fn list_private(&self, user_id: Snowflake) -> AppResult<Vec<Channel>> {
@@ -224,7 +253,7 @@ impl ChannelRepository for PgStore {
     }
 
     async fn count(&self) -> AppResult<u64> {
-        let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM channels")
+        let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM channels WHERE COALESCE(forum_settings->>'status', '') <> 'deleted'")
             .fetch_one(&self.pool)
             .await
             .map_err(db)?;

@@ -85,6 +85,37 @@ fn stored(body: Value) -> AppResult<StoredMessage> {
 
 #[async_trait]
 impl MessageService for HttpMessages {
+    async fn forum_summaries(&self, channel_ids: &[Snowflake]) -> AppResult<Vec<Value>> {
+        let mut result = Vec::new();
+        for chunk in channel_ids.chunks(50) {
+            let ids: Vec<String> = chunk.iter().map(ToString::to_string).collect();
+            let response = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                self.send(
+                    Method::POST,
+                    "internal/v1/forum-summaries",
+                    Some(serde_json::json!({"channel_ids": ids})),
+                ),
+            )
+            .await
+            .map_err(|_| AppError::Unavailable("forum summary timed out".into()))??;
+            let values = response
+                .get("summaries")
+                .and_then(Value::as_array)
+                .ok_or_else(|| AppError::Unavailable("invalid forum summaries".into()))?;
+            result.extend(values.iter().cloned());
+        }
+        Ok(result)
+    }
+    async fn create_forum_start(
+        &self,
+        channel_id: Snowflake,
+        message: Value,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/forum-start");
+        stored(self.send(Method::POST, &path, Some(message)).await?)
+    }
+
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage> {
         let path = format!("internal/v1/channels/{channel_id}/messages");
         stored(self.send(Method::POST, &path, Some(message)).await?)

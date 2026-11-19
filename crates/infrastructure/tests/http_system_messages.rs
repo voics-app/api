@@ -312,7 +312,11 @@ async fn guild_overview_fields_are_validated_and_audited() {
 #[tokio::test]
 async fn forum_settings_round_trip_and_post_tag_validation() {
     let database = start_database().await;
-    let app = router(&database, None);
+    let messages = Arc::new(RecordingMessages::default());
+    messages
+        .forum_fail_after_store
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let app = router(&database, Some(messages.clone()));
     let (owner, _) = register(&app, "forumowner").await;
     let guild = create_guild(&app, &owner).await;
     let guild_id = guild["id"].as_str().unwrap();
@@ -356,7 +360,7 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
         Method::POST,
         &format!("/api/v1/channels/{id}/threads"),
         &owner,
-        Some(json!({"name":"with tag", "applied_tags":[tag]})),
+        Some(json!({"name":"with tag", "applied_tags":[tag], "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa001", "message":{"content":"hello"}})),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{post}");
@@ -382,13 +386,97 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(fetched_post["flags"], 2);
+    let (status, replay) = call(&app, Method::POST, &format!("/api/v1/channels/{id}/threads"), &owner, Some(json!({"name":"with tag", "applied_tags":[tag], "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa001", "message":{"content":"hello"}}))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(replay["id"], post_id);
+    assert_eq!(recorded(&messages).len(), 1);
+    let (status, _) = call(&app, Method::POST, &format!("/api/v1/channels/{id}/threads"), &owner, Some(json!({"name":"changed", "applied_tags":[tag], "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa001", "message":{"content":"hello"}}))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, listed) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{id}/threads"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["message_count"], 1);
+    assert_eq!(listed[0]["forum_first_message"]["content"], "hello");
+    assert!(listed[0]["last_message_id"].is_string());
     let (status, _) = call(
+        &app,
+        Method::DELETE,
+        &format!("/api/v1/channels/{post_id}"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(&app, Method::POST, &format!("/api/v1/channels/{id}/threads"), &owner, Some(json!({"name":"with tag", "applied_tags":[tag], "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa001", "message":{"content":"hello"}}))).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(recorded(&messages).len(), 1);
+}
+
+#[tokio::test]
+async fn uncertain_forum_start_stays_hidden_and_reuses_the_reservation() {
+    let database = start_database().await;
+    let app = router(&database, None);
+    let (owner, _) = register(&app, "pendingforumowner").await;
+    let guild = create_guild(&app, &owner).await;
+    let guild_id = guild["id"].as_str().unwrap();
+    let (status, forum) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild_id}/channels"),
+        &owner,
+        Some(json!({"name":"forum", "type":15})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = forum["id"].as_str().unwrap();
+    let request = json!({"name":"pending", "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa002", "message":{"content":"first"}});
+    let (status, first) = call(
         &app,
         Method::POST,
         &format!("/api/v1/channels/{id}/threads"),
         &owner,
-        Some(json!({"name":"with message", "applied_tags":[tag], "message":{"content":"hello"}})),
+        Some(request.clone()),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::ACCEPTED, "{first}");
+    assert_eq!(first["forum_post_status"], "dispatching");
+    let post_id = first["id"].as_str().unwrap();
+    let (status, listed) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{id}/threads"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(listed.as_array().unwrap().is_empty());
+    let (status, _) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{post_id}"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, again) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{id}/threads"),
+        &owner,
+        Some(request),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(again["id"], post_id);
+    let (status, _) = call(&app, Method::POST, &format!("/api/v1/channels/{id}/threads"), &owner, Some(json!({"name":"different", "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa002", "message":{"content":"first"}}))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }

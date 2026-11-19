@@ -76,6 +76,15 @@ impl ChannelAccess {
         user_id: Snowflake,
     ) -> AppResult<Self> {
         let access = Self::resolve(ports, channel_id, user_id).await?;
+        if access
+            .channel
+            .forum_settings
+            .get("pending")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            return Err(AppError::NotFound(Resource::Channel));
+        }
         if !access.permissions.contains(Permissions::VIEW_CHANNEL) {
             return Err(AppError::missing_access());
         }

@@ -119,6 +119,7 @@ impl EventPublisher for DiscardEvents {
 #[derive(Default)]
 pub struct RecordingMessages {
     pub get_calls: std::sync::atomic::AtomicUsize,
+    pub forum_fail_after_store: std::sync::atomic::AtomicBool,
     pub bodies: std::sync::Mutex<Vec<serde_json::Value>>,
     /// The channel each recorded body was posted to.
     pub channels: std::sync::Mutex<Vec<domain::Snowflake>>,
@@ -130,6 +131,38 @@ pub struct RecordingMessages {
 
 #[async_trait]
 impl MessageService for RecordingMessages {
+    async fn forum_summaries(
+        &self,
+        channel_ids: &[domain::Snowflake],
+    ) -> AppResult<Vec<serde_json::Value>> {
+        let stored = self.stored.lock().unwrap();
+        Ok(channel_ids.iter().map(|channel_id| {
+            let mut messages: Vec<_> = stored.iter().filter(|((channel, _), _)| channel == channel_id).collect();
+            messages.sort_by_key(|((_, id), _)| *id);
+            serde_json::json!({"channel_id": channel_id.to_string(), "message_count": messages.len(), "first_message": messages.first().map(|(_, body)| *body), "last_message_id": messages.last().map(|((_, id), _)| id.to_string())})
+        }).collect())
+    }
+    async fn create_forum_start(
+        &self,
+        channel_id: domain::Snowflake,
+        message: serde_json::Value,
+    ) -> AppResult<StoredMessage> {
+        let id: domain::Snowflake = message["message_id"].as_str().unwrap().parse().unwrap();
+        let body = serde_json::json!({"id": id.to_string(), "author": {"id": message["author_id"]}, "content": message["content"]});
+        self.stored
+            .lock()
+            .unwrap()
+            .insert((channel_id, id), body.clone());
+        self.channels.lock().unwrap().push(channel_id);
+        self.bodies.lock().unwrap().push(message);
+        if self
+            .forum_fail_after_store
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(AppError::Unavailable("simulated lost response".into()));
+        }
+        Ok(StoredMessage { id, body })
+    }
     async fn create(
         &self,
         channel_id: domain::Snowflake,

@@ -420,6 +420,8 @@ pub struct CreateThreadRequest {
     #[serde(default)]
     pub message: Option<serde_json::Value>,
     #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
     pub applied_tags: Vec<String>,
     #[serde(default, rename = "type")]
     pub kind: Option<u8>,
