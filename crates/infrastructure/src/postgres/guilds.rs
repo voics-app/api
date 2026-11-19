@@ -219,8 +219,93 @@ pub(super) async fn committed_member(
     Ok(row.into())
 }
 
+#[derive(FromRow)]
+struct AppealRow {
+    id: i64,
+    guild_id: i64,
+    user_id: i64,
+    ban_created_at: DateTime<Utc>,
+    question: String,
+    answer: String,
+    status: String,
+    created_at: DateTime<Utc>,
+}
+impl From<AppealRow> for domain::ban_appeal::BanAppeal {
+    fn from(r: AppealRow) -> Self {
+        Self {
+            id: sf(r.id),
+            guild_id: sf(r.guild_id),
+            user_id: sf(r.user_id),
+            ban_created_at: r.ban_created_at,
+            question: r.question,
+            answer: r.answer,
+            status: r.status,
+            created_at: r.created_at,
+        }
+    }
+}
+const APPEAL_COLUMNS: &str =
+    "id, guild_id, user_id, ban_created_at, question, answer, status, created_at";
+
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>> {
+        sqlx::query_scalar("SELECT question FROM ban_appeal_forms WHERE guild_id = $1")
+            .bind(guild_id.as_i64())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(db)
+    }
+    async fn set_appeal_form(&self, guild_id: Snowflake, question: &str) -> AppResult<()> {
+        sqlx::query("INSERT INTO ban_appeal_forms (guild_id, question) VALUES ($1, $2) ON CONFLICT (guild_id) DO UPDATE SET question = EXCLUDED.question")
+            .bind(guild_id.as_i64()).bind(question).execute(&self.pool).await.map_err(db)?;
+        Ok(())
+    }
+    async fn submit_appeal(
+        &self,
+        id: Snowflake,
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        answer: &str,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let ban: Option<DateTime<Utc>> = sqlx::query_scalar(
+            "SELECT created_at FROM bans WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+        )
+        .bind(guild_id.as_i64())
+        .bind(user_id.as_i64())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(db)?;
+        let Some(ban) = ban else { return Ok(None) };
+        sqlx::query("UPDATE ban_appeals SET status='denied', resolved_at=now() WHERE guild_id=$1 AND user_id=$2 AND status='open' AND ban_created_at<>$3")
+            .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(ban).execute(&mut *tx).await.map_err(db)?;
+        let row: Option<AppealRow> = sqlx::query_as(&format!("INSERT INTO ban_appeals (id,guild_id,user_id,ban_created_at,question,answer) SELECT $1,$2,$3,$4,question,$5 FROM ban_appeal_forms WHERE guild_id=$2 ON CONFLICT DO NOTHING RETURNING {APPEAL_COLUMNS}"))
+            .bind(id.as_i64()).bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(ban).bind(answer).fetch_optional(&mut *tx).await.map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(row.map(Into::into))
+    }
+    async fn appeal(
+        &self,
+        guild_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>> {
+        let row: Option<AppealRow> = sqlx::query_as(&format!(
+            "SELECT {APPEAL_COLUMNS} FROM ban_appeals WHERE guild_id=$1 AND id=$2"
+        ))
+        .bind(guild_id.as_i64())
+        .bind(id.as_i64())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(Into::into))
+    }
+    async fn appeals(&self, guild_id: Snowflake) -> AppResult<Vec<domain::ban_appeal::BanAppeal>> {
+        let rows: Vec<AppealRow> = sqlx::query_as(&format!("SELECT {APPEAL_COLUMNS} FROM ban_appeals WHERE guild_id=$1 AND status='open' ORDER BY id DESC LIMIT 100"))
+            .bind(guild_id.as_i64()).fetch_all(&self.pool).await.map_err(db)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>> {
         let sql = format!("SELECT {GUILD_COLUMNS} FROM guilds WHERE id = $1");
         let row: Option<GuildRow> = sqlx::query_as(&sql)

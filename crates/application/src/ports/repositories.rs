@@ -242,6 +242,21 @@ pub trait ChannelRepository: Send + Sync {
 
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>>;
+    async fn set_appeal_form(&self, guild_id: Snowflake, question: &str) -> AppResult<()>;
+    async fn submit_appeal(
+        &self,
+        id: Snowflake,
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        answer: &str,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeal(
+        &self,
+        guild_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeals(&self, guild_id: Snowflake) -> AppResult<Vec<domain::ban_appeal::BanAppeal>>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>>;
     async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>>;

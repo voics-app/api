@@ -137,6 +137,13 @@ pub enum Mutation {
         guild_id: Snowflake,
         user_id: Snowflake,
     },
+    ResolveBanAppeal {
+        guild_id: Snowflake,
+        appeal_id: Snowflake,
+        user_id: Snowflake,
+        reviewer_id: Snowflake,
+        accept: bool,
+    },
 
     InsertInvite(Invite),
     DeleteInvite(String),
