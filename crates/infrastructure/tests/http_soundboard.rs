@@ -1,10 +1,12 @@
 mod support;
 use axum::http::{Method, StatusCode};
 use base64::Engine;
+use http_body_util::BodyExt;
 use interface::state::AppState;
 use serde_json::json;
 use support::http::{call, request, send};
 use support::{jwt_keys, ports, start_database};
+use tower::ServiceExt;
 
 fn wav() -> Vec<u8> {
     let mut data = Vec::from(&b"RIFF"[..]);
@@ -71,6 +73,23 @@ async fn soundboard_crud_enforces_membership_and_validates_audio() {
     let id = body["id"].as_str().unwrap();
     assert!(body.get("audio").is_none());
     let detail = format!("{path}/{id}");
+    let audio_path = format!("{detail}/audio");
+    let response = app
+        .clone()
+        .oneshot(request(Method::GET, &audio_path, Some(&owner), None))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("content-type").unwrap(), "audio/wav");
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(bytes.as_ref(), wav());
+    assert_eq!(
+        call(&app, Method::GET, &audio_path, &outsider, None)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+
     assert_eq!(
         call(&app, Method::GET, &detail, &outsider, None).await.0,
         StatusCode::FORBIDDEN
