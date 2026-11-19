@@ -114,6 +114,29 @@ async fn soundboard_crud_enforces_membership_and_validates_audio() {
             .0,
         StatusCode::SERVICE_UNAVAILABLE
     );
+    let (status, stage) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild}/channels"),
+        &owner,
+        Some(json!({"name":"stage", "type":13})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let stage_id = stage["id"].as_str().unwrap();
+    let stage_path = format!("/api/v1/channels/{stage_id}/send-soundboard-sound");
+    assert_eq!(
+        call(
+            &app,
+            Method::POST,
+            &stage_path,
+            &owner,
+            Some(json!({"sound_id":id, "source_guild_id":guild}))
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
 
     let detail = format!("{path}/{id}");
     let audio_path = format!("{detail}/audio");
