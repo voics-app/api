@@ -35,6 +35,16 @@ only booleans and uses the existing settings merge and sync events. Missing mean
 false; this does not attest age or change channel permissions. See
 [the channel-gate specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-18-age-restricted-channels.md).
 
+## Sticker CRUD proposal
+
+Guild sticker CRUD uses `MANAGE_GUILD_EXPRESSIONS` for creation, editing and
+removal. Members can list stickers. Uploads accept PNG, APNG, GIF and Lottie
+JSON at 320 ? 320 pixels and at most 512 KiB, with a limit of 50 available
+stickers per guild. Migration 0083 adds the metadata table; removed entries and
+CDN objects remain available for messages that already reference them. This is
+only the API portion of api#33; message sending, the built-in pack and client
+surfaces must land before the feature can be used end-to-end.
+
 ## Run locally
 
 Prerequisites: Rust 1.99, Docker (for integration tests and local dependencies), and the C compiler,

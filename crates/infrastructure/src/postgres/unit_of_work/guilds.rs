@@ -8,6 +8,7 @@ use domain::audit::AuditLogEntry;
 use domain::emoji::Emoji;
 use domain::guild::{Guild, Member, Role};
 use domain::invite::Invite;
+use domain::sticker::{Sticker, MAX_STICKERS_PER_GUILD};
 use domain::Snowflake;
 
 use crate::postgres::convert::{bits, raw_ids};
@@ -323,5 +324,46 @@ pub(super) async fn insert_audit(conn: &mut PgConnection, entry: &AuditLogEntry)
     .execute(conn)
     .await
     .map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn insert_sticker(conn: &mut PgConnection, sticker: &Sticker) -> AppResult<()> {
+    sqlx::query("SELECT id FROM guilds WHERE id = $1 FOR UPDATE")
+        .bind(sticker.guild_id.as_i64())
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(db)?;
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM stickers WHERE guild_id = $1 AND available")
+            .bind(sticker.guild_id.as_i64())
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(db)?;
+    if count.0 >= MAX_STICKERS_PER_GUILD as i64 {
+        return Err(application::AppError::BadRequest {
+            code: 30039,
+            message: "Maximum number of stickers reached".into(),
+        });
+    }
+    sqlx::query("INSERT INTO stickers (id, guild_id, creator_id, name, tags, format_type, available) VALUES ($1, $2, $3, $4, $5, $6, TRUE)")
+        .bind(sticker.id.as_i64()).bind(sticker.guild_id.as_i64()).bind(sticker.creator_id.map(|id| id.as_i64()))
+        .bind(&sticker.name).bind(&sticker.tags).bind(sticker.format_type).execute(conn).await.map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn update_sticker(conn: &mut PgConnection, sticker: &Sticker) -> AppResult<()> {
+    sqlx::query("SELECT id FROM guilds WHERE id = $1 FOR UPDATE")
+        .bind(sticker.guild_id.as_i64())
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(db)?;
+    let result = sqlx::query("UPDATE stickers SET name = $3, tags = $4, available = $5 WHERE guild_id = $1 AND id = $2 AND available")
+        .bind(sticker.guild_id.as_i64()).bind(sticker.id.as_i64()).bind(&sticker.name).bind(&sticker.tags)
+        .bind(sticker.available).execute(conn).await.map_err(db)?;
+    if result.rows_affected() == 0 {
+        return Err(application::AppError::NotFound(
+            application::Resource::Sticker,
+        ));
+    }
     Ok(())
 }

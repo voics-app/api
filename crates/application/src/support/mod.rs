@@ -9,6 +9,7 @@ pub mod images;
 pub mod message_payload;
 pub mod relationships;
 pub mod sessions;
+pub mod stickers;
 pub mod system_messages;
 pub mod throttle;
 pub mod views;

@@ -13,6 +13,7 @@ pub enum Resource {
     Command,
     Device,
     Emoji,
+    Sticker,
     Guild,
     GuildTemplate,
     Interaction,

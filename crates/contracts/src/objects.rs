@@ -18,6 +18,7 @@ use domain::invite::Invite;
 use domain::notification::{ChannelOverride, GuildNotificationSettings, Mute, DIRECT_MESSAGES};
 use domain::permissions::{PermissionOverwrite, Permissions};
 use domain::relationship::Relationship;
+use domain::sticker::Sticker;
 use domain::user::{CustomStatus, User, UserSettings};
 use domain::Snowflake;
 
@@ -492,6 +493,29 @@ impl From<&Role> for RoleDto {
             tags: role
                 .bot_id
                 .map(|bot_id| json!({ "bot_id": bot_id.to_string() })),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StickerDto {
+    pub id: Id,
+    pub guild_id: Id,
+    pub name: String,
+    pub tags: String,
+    pub format_type: i16,
+    pub available: bool,
+}
+
+impl From<&Sticker> for StickerDto {
+    fn from(sticker: &Sticker) -> Self {
+        Self {
+            id: Id(sticker.id),
+            guild_id: Id(sticker.guild_id),
+            name: sticker.name.clone(),
+            tags: sticker.tags.clone(),
+            format_type: sticker.format_type,
+            available: sticker.available,
         }
     }
 }

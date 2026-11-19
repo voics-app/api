@@ -20,3 +20,5 @@ pub mod sessions;
 pub mod templates;
 pub mod users;
 pub mod webhooks;
+
+pub mod stickers;

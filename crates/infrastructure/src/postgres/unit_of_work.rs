@@ -78,6 +78,12 @@ impl UnitOfWork for PgUnitOfWork {
                 .map_err(db)?;
                 committed = DomainEvent::UserUpdate(row.into());
                 &committed
+            } else if let DomainEvent::StickersUpdate { guild_id, .. } = event {
+                committed = DomainEvent::StickersUpdate {
+                    guild_id: *guild_id,
+                    stickers: super::stickers::committed(conn, *guild_id).await?,
+                };
+                &committed
             } else if let DomainEvent::MemberUpdate(profile) = event {
                 committed = DomainEvent::MemberUpdate(
                     super::guilds::committed_member(conn, &profile.member).await?,
@@ -217,6 +223,8 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::ConsumeVanityInvite { guild_id, code } => {
             super::vanity::consume(conn, *guild_id, code).await
         }
+        Mutation::InsertSticker(sticker) => guilds::insert_sticker(conn, sticker).await,
+        Mutation::UpdateSticker(sticker) => guilds::update_sticker(conn, sticker).await,
         Mutation::InsertEmoji(emoji) | Mutation::UpdateEmoji(emoji) => {
             guilds::upsert_emoji(conn, emoji).await
         }

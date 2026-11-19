@@ -132,6 +132,34 @@ async fn guild_administration_follows_the_contract() {
     );
     assert_eq!(joined["guild"]["id"], guild_id);
 
+    // A server manager can create, edit and remove a sticker; an ordinary member cannot.
+    let path = format!("/api/v1/guilds/{guild_id}/stickers");
+    let request = json!({"name": "wave", "tags": "wave", "image": "data:application/json;base64,eyJ2IjoiNS4wIiwidyI6MzIwLCJoIjozMjAsImxheWVycyI6W119"});
+    let (status, _) = call(&app, Method::POST, &path, &guest, Some(request.clone())).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, sticker) = call(&app, Method::POST, &path, &owner, Some(request)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(sticker["format_type"], 3);
+    let sticker_path = format!("{path}/{}", sticker["id"].as_str().unwrap());
+    let (status, edited) = call(
+        &app,
+        Method::PATCH,
+        &sticker_path,
+        &owner,
+        Some(json!({"name":"hello"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(edited["name"], "hello");
+    let (status, listed) = call(&app, Method::GET, &path, &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    let (status, _) = call(&app, Method::DELETE, &sticker_path, &owner, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, listed) = call(&app, Method::GET, &path, &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(listed.as_array().unwrap().is_empty());
+
     let (status, members) = call(
         &app,
         Method::GET,

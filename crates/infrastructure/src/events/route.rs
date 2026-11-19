@@ -11,7 +11,8 @@ use contracts::envelope::{
 };
 use contracts::objects::{
     interaction_event, AuditLogEntryDto, ChannelDto, DeviceDto, EmojiDto, GuildDto, GuildFullDto,
-    GuildNotificationSettingsDto, MemberDto, RelationshipDto, RoleDto, UserDto, UserSettingsDto,
+    GuildNotificationSettingsDto, MemberDto, RelationshipDto, RoleDto, StickerDto, UserDto,
+    UserSettingsDto,
 };
 use contracts::Id;
 use domain::relationship::Relationship;
@@ -206,6 +207,18 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             None,
             json!({ "guild_id": guild_id.to_string(), "user": UserDto::public(user) }),
         ),
+        DomainEvent::StickersUpdate { guild_id, stickers } => {
+            let dtos: Vec<StickerDto> = stickers.iter().map(StickerDto::from).collect();
+            emit(
+                TOPIC_GUILD,
+                *guild_id,
+                "GUILD_STICKERS_UPDATE",
+                Some(*guild_id),
+                None,
+                None,
+                json!({ "guild_id": guild_id.to_string(), "stickers": dtos }),
+            )
+        }
         DomainEvent::EmojisUpdate { guild_id, emojis } => {
             let dtos: Vec<EmojiDto> = emojis.iter().map(EmojiDto::from).collect();
             emit(

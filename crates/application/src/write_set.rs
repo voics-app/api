@@ -16,6 +16,7 @@ use domain::guild::{Guild, Member, Role};
 use domain::invite::Invite;
 use domain::notification::GuildNotificationSettings;
 use domain::relationship::RelationshipType;
+use domain::sticker::Sticker;
 use domain::user::{Credentials, Suspension, User, UserSettings};
 use domain::Snowflake;
 
@@ -150,6 +151,9 @@ pub enum Mutation {
         guild_id: Snowflake,
         code: String,
     },
+
+    InsertSticker(Sticker),
+    UpdateSticker(Sticker),
 
     InsertEmoji(Emoji),
     UpdateEmoji(Emoji),
