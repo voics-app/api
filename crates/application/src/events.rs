@@ -29,6 +29,7 @@ pub struct PrivateChannelView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomainEvent {
+    ScheduledEventCreate(domain::scheduled_event::ScheduledEvent),
     // discordy.guild.v1
     /// Sent to `recipients` only (a creator or a joining member).
     GuildCreate {

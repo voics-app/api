@@ -1,11 +1,84 @@
 //! Read scheduled events without exposing events in hidden channels.
+use domain::channel::ChannelType;
 use domain::permissions::Permissions;
-use domain::scheduled_event::{EventKind, ScheduledEvent};
+use domain::scheduled_event::{EventKind, EventStatus, ScheduledEvent, ScheduledEventDetails};
 use domain::Snowflake;
 
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Resource};
+use crate::events::DomainEvent;
 use crate::support::guild_context::GuildContext;
+use crate::support::images::{store_hashed, ImageUpload};
+use crate::write_set::{Mutation, WriteSet};
+
+pub async fn create(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    mut details: ScheduledEventDetails,
+    image: Option<ImageUpload>,
+) -> AppResult<ScheduledEvent> {
+    let context = GuildContext::load(ports, guild_id, actor.user_id).await?;
+    if !context
+        .permissions()
+        .intersects(Permissions::CREATE_EVENTS | Permissions::MANAGE_EVENTS)
+    {
+        return Err(AppError::missing_permissions());
+    }
+    details.name = details.name.trim().to_owned();
+    details.status = EventStatus::Scheduled;
+    details.validate().map_err(|err| {
+        AppError::invalid("event", "INVALID_EVENT", format!("Invalid event: {err:?}"))
+    })?;
+    if details.start <= context.now {
+        return Err(AppError::invalid(
+            "scheduled_start_time",
+            "INVALID_TIME",
+            "Start must be in the future.",
+        ));
+    }
+    match &details.kind {
+        EventKind::Voice { channel_id } | EventKind::Stage { channel_id } => {
+            let channel = ports
+                .channels
+                .find(*channel_id)
+                .await?
+                .ok_or(AppError::NotFound(Resource::Channel))?;
+            let expected = match &details.kind {
+                EventKind::Stage { .. } => ChannelType::GuildStageVoice,
+                _ => ChannelType::GuildVoice,
+            };
+            if channel.guild_id != Some(guild_id) || channel.kind != expected {
+                return Err(AppError::invalid(
+                    "channel_id",
+                    "INVALID_CHANNEL",
+                    "Select a matching channel in this server.",
+                ));
+            }
+            context.require_in_channel(&channel, None, Permissions::VIEW_CHANNEL)?;
+        }
+        EventKind::External { .. } => {}
+    }
+    let id = ports.ids.next_id()?;
+    let image = match image {
+        Some(image) => Some(store_hashed(ports, &format!("guild-events/{id}"), image).await?),
+        None => None,
+    };
+    let event = ScheduledEvent {
+        id,
+        guild_id,
+        creator_id: Some(actor.user_id),
+        details,
+        image,
+        user_count: 0,
+    };
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::InsertScheduledEvent(event.clone()))
+        .emit(DomainEvent::ScheduledEventCreate(event.clone()));
+    ports.unit_of_work.commit(writes).await?;
+    Ok(event)
+}
 
 async fn visible(ports: &Ports, context: &GuildContext, event: &ScheduledEvent) -> AppResult<bool> {
     let channel_id = match &event.details.kind {

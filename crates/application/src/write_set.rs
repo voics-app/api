@@ -31,6 +31,7 @@ pub struct WebhookMetadataPatch {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mutation {
+    InsertScheduledEvent(domain::scheduled_event::ScheduledEvent),
     InsertUser {
         user: User,
         credentials: Option<Credentials>,

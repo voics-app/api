@@ -108,6 +108,7 @@ impl UnitOfWork for PgUnitOfWork {
 
 async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<()> {
     match mutation {
+        Mutation::InsertScheduledEvent(event) => super::scheduled_events::insert(conn, event).await,
         Mutation::InsertUser {
             user,
             credentials,

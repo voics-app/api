@@ -5,7 +5,7 @@ use application::{AppError, AppResult};
 use chrono::{DateTime, Utc};
 use domain::scheduled_event::{EventKind, EventStatus, ScheduledEvent, ScheduledEventDetails};
 use domain::Snowflake;
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool};
 
 const COLUMNS: &str = "e.id, e.guild_id, e.creator_id, e.channel_id, e.name, e.description, e.scheduled_start_time, e.scheduled_end_time, e.status, e.entity_type, e.location, e.image, (SELECT count(*) FROM guild_scheduled_event_users u WHERE u.event_id = e.id) AS user_count";
 
@@ -83,4 +83,18 @@ pub(super) async fn interested(
 ) -> AppResult<bool> {
     sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM guild_scheduled_event_users WHERE event_id = $1 AND user_id = $2)")
         .bind(event_id.as_i64()).bind(user_id.as_i64()).fetch_one(pool).await.map_err(db)
+}
+
+pub(super) async fn insert(conn: &mut PgConnection, event: &ScheduledEvent) -> AppResult<()> {
+    let (kind, channel, location) = match &event.details.kind {
+        EventKind::Stage { channel_id } => (1_i16, Some(channel_id.as_i64()), None),
+        EventKind::Voice { channel_id } => (2_i16, Some(channel_id.as_i64()), None),
+        EventKind::External { location } => (3_i16, None, Some(location.as_str())),
+    };
+    sqlx::query("INSERT INTO guild_scheduled_events (id, guild_id, creator_id, channel_id, name, description, scheduled_start_time, scheduled_end_time, status, entity_type, location, image) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
+        .bind(event.id.as_i64()).bind(event.guild_id.as_i64()).bind(event.creator_id.map(|id| id.as_i64()))
+        .bind(channel).bind(&event.details.name).bind(&event.details.description)
+        .bind(event.details.start).bind(event.details.end).bind(event.details.status.code())
+        .bind(kind).bind(location).bind(&event.image).execute(conn).await.map_err(db)?;
+    Ok(())
 }

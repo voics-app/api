@@ -1,34 +1,83 @@
 //! Read endpoints for scheduled guild events.
-use axum::extract::{Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use application::use_cases::scheduled_events;
 use application::Resource;
-use contracts::wire::timestamp;
-use domain::scheduled_event::{EventKind, ScheduledEvent};
+use contracts::objects::scheduled_event as dto;
+use contracts::wire::Id;
+use domain::scheduled_event::{EventKind, EventStatus, ScheduledEventDetails};
 
 use crate::error::ApiError;
-use crate::extract::Caller;
+use crate::extract::{Body, Caller};
+use crate::images;
 use crate::routes::ids::snowflake;
 use crate::state::AppState;
 
-fn dto(event: &ScheduledEvent) -> Value {
-    let (entity_type, channel_id, metadata) = match &event.details.kind {
-        EventKind::Stage { channel_id } => (1, Some(channel_id.to_string()), None),
-        EventKind::Voice { channel_id } => (2, Some(channel_id.to_string()), None),
-        EventKind::External { location } => (3, None, Some(json!({ "location": location }))),
+#[derive(Deserialize)]
+struct Metadata {
+    location: String,
+}
+
+#[derive(Deserialize)]
+struct CreateRequest {
+    name: String,
+    description: Option<String>,
+    entity_type: u8,
+    channel_id: Option<Id>,
+    entity_metadata: Option<Metadata>,
+    scheduled_start_time: DateTime<Utc>,
+    scheduled_end_time: Option<DateTime<Utc>>,
+    image: Option<String>,
+}
+
+async fn create(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+    Body(body): Body<CreateRequest>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let kind = match (body.entity_type, body.channel_id, body.entity_metadata) {
+        (1, Some(channel), None) => EventKind::Stage {
+            channel_id: channel.0,
+        },
+        (2, Some(channel), None) => EventKind::Voice {
+            channel_id: channel.0,
+        },
+        (3, None, Some(metadata)) => EventKind::External {
+            location: metadata.location,
+        },
+        _ => {
+            return Err(application::AppError::invalid(
+                "entity_type",
+                "INVALID_EVENT",
+                "Choose a matching channel or external location.",
+            )
+            .into())
+        }
     };
-    json!({
-        "id": event.id.to_string(), "guild_id": event.guild_id.to_string(),
-        "creator_id": event.creator_id.map(|id| id.to_string()), "channel_id": channel_id,
-        "name": event.details.name, "description": event.details.description,
-        "scheduled_start_time": timestamp(event.details.start),
-        "scheduled_end_time": event.details.end.map(timestamp),
-        "status": event.details.status.code(), "entity_type": entity_type,
-        "entity_metadata": metadata, "image": event.image, "user_count": event.user_count,
-    })
+    let details = ScheduledEventDetails {
+        name: body.name,
+        description: body.description,
+        start: body.scheduled_start_time,
+        end: body.scheduled_end_time,
+        kind,
+        status: EventStatus::Scheduled,
+    };
+    let event = scheduled_events::create(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        details,
+        images::optional(body.image)?,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(dto(&event))))
 }
 
 async fn list(
@@ -70,7 +119,12 @@ async fn interest(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/guilds/{id}/scheduled-events", get(list))
+        .route(
+            "/guilds/{id}/scheduled-events",
+            get(list)
+                .post(create)
+                .layer(DefaultBodyLimit::max(images::IMAGE_BODY_LIMIT)),
+        )
         .route("/guilds/{id}/scheduled-events/{event}", get(get_one))
         .route(
             "/guilds/{id}/scheduled-events/{event}/users/@me",

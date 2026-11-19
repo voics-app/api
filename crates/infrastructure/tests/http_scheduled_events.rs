@@ -1,4 +1,4 @@
-//! HTTP reads enforce guild membership for scheduled events.
+//! HTTP creation and reads enforce guild membership for scheduled events.
 mod support;
 
 use axum::http::{Method, StatusCode};
@@ -36,10 +36,15 @@ async fn only_members_can_read_external_events_and_their_own_interest() {
     .await;
     assert_eq!(status, StatusCode::CREATED);
     let guild_id = guild["id"].as_str().unwrap();
-    let raw_guild_id: i64 = guild_id.parse().unwrap();
-    sqlx::query("INSERT INTO guild_scheduled_events (id, guild_id, name, scheduled_start_time, scheduled_end_time, status, entity_type, location) VALUES (20, $1, 'Meetup', now() + interval '1 hour', now() + interval '2 hours', 1, 3, 'Park')")
-        .bind(raw_guild_id).execute(&database.pool).await.unwrap();
     let path = format!("/api/v1/guilds/{guild_id}/scheduled-events");
+    let start = chrono::Utc::now() + chrono::Duration::hours(1);
+    let end = start + chrono::Duration::hours(1);
+    let input = json!({"name":"Meetup", "entity_type":3, "entity_metadata":{"location":"Park"}, "scheduled_start_time": start.to_rfc3339(), "scheduled_end_time":end.to_rfc3339()});
+    let (status, _) = call(&app, Method::POST, &path, &outsider, Some(input.clone())).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, created) = call(&app, Method::POST, &path, &owner, Some(input)).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let event_id = created["id"].as_str().unwrap();
     let (status, events) = call(&app, Method::GET, &path, &owner, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(events[0]["name"], "Meetup");
@@ -49,11 +54,14 @@ async fn only_members_can_read_external_events_and_their_own_interest() {
     let (status, interest) = call(
         &app,
         Method::GET,
-        &format!("{path}/20/users/@me"),
+        &format!("{path}/{event_id}/users/@me"),
         &owner,
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(interest["interested"], false);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_CREATE' AND payload->'data'->>'id' = $1")
+        .bind(event_id).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(count, 1);
 }

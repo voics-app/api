@@ -51,6 +51,22 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
     };
 
     match event {
+        DomainEvent::ScheduledEventCreate(event) => {
+            let channel_id = match &event.details.kind {
+                domain::scheduled_event::EventKind::Stage { channel_id }
+                | domain::scheduled_event::EventKind::Voice { channel_id } => Some(*channel_id),
+                domain::scheduled_event::EventKind::External { .. } => None,
+            };
+            emit(
+                TOPIC_GUILD,
+                event.guild_id,
+                "GUILD_SCHEDULED_EVENT_CREATE",
+                Some(event.guild_id),
+                channel_id,
+                None,
+                contracts::objects::scheduled_event(event),
+            );
+        }
         DomainEvent::GuildCreate {
             snapshot,
             recipients,
