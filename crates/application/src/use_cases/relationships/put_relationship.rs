@@ -3,7 +3,7 @@ use domain::user::User;
 use domain::Snowflake;
 
 use crate::context::{Actor, Ports};
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, Denial};
 use crate::support::relationships::{apply_change, current_pair};
 use crate::support::views::require_user;
 use crate::write_set::WriteSet;
@@ -38,6 +38,21 @@ pub(crate) async fn to_user(
     let change = match kind.map(RelationshipType::from_code) {
         Some(Some(RelationshipType::Blocked)) => relationship::block(before.1),
         None | Some(Some(RelationshipType::Friend)) => {
+            // Block decisions precede source checks. Acceptance, existing friendships and
+            // repeated pending requests must remain possible after a settings change.
+            if before.1 == Some(RelationshipType::Blocked) {
+                return Err(RelationshipError::BlockedByTarget.into());
+            }
+            if !matches!(
+                before.0,
+                Some(
+                    RelationshipType::Friend
+                        | RelationshipType::IncomingRequest
+                        | RelationshipType::OutgoingRequest
+                )
+            ) {
+                require_source(ports, actor.user_id, target.id).await?;
+            }
             relationship::send_friend_request(before.0, before.1)?
         }
         Some(_) => {
@@ -54,4 +69,35 @@ pub(crate) async fn to_user(
         return Ok(());
     }
     ports.unit_of_work.commit(writes).await
+}
+
+/// New requests use OR semantics across the selected sources.
+async fn require_source(ports: &Ports, sender: Snowflake, recipient: Snowflake) -> AppResult<()> {
+    let flags = ports.users.settings(recipient).await?.friend_source_flags;
+    if flags.all {
+        return Ok(());
+    }
+    if flags.mutual_guilds {
+        let mine = ports.guilds.list_for_user(sender).await?;
+        let theirs = ports.guilds.list_for_user(recipient).await?;
+        if mine
+            .iter()
+            .any(|guild| theirs.iter().any(|other| other.id == guild.id))
+        {
+            return Ok(());
+        }
+    }
+    if flags.mutual_friends {
+        let mine = ports.relationships.list(sender).await?;
+        let theirs = ports.relationships.list(recipient).await?;
+        if mine.iter().any(|a| {
+            a.kind == RelationshipType::Friend
+                && theirs
+                    .iter()
+                    .any(|b| b.kind == RelationshipType::Friend && a.target_id == b.target_id)
+        }) {
+            return Ok(());
+        }
+    }
+    Err(AppError::Forbidden(Denial::CannotMessageUser))
 }

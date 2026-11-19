@@ -132,9 +132,36 @@ pub struct GuildFolder {
     pub guild_ids: Vec<Snowflake>,
 }
 
+/// Sources permitted to initiate a friend request. Existing friendships and
+/// requests are handled separately from new requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FriendSourceFlags {
+    pub all: bool,
+    pub mutual_friends: bool,
+    pub mutual_guilds: bool,
+}
+
+impl Default for FriendSourceFlags {
+    fn default() -> Self {
+        Self {
+            all: true,
+            mutual_friends: false,
+            mutual_guilds: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FriendSourceFlagsPatch {
+    pub all: Option<bool>,
+    pub mutual_friends: Option<bool>,
+    pub mutual_guilds: Option<bool>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserSettings {
     pub user_id: Snowflake,
+    pub friend_source_flags: FriendSourceFlags,
     pub default_delivery_mode: DeliveryMode,
     pub e2ee_calls_default: bool,
     pub theme: Theme,
@@ -158,6 +185,7 @@ impl UserSettings {
     pub fn defaults_for(user_id: Snowflake) -> Self {
         Self {
             user_id,
+            friend_source_flags: FriendSourceFlags::default(),
             default_delivery_mode: DeliveryMode::Standard,
             e2ee_calls_default: false,
             theme: Theme::Dark,

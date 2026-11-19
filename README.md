@@ -319,3 +319,7 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
+### Friend request sources
+
+`friend_source_flags` in user settings accepts partial updates to `all`, `mutual_friends`, and `mutual_guilds`. Existing and new accounts default to `all: true`; when `all` is false a new request is accepted if either enabled source applies. A mutual friend must be a friend of both users; a mutual guild requires current membership by both. The username and ID request routes use the same policy. Existing friendships, pending requests and accepting a request remain usable when preferences change; blocking takes precedence. The settings are stored with account settings and synchronize through the existing settings event.

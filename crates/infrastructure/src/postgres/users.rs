@@ -89,12 +89,20 @@ struct SettingsRow {
     preferences: serde_json::Value,
     pinned_dm_channel_ids: Vec<i64>,
     pinned_channel_ids: serde_json::Value,
+    friend_source_all: bool,
+    friend_source_mutual_friends: bool,
+    friend_source_mutual_guilds: bool,
 }
 
 impl From<SettingsRow> for UserSettings {
     fn from(row: SettingsRow) -> Self {
         UserSettings {
             user_id: sf(row.user_id),
+            friend_source_flags: domain::user::FriendSourceFlags {
+                all: row.friend_source_all,
+                mutual_friends: row.friend_source_mutual_friends,
+                mutual_guilds: row.friend_source_mutual_guilds,
+            },
             default_delivery_mode: mode(&row.default_delivery_mode),
             e2ee_calls_default: row.e2ee_calls_default,
             theme: Theme::parse(&row.theme).unwrap_or_default(),
@@ -114,7 +122,7 @@ impl From<SettingsRow> for UserSettings {
 }
 
 const SETTINGS_COLUMNS: &str =
-    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids";
+    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids, friend_source_all, friend_source_mutual_friends, friend_source_mutual_guilds";
 
 #[async_trait]
 impl UserRepository for PgStore {

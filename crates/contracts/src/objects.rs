@@ -125,7 +125,15 @@ pub struct GuildFolderDto {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct FriendSourceFlagsDto {
+    pub all: bool,
+    pub mutual_friends: bool,
+    pub mutual_guilds: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct UserSettingsDto {
+    pub friend_source_flags: FriendSourceFlagsDto,
     pub locale: String,
     pub theme: &'static str,
     pub status: &'static str,
@@ -145,6 +153,11 @@ pub struct UserSettingsDto {
 impl From<&UserSettings> for UserSettingsDto {
     fn from(settings: &UserSettings) -> Self {
         Self {
+            friend_source_flags: FriendSourceFlagsDto {
+                all: settings.friend_source_flags.all,
+                mutual_friends: settings.friend_source_flags.mutual_friends,
+                mutual_guilds: settings.friend_source_flags.mutual_guilds,
+            },
             locale: settings.locale.clone(),
             theme: settings.theme.as_str(),
             status: settings.status.as_str(),
