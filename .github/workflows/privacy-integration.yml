@@ -1,4 +1,4 @@
-﻿name: privacy integration
+name: privacy integration
 on:
   pull_request:
     paths:
