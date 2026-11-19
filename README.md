@@ -4,6 +4,15 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+Scheduled events (api#49, draft): guild members can list visible events and inspect their
+own interest. Creators with `CREATE_EVENTS` and managers with `MANAGE_EVENTS` can create,
+modify and delete events; channel events require a visible matching voice or stage channel.
+Interest writes are idempotent. Changes and their gateway dispatches share the Postgres
+transaction. Migration `0087` also records start-reminder claims; a bounded worker writes
+user-targeted outbox records and the desktop rechecks access and interest before displaying.
+Offline/mobile push delivery is not yet connected. These paths need end-to-end verification
+before release; see `http_scheduled_events` and `postgres_scheduled_events` tests.
+
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts
 self-only avatar, banner and bio overrides independently of nickname permissions.
