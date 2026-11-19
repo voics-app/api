@@ -453,6 +453,54 @@ async fn thread_directory_inherits_parent_access_and_hides_private_threads_from_
 
 struct UnavailablePresence;
 
+#[tokio::test]
+async fn hidden_guild_member_cannot_obtain_internal_relay_recipients() {
+    let database = start_database().await;
+    let app = app(&database);
+    let (owner, owner_id) = account(&app, "relayowner").await;
+    let (member, member_id) = account(&app, "relaymember").await;
+    let (_, channel) = guild(&app, &owner, &[&member]).await;
+    ok_call(
+        &app,
+        Method::PATCH,
+        &format!("/api/v1/channels/{channel}"),
+        &owner,
+        Some(json!({"delivery_mode":"ephemeral"})),
+    )
+    .await;
+    ok_call(
+        &app,
+        Method::PUT,
+        &format!("/api/v1/channels/{channel}/permissions/{member_id}"),
+        &owner,
+        Some(json!({"type":1, "allow":"0", "deny":"1024"})),
+    )
+    .await;
+    let mut req = request(
+        Method::GET,
+        &format!("/internal/v1/channels/{channel}/access/{member_id}"),
+        None,
+        None,
+    );
+    req.headers_mut()
+        .insert("x-internal-token", INTERNAL_TOKEN.parse().unwrap());
+    let (status, body) = send(&app, req).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(body.get("recipient_ids").is_none());
+
+    let mut req = request(
+        Method::GET,
+        &format!("/internal/v1/channels/{channel}/access/{owner_id}"),
+        None,
+        None,
+    );
+    req.headers_mut()
+        .insert("x-internal-token", INTERNAL_TOKEN.parse().unwrap());
+    let (status, body) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["recipient_ids"], json!([owner_id]));
+}
+
 #[async_trait::async_trait]
 impl application::ports::PresenceDirectory for UnavailablePresence {
     async fn online_count(&self, _users: &[domain::Snowflake]) -> application::AppResult<u64> {

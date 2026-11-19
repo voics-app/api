@@ -1,0 +1,17 @@
+name: internal channel visibility integration
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'migrations/**'
+      - '.github/workflows/internal-visibility-integration.yml'
+concurrency:
+  group: internal-channel-visibility-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  internal-visibility:
+    runs-on: vm-runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked -p infrastructure --test http_notification_recipients hidden_guild_member_cannot_obtain_internal_relay_recipients

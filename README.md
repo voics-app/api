@@ -4,6 +4,9 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+The internal channel-access endpoint returns 403 when the caller lacks VIEW_CHANNEL, before
+returning encrypted relay recipient IDs. Eligible viewers retain the existing permission response.
+
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts
 self-only avatar, banner and bio overrides independently of nickname permissions.

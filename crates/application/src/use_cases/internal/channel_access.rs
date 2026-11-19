@@ -18,7 +18,7 @@ pub struct ChannelAccessInfo {
 }
 
 /// `GET /internal/v1/channels/{id}/access/{user}`: 403 unless the user is a
-/// member of the guild or a recipient of the DM.
+/// member of the guild with VIEW_CHANNEL or a recipient of the DM.
 ///
 /// `recipient_ids` are the users an end-to-end encrypted or P2P envelope may be addressed to: the
 /// DM recipients, or for a non-Standard guild channel the members that can view it (the gateway
@@ -29,7 +29,7 @@ pub async fn execute(
     user_id: Snowflake,
 ) -> AppResult<ChannelAccessInfo> {
     ensure_current_account_access(ports, user_id).await?;
-    let access = ChannelAccess::resolve(ports, channel_id, user_id).await?;
+    let access = ChannelAccess::visible(ports, channel_id, user_id).await?;
     let delivery_mode = effective_mode(ports, &access.channel).await?;
     let recipient_ids = match (&access.guild, delivery_mode) {
         (Some(guild), mode) if mode != DeliveryMode::Standard => {
