@@ -21,6 +21,7 @@ mod profile;
 mod push_tokens;
 mod relationships;
 mod reports;
+mod scheduled_events;
 mod session_revocation;
 mod sessions;
 mod snowflake;

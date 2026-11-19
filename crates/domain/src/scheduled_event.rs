@@ -19,6 +19,25 @@ pub enum EventStatus {
 }
 
 impl EventStatus {
+    pub const fn code(self) -> i16 {
+        match self {
+            Self::Scheduled => 1,
+            Self::Active => 2,
+            Self::Completed => 3,
+            Self::Canceled => 4,
+        }
+    }
+
+    pub const fn from_code(code: i16) -> Option<Self> {
+        match code {
+            1 => Some(Self::Scheduled),
+            2 => Some(Self::Active),
+            3 => Some(Self::Completed),
+            4 => Some(Self::Canceled),
+            _ => None,
+        }
+    }
+
     pub fn can_transition_to(self, next: Self) -> bool {
         self == next
             || matches!(

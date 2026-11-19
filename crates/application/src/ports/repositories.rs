@@ -242,6 +242,20 @@ pub trait ChannelRepository: Send + Sync {
 
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn scheduled_events(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<domain::scheduled_event::ScheduledEvent>>;
+    async fn scheduled_event(
+        &self,
+        guild_id: Snowflake,
+        event_id: Snowflake,
+    ) -> AppResult<Option<domain::scheduled_event::ScheduledEvent>>;
+    async fn scheduled_event_interested(
+        &self,
+        event_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<bool>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>>;
     async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>>;

@@ -221,6 +221,29 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn scheduled_events(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<domain::scheduled_event::ScheduledEvent>> {
+        super::scheduled_events::list(&self.pool, guild_id).await
+    }
+
+    async fn scheduled_event(
+        &self,
+        guild_id: Snowflake,
+        event_id: Snowflake,
+    ) -> AppResult<Option<domain::scheduled_event::ScheduledEvent>> {
+        super::scheduled_events::find(&self.pool, guild_id, event_id).await
+    }
+
+    async fn scheduled_event_interested(
+        &self,
+        event_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<bool> {
+        super::scheduled_events::interested(&self.pool, event_id, user_id).await
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>> {
         let sql = format!("SELECT {GUILD_COLUMNS} FROM guilds WHERE id = $1");
         let row: Option<GuildRow> = sqlx::query_as(&sql)
