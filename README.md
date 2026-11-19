@@ -319,3 +319,7 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
+## Ban appeals
+
+A server can configure a single short appeal question with `PUT /guilds/{guild_id}/ban-appeals/form`. A currently banned, authenticated user can read that question and submit an answer to `POST /guilds/{guild_id}/ban-appeals`. Only one appeal may be open per user and server. Moderators need `MANAGE_BAN_APPEALS` to configure the question, list appeals and accept or deny them. Acceptance removes the current ban; decisions record an audit action when guild audit logging is enabled. A decision against a superseded ban is rejected rather than removing a newer ban. Unbanned users need a valid invite to rejoin.

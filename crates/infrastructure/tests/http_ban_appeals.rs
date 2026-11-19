@@ -20,6 +20,7 @@ struct World {
     ann: String,
     ann_id: String,
     ben: String,
+    ben_id: String,
 }
 
 fn router(
@@ -68,7 +69,7 @@ async fn world(database: &Database, budget: Option<u32>) -> World {
     let app = router(database, messages.clone(), budget);
     let (owner, _owner_id) = register(&app, "owner").await;
     let (ann, ann_id) = register(&app, "ann").await;
-    let (ben, _ben_id) = register(&app, "ben").await;
+    let (ben, ben_id) = register(&app, "ben").await;
     let (status, guild) = call(
         &app,
         Method::POST,
@@ -123,6 +124,7 @@ async fn world(database: &Database, budget: Option<u32>) -> World {
         ann,
         ann_id,
         ben,
+        ben_id,
     }
 }
 
@@ -207,4 +209,129 @@ async fn banned_user_submits_and_moderator_accepts_appeal() {
         .unwrap()
         .iter()
         .any(|entry| entry["action_type"] == 200));
+}
+
+#[tokio::test]
+async fn review_permission_is_independent_and_stale_appeal_cannot_unban_a_new_ban() {
+    let database = start_database().await;
+    let w = world(&database, None).await;
+    let base = format!("/api/v1/guilds/{}/ban-appeals", w.guild_id);
+    let ban = format!("/api/v1/guilds/{}/bans/{}", w.guild_id, w.ann_id);
+    assert_eq!(
+        call(
+            &w.app,
+            Method::PUT,
+            &format!("{base}/form"),
+            &w.owner,
+            Some(json!({"question":"Explain"}))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (status, role) = call(
+        &w.app,
+        Method::POST,
+        &format!("/api/v1/guilds/{}/roles", w.guild_id),
+        &w.owner,
+        Some(json!({"name":"appeal reviewer", "permissions":"9007199254740992"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{role}");
+    let role_id = role["id"].as_str().unwrap();
+    assert_eq!(
+        call(
+            &w.app,
+            Method::PUT,
+            &format!(
+                "/api/v1/guilds/{}/members/{}/roles/{role_id}",
+                w.guild_id, w.ben_id
+            ),
+            &w.owner,
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &w.app,
+            Method::GET,
+            &format!("/api/v1/guilds/{}/bans", w.guild_id),
+            &w.ben,
+            None
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(&w.app, Method::PUT, &ban, &w.owner, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let (status, appeal) = call(
+        &w.app,
+        Method::POST,
+        &base,
+        &w.ann,
+        Some(json!({"answer":"Sorry"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{appeal}");
+    let id = appeal["id"].as_str().unwrap();
+    assert_eq!(
+        call(&w.app, Method::GET, &base, &w.ben, None).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&w.app, Method::DELETE, &ban, &w.owner, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&w.app, Method::PUT, &ban, &w.owner, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &w.app,
+            Method::POST,
+            &format!("{base}/{id}/accept"),
+            &w.ben,
+            None
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(&w.app, Method::GET, &ban, &w.owner, None).await.0,
+        StatusCode::OK
+    );
+    let (status, second) = call(
+        &w.app,
+        Method::POST,
+        &base,
+        &w.ann,
+        Some(json!({"answer":"Please reconsider"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{second}");
+    let second_id = second["id"].as_str().unwrap();
+    assert_eq!(
+        call(
+            &w.app,
+            Method::POST,
+            &format!("{base}/{second_id}/deny"),
+            &w.ben,
+            None
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&w.app, Method::GET, &ban, &w.owner, None).await.0,
+        StatusCode::OK
+    );
 }
