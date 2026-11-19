@@ -84,6 +84,26 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             recipients.clone(),
             json!({ "id": guild_id.to_string() }),
         ),
+        DomainEvent::StageInstanceCreate(stage)
+        | DomainEvent::StageInstanceUpdate(stage)
+        | DomainEvent::StageInstanceDelete(stage) => {
+            let kind = match event {
+                DomainEvent::StageInstanceCreate(_) => "STAGE_INSTANCE_CREATE",
+                DomainEvent::StageInstanceUpdate(_) => "STAGE_INSTANCE_UPDATE",
+                _ => "STAGE_INSTANCE_DELETE",
+            };
+            emit(
+                TOPIC_GUILD,
+                stage.guild_id,
+                kind,
+                Some(stage.guild_id),
+                Some(stage.channel_id),
+                None,
+                json!({"id": stage.id.to_string(), "guild_id": stage.guild_id.to_string(),
+                    "channel_id": stage.channel_id.to_string(), "topic": stage.topic,
+                    "privacy_level": 2, "discoverable_disabled": false}),
+            );
+        }
         DomainEvent::ChannelCreate(channel) => guild_channel(&mut emit, "CHANNEL_CREATE", channel),
         DomainEvent::ChannelUpdate(channel) => guild_channel(&mut emit, "CHANNEL_UPDATE", channel),
         DomainEvent::ChannelDelete(channel) => guild_channel(&mut emit, "CHANNEL_DELETE", channel),

@@ -96,6 +96,12 @@ pub enum Mutation {
         since: DateTime<Utc>,
     },
 
+    InsertStageInstance(domain::stage_instance::StageInstance),
+    UpdateStageInstance(domain::stage_instance::StageInstance),
+    DeleteStageInstance {
+        channel_id: Snowflake,
+        id: Snowflake,
+    },
     InsertChannel(Channel),
     /// Replaces every column, overwrites and recipients included.
     UpdateChannel(Channel),

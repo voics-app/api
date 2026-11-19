@@ -229,6 +229,10 @@ pub trait RelationshipRepository: Send + Sync {
 #[async_trait]
 pub trait ChannelRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Channel>>;
+    async fn stage_instance(
+        &self,
+        channel_id: Snowflake,
+    ) -> AppResult<Option<domain::stage_instance::StageInstance>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Channel>>;
     async fn list_private(&self, user_id: Snowflake) -> AppResult<Vec<Channel>>;
     async fn find_dm(&self, a: Snowflake, b: Snowflake) -> AppResult<Option<Channel>>;
