@@ -24,6 +24,7 @@ mod reports;
 mod session_revocation;
 mod sessions;
 mod snowflake;
+mod soundboard;
 mod unit_of_work;
 mod users;
 mod vanity;

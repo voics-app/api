@@ -116,6 +116,7 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         guilds: store.clone(),
         invites: store.clone(),
         emojis: store.clone(),
+        soundboards: store.clone(),
         audit_log: store.clone(),
         applications: store.clone(),
         interactions: store.clone(),

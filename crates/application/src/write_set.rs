@@ -151,6 +151,12 @@ pub enum Mutation {
         code: String,
     },
 
+    InsertSoundboardSound(domain::soundboard::SoundboardSound),
+    UpdateSoundboardSound(domain::soundboard::SoundboardSound),
+    DeleteSoundboardSound {
+        guild_id: Snowflake,
+        sound_id: Snowflake,
+    },
     InsertEmoji(Emoji),
     UpdateEmoji(Emoji),
     DeleteEmoji {
