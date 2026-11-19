@@ -1,5 +1,5 @@
 use super::super::error::db;
-use application::{AppError, AppResult};
+use application::{AppError, AppResult, Resource};
 use domain::soundboard::{SoundboardSound, MAX_SOUNDS_PER_GUILD};
 use domain::Snowflake;
 use sqlx::PgConnection;
@@ -29,14 +29,18 @@ pub(super) async fn insert(conn: &mut PgConnection, sound: &SoundboardSound) -> 
     Ok(())
 }
 pub(super) async fn update(conn: &mut PgConnection, sound: &SoundboardSound) -> AppResult<()> {
-    sqlx::query("UPDATE soundboard_sounds SET name=$3,volume=$4 WHERE guild_id=$1 AND id=$2")
-        .bind(sound.guild_id.as_i64())
-        .bind(sound.id.as_i64())
-        .bind(&sound.name)
-        .bind(sound.volume)
-        .execute(&mut *conn)
-        .await
-        .map_err(db)?;
+    let result =
+        sqlx::query("UPDATE soundboard_sounds SET name=$3,volume=$4 WHERE guild_id=$1 AND id=$2")
+            .bind(sound.guild_id.as_i64())
+            .bind(sound.id.as_i64())
+            .bind(&sound.name)
+            .bind(sound.volume)
+            .execute(&mut *conn)
+            .await
+            .map_err(db)?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(Resource::SoundboardSound));
+    }
     Ok(())
 }
 pub(super) async fn delete(
@@ -44,11 +48,14 @@ pub(super) async fn delete(
     guild_id: Snowflake,
     sound_id: Snowflake,
 ) -> AppResult<()> {
-    sqlx::query("DELETE FROM soundboard_sounds WHERE guild_id=$1 AND id=$2")
+    let result = sqlx::query("DELETE FROM soundboard_sounds WHERE guild_id=$1 AND id=$2")
         .bind(guild_id.as_i64())
         .bind(sound_id.as_i64())
         .execute(&mut *conn)
         .await
         .map_err(db)?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(Resource::SoundboardSound));
+    }
     Ok(())
 }

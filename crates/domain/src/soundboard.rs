@@ -15,6 +15,27 @@ pub struct SoundboardSound {
     pub audio: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SoundboardMetadata {
+    pub id: Snowflake,
+    pub guild_id: Snowflake,
+    pub creator_id: Option<Snowflake>,
+    pub name: String,
+    pub volume: f32,
+}
+
+impl From<&SoundboardSound> for SoundboardMetadata {
+    fn from(sound: &SoundboardSound) -> Self {
+        Self {
+            id: sound.id,
+            guild_id: sound.guild_id,
+            creator_id: sound.creator_id,
+            name: sound.name.clone(),
+            volume: sound.volume,
+        }
+    }
+}
+
 /// Accept only canonical RIFF/WAVE PCM data with a bounded decoded duration.
 /// Parsing fixed fields and checking the entire file length prevents a forged
 /// duration or oversized chunk from bypassing the limit.

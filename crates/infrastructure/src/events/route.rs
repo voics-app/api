@@ -206,6 +206,34 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             None,
             json!({ "guild_id": guild_id.to_string(), "user": UserDto::public(user) }),
         ),
+        DomainEvent::SoundboardCreate { sound } | DomainEvent::SoundboardUpdate { sound } => {
+            let kind = if matches!(event, DomainEvent::SoundboardCreate { .. }) {
+                "SOUNDBOARD_SOUND_CREATE"
+            } else {
+                "SOUNDBOARD_SOUND_UPDATE"
+            };
+            emit(
+                TOPIC_GUILD,
+                sound.guild_id,
+                kind,
+                Some(sound.guild_id),
+                None,
+                None,
+                json!({"guild_id": sound.guild_id.to_string(), "sound_id": sound.id.to_string(), "sound": {
+                    "id": sound.id.to_string(), "guild_id": sound.guild_id.to_string(),
+                    "creator_id": sound.creator_id.map(|id| id.to_string()), "name": sound.name, "volume": sound.volume
+                }}),
+            );
+        }
+        DomainEvent::SoundboardDelete { guild_id, sound_id } => emit(
+            TOPIC_GUILD,
+            *guild_id,
+            "SOUNDBOARD_SOUND_DELETE",
+            Some(*guild_id),
+            None,
+            None,
+            json!({"guild_id": guild_id.to_string(), "sound_id": sound_id.to_string()}),
+        ),
         DomainEvent::EmojisUpdate { guild_id, emojis } => {
             let dtos: Vec<EmojiDto> = emojis.iter().map(EmojiDto::from).collect();
             emit(

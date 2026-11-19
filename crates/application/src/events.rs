@@ -80,6 +80,16 @@ pub enum DomainEvent {
         since_ms: u64,
         delete_message_seconds: u32,
     },
+    SoundboardCreate {
+        sound: domain::soundboard::SoundboardMetadata,
+    },
+    SoundboardUpdate {
+        sound: domain::soundboard::SoundboardMetadata,
+    },
+    SoundboardDelete {
+        guild_id: Snowflake,
+        sound_id: Snowflake,
+    },
     EmojisUpdate {
         guild_id: Snowflake,
         emojis: Vec<Emoji>,

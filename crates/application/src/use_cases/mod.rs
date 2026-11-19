@@ -20,6 +20,7 @@ pub mod relationships;
 pub mod reports;
 pub mod roles;
 pub mod sessions;
+pub mod soundboard;
 pub mod templates;
 pub mod users;
 pub mod voice;

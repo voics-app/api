@@ -1,0 +1,156 @@
+use crate::context::{Actor, Ports};
+use crate::error::{AppError, AppResult, Resource};
+use crate::events::DomainEvent;
+use crate::support::guild_context::GuildContext;
+use crate::write_set::{Mutation, WriteSet};
+use domain::permissions::Permissions;
+use domain::soundboard::{
+    valid_audio, valid_name, valid_volume, SoundboardMetadata, SoundboardSound,
+};
+use domain::Snowflake;
+
+fn editable(ctx: &GuildContext, sound: &SoundboardSound) -> AppResult<()> {
+    let p = ctx.permissions();
+    if p.contains(Permissions::MANAGE_GUILD_EXPRESSIONS)
+        || (sound.creator_id == Some(ctx.member.user_id)
+            && p.contains(Permissions::CREATE_GUILD_EXPRESSIONS))
+    {
+        Ok(())
+    } else {
+        Err(AppError::missing_permissions())
+    }
+}
+fn validate(name: &str, volume: f32) -> AppResult<()> {
+    if !valid_name(name) {
+        return Err(AppError::invalid(
+            "name",
+            "INVALID",
+            "Use 2–32 letters, digits, hyphens or underscores",
+        ));
+    }
+    if !valid_volume(volume) {
+        return Err(AppError::invalid(
+            "volume",
+            "INVALID",
+            "Volume must be between 0 and 1",
+        ));
+    }
+    Ok(())
+}
+pub async fn list(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+) -> AppResult<Vec<SoundboardSound>> {
+    GuildContext::load(ports, guild_id, actor.user_id).await?;
+    ports.soundboards.list_sounds(guild_id).await
+}
+pub async fn get(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    id: Snowflake,
+) -> AppResult<SoundboardSound> {
+    GuildContext::load(ports, guild_id, actor.user_id).await?;
+    ports
+        .soundboards
+        .find_sound(guild_id, id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::SoundboardSound))
+}
+pub async fn create(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    name: String,
+    volume: f32,
+    audio: Vec<u8>,
+) -> AppResult<SoundboardSound> {
+    let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
+    if !ctx
+        .permissions()
+        .intersects(Permissions::CREATE_GUILD_EXPRESSIONS | Permissions::MANAGE_GUILD_EXPRESSIONS)
+    {
+        return Err(AppError::missing_permissions());
+    }
+    validate(&name, volume)?;
+    if !valid_audio(&audio) {
+        return Err(AppError::invalid(
+            "sound",
+            "INVALID",
+            "Sound must be a canonical mono 48 kHz 16-bit PCM WAV, at most five seconds",
+        ));
+    }
+    let sound = SoundboardSound {
+        id: ports.ids.next_id()?,
+        guild_id,
+        creator_id: Some(actor.user_id),
+        name,
+        volume,
+        audio,
+    };
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::InsertSoundboardSound(sound.clone()))
+        .emit(DomainEvent::SoundboardCreate {
+            sound: SoundboardMetadata::from(&sound),
+        });
+    ports.unit_of_work.commit(writes).await?;
+    Ok(sound)
+}
+pub async fn update(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    id: Snowflake,
+    name: Option<String>,
+    volume: Option<f32>,
+) -> AppResult<SoundboardSound> {
+    let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
+    let mut sound = ports
+        .soundboards
+        .find_sound(guild_id, id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::SoundboardSound))?;
+    editable(&ctx, &sound)?;
+    if let Some(name) = name {
+        sound.name = name;
+    }
+    if let Some(volume) = volume {
+        sound.volume = volume;
+    }
+    validate(&sound.name, sound.volume)?;
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::UpdateSoundboardSound(sound.clone()))
+        .emit(DomainEvent::SoundboardUpdate {
+            sound: SoundboardMetadata::from(&sound),
+        });
+    ports.unit_of_work.commit(writes).await?;
+    Ok(sound)
+}
+pub async fn delete(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    id: Snowflake,
+) -> AppResult<()> {
+    let ctx = GuildContext::load(ports, guild_id, actor.user_id).await?;
+    let sound = ports
+        .soundboards
+        .find_sound(guild_id, id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::SoundboardSound))?;
+    editable(&ctx, &sound)?;
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::DeleteSoundboardSound {
+            guild_id,
+            sound_id: id,
+        })
+        .emit(DomainEvent::SoundboardDelete {
+            guild_id,
+            sound_id: id,
+        });
+    ports.unit_of_work.commit(writes).await
+}
