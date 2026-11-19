@@ -44,7 +44,35 @@ impl UnitOfWork for PgUnitOfWork {
         }
         let mut tx = self.pool.begin().await.map_err(db)?;
         let conn = &mut *tx;
+        let mut conditional_events = Vec::new();
         for mutation in &writes.mutations {
+            if let Mutation::SetScheduledEventInterest {
+                guild_id,
+                event_id,
+                user_id,
+                channel_id,
+                interested,
+            } = mutation
+            {
+                if super::scheduled_events::set_interest(
+                    conn,
+                    *guild_id,
+                    *event_id,
+                    *user_id,
+                    *interested,
+                )
+                .await?
+                {
+                    conditional_events.push(DomainEvent::ScheduledEventInterest {
+                        guild_id: *guild_id,
+                        event_id: *event_id,
+                        user_id: *user_id,
+                        channel_id: *channel_id,
+                        interested: *interested,
+                    });
+                }
+                continue;
+            }
             if !matches!(mutation, Mutation::InsertAudit(_)) {
                 apply(conn, mutation).await?;
             }
@@ -59,7 +87,7 @@ impl UnitOfWork for PgUnitOfWork {
             }
         }
         let now = Utc::now();
-        for event in &writes.events {
+        for event in writes.events.iter().chain(conditional_events.iter()) {
             if matches!(event, DomainEvent::AuditLogEntryCreate(entry) if !recorded.contains(&entry.id))
             {
                 continue;
@@ -108,6 +136,7 @@ impl UnitOfWork for PgUnitOfWork {
 
 async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<()> {
     match mutation {
+        Mutation::SetScheduledEventInterest { .. } => unreachable!("interest handled in commit"),
         Mutation::InsertScheduledEvent(event) => super::scheduled_events::insert(conn, event).await,
         Mutation::InsertUser {
             user,

@@ -117,6 +117,38 @@ async fn interest(
     Ok(Json(json!({ "interested": interested })))
 }
 
+async fn add_interest(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((guild, event)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    scheduled_events::set_interest(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        snowflake(&event, Resource::GuildScheduledEvent)?,
+        true,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_interest(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((guild, event)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    scheduled_events::set_interest(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        snowflake(&event, Resource::GuildScheduledEvent)?,
+        false,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -128,6 +160,6 @@ pub fn routes() -> Router<AppState> {
         .route("/guilds/{id}/scheduled-events/{event}", get(get_one))
         .route(
             "/guilds/{id}/scheduled-events/{event}/users/@me",
-            get(interest),
+            get(interest).put(add_interest).delete(remove_interest),
         )
 }

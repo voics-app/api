@@ -61,6 +61,25 @@ async fn only_members_can_read_external_events_and_their_own_interest() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(interest["interested"], false);
+    let interest_path = format!("{path}/{event_id}/users/@me");
+    for _ in 0..2 {
+        let (status, _) = call(&app, Method::PUT, &interest_path, &owner, None).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+    let (_, interest) = call(&app, Method::GET, &interest_path, &owner, None).await;
+    assert_eq!(interest["interested"], true);
+    let (_, events) = call(&app, Method::GET, &path, &owner, None).await;
+    assert_eq!(events[0]["user_count"], 1);
+    let added: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_USER_ADD' AND payload->'data'->>'guild_scheduled_event_id' = $1")
+        .bind(event_id).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(added, 1);
+    for _ in 0..2 {
+        let (status, _) = call(&app, Method::DELETE, &interest_path, &owner, None).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+    let removed: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_USER_REMOVE' AND payload->'data'->>'guild_scheduled_event_id' = $1")
+        .bind(event_id).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(removed, 1);
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_CREATE' AND payload->'data'->>'id' = $1")
         .bind(event_id).fetch_one(&database.pool).await.unwrap();
     assert_eq!(count, 1);

@@ -98,3 +98,26 @@ pub(super) async fn insert(conn: &mut PgConnection, event: &ScheduledEvent) -> A
         .bind(kind).bind(location).bind(&event.image).execute(conn).await.map_err(db)?;
     Ok(())
 }
+
+pub(super) async fn set_interest(
+    conn: &mut PgConnection,
+    guild: Snowflake,
+    event: Snowflake,
+    user: Snowflake,
+    interested: bool,
+) -> AppResult<bool> {
+    let query = if interested {
+        "INSERT INTO guild_scheduled_event_users (guild_id, event_id, user_id) SELECT $1, id, $3 FROM guild_scheduled_events WHERE guild_id = $1 AND id = $2 AND status = 1 ON CONFLICT DO NOTHING"
+    } else {
+        "DELETE FROM guild_scheduled_event_users WHERE guild_id = $1 AND event_id = $2 AND user_id = $3"
+    };
+    Ok(sqlx::query(query)
+        .bind(guild.as_i64())
+        .bind(event.as_i64())
+        .bind(user.as_i64())
+        .execute(conn)
+        .await
+        .map_err(db)?
+        .rows_affected()
+        != 0)
+}

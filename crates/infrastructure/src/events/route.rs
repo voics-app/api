@@ -51,6 +51,25 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
     };
 
     match event {
+        DomainEvent::ScheduledEventInterest {
+            guild_id,
+            event_id,
+            user_id,
+            channel_id,
+            interested,
+        } => emit(
+            TOPIC_GUILD,
+            *guild_id,
+            if *interested {
+                "GUILD_SCHEDULED_EVENT_USER_ADD"
+            } else {
+                "GUILD_SCHEDULED_EVENT_USER_REMOVE"
+            },
+            Some(*guild_id),
+            *channel_id,
+            None,
+            json!({ "guild_id": guild_id.to_string(), "guild_scheduled_event_id": event_id.to_string(), "user_id": user_id.to_string() }),
+        ),
         DomainEvent::ScheduledEventCreate(event) => {
             let channel_id = match &event.details.kind {
                 domain::scheduled_event::EventKind::Stage { channel_id }

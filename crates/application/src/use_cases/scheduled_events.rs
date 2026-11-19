@@ -141,3 +141,33 @@ pub async fn interested(
         .scheduled_event_interested(event_id, actor.user_id)
         .await
 }
+
+pub async fn set_interest(
+    ports: &Ports,
+    actor: &Actor,
+    guild_id: Snowflake,
+    event_id: Snowflake,
+    interested: bool,
+) -> AppResult<()> {
+    let event = get(ports, actor, guild_id, event_id).await?;
+    if interested && event.details.status != EventStatus::Scheduled {
+        return Err(AppError::invalid(
+            "event",
+            "EVENT_NOT_SCHEDULED",
+            "Interest is available only for scheduled events.",
+        ));
+    }
+    let channel_id = match event.details.kind {
+        EventKind::Voice { channel_id } | EventKind::Stage { channel_id } => Some(channel_id),
+        EventKind::External { .. } => None,
+    };
+    let mut writes = WriteSet::new();
+    writes.mutate(Mutation::SetScheduledEventInterest {
+        guild_id,
+        event_id,
+        user_id: actor.user_id,
+        channel_id,
+        interested,
+    });
+    ports.unit_of_work.commit(writes).await
+}
