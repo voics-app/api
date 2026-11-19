@@ -469,6 +469,7 @@ pub(super) async fn anonymize_user(
         "application_authorizations",
         "connection_oauth_states",
         "user_connections",
+        "user_badges",
     ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE user_id = $1"))
             .bind(user_id.as_i64())
