@@ -1,4 +1,4 @@
-﻿-- Guild stickers retain immutable IDs and format so existing messages can still resolve
+-- Guild stickers retain immutable IDs and format so existing messages can still resolve
 -- their display metadata after removal from the picker. The CDN object is retained.
 CREATE TABLE stickers (
     id BIGINT PRIMARY KEY,

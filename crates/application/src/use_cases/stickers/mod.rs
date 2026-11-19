@@ -147,3 +147,27 @@ pub async fn update(
     ports.unit_of_work.commit(writes).await?;
     Ok(sticker)
 }
+
+/// Resolve a guild sticker for a specific author and destination on the messages service.
+pub async fn resolve_for_message(
+    ports: &Ports,
+    channel_id: Snowflake,
+    user_id: Snowflake,
+    sticker_id: Snowflake,
+) -> AppResult<Sticker> {
+    let access =
+        crate::use_cases::internal::channel_access::execute(ports, channel_id, user_id).await?;
+    if !access
+        .permissions
+        .contains(Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES)
+        || access.delivery_mode != domain::delivery_mode::DeliveryMode::Standard
+    {
+        return Err(AppError::missing_access());
+    }
+    let guild_id = access.guild_id.ok_or_else(AppError::missing_access)?;
+    ports
+        .stickers
+        .find(guild_id, sticker_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Sticker))
+}

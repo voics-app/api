@@ -38,7 +38,7 @@ async fn guild_administration_follows_the_contract() {
         rate_limiter: std::sync::Arc::new(support::AllowAll),
         rate_policy: interface::state::RatePolicy::default(),
     });
-    let (owner, _owner_id) = register(&app, "owner@example.com", "owner").await;
+    let (owner, owner_id) = register(&app, "owner@example.com", "owner").await;
     let (guest, guest_id) = register(&app, "guest@example.com", "guest").await;
 
     let (status, guild) = call(
@@ -141,6 +141,22 @@ async fn guild_administration_follows_the_contract() {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(sticker["format_type"], 3);
     let sticker_path = format!("{path}/{}", sticker["id"].as_str().unwrap());
+    let resolve_path = format!(
+        "/internal/v1/channels/{channel_id}/users/{owner_id}/stickers/{}",
+        sticker["id"].as_str().unwrap()
+    );
+    let (status, _) = send(&app, request(Method::GET, &resolve_path, None, None)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let internal_request = axum::http::Request::builder()
+        .method(Method::GET)
+        .uri(&resolve_path)
+        .header("x-internal-token", support::http::INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, resolved) = send(&app, internal_request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resolved["id"], sticker["id"]);
+
     let (status, edited) = call(
         &app,
         Method::PATCH,
