@@ -319,3 +319,7 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
+## Stage instances
+
+Guild stage-channel metadata is managed through `POST /stage-instances` and `GET`, `PATCH`, or `DELETE /stage-instances/{channel_id}`. Reading requires channel visibility; starting, changing the topic and ending require `MANAGE_CHANNELS`. Each mutation is committed with its `STAGE_INSTANCE_*` event through the transactional outbox. A channel can have at most one active instance. This metadata lifecycle does not itself enable stage audio; see the stage enforcement design in the docs repository.
