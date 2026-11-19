@@ -197,7 +197,23 @@ async fn update_thread(
             metadata.auto_archive_duration = duration;
         }
     }
-    let changes = name_change(&access.channel, &thread);
+    let mut changes = name_change(&access.channel, &thread);
+    changes.extend(
+        [
+            AuditChange::if_changed(
+                "applied_tags",
+                json!(access.channel.applied_tags),
+                json!(thread.applied_tags),
+            ),
+            AuditChange::if_changed(
+                "pinned",
+                json!(access.channel.forum_settings.get("pinned")),
+                json!(thread.forum_settings.get("pinned")),
+            ),
+        ]
+        .into_iter()
+        .flatten(),
+    );
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::UpdateChannel(thread.clone()))
