@@ -9,7 +9,7 @@ pub const MAX_SOUND_BYTES: usize = 44 + 5 * 48_000 * 2;
 pub struct SoundboardSound {
     pub id: Snowflake,
     pub guild_id: Snowflake,
-    pub creator_id: Snowflake,
+    pub creator_id: Option<Snowflake>,
     pub name: String,
     pub volume: f32,
     pub audio: Vec<u8>,
@@ -41,7 +41,7 @@ pub fn valid_audio(bytes: &[u8]) -> bool {
         && u16_at(bytes, 34) == 16
         && &bytes[36..40] == b"data"
         && u32_at(bytes, 40) as usize == bytes.len() - 44
-        && (bytes.len() - 44) % 2 == 0
+        && (bytes.len() - 44).is_multiple_of(2)
 }
 
 pub fn valid_name(name: &str) -> bool {
