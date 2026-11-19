@@ -252,6 +252,30 @@ impl Config {
             DEFAULT_CORS_ALLOWED_ORIGINS,
         ));
 
+        let public_api_url = url(&get, "PUBLIC_API_URL")?;
+        let github_connections = match optional(&get, "CONNECTION_GITHUB_ENABLED", "false").as_str()
+        {
+            "false" => None,
+            "true" => {
+                if environment == Environment::Production && public_api_url.scheme() != "https" {
+                    return Err(invalid(
+                        "PUBLIC_API_URL",
+                        "GitHub connections require HTTPS in production",
+                    ));
+                }
+                Some((
+                    required(&get, "CONNECTION_GITHUB_CLIENT_ID")?,
+                    required(&get, "CONNECTION_GITHUB_CLIENT_SECRET")?,
+                ))
+            }
+            _ => {
+                return Err(invalid(
+                    "CONNECTION_GITHUB_ENABLED",
+                    "expected true or false",
+                ))
+            }
+        };
+
         Ok(Self {
             environment,
             log_level: optional(&get, "LOG_LEVEL", "info"),
@@ -263,7 +287,7 @@ impl Config {
             jwt_private_pem: pem(&get, "JWT_PRIVATE_KEY")?,
             jwt_public_pem: pem(&get, "JWT_PUBLIC_KEY")?,
             worker_id,
-            public_api_url: url(&get, "PUBLIC_API_URL")?,
+            public_api_url,
             public_gateway_url: url(&get, "PUBLIC_GATEWAY_URL")?,
             cdn_public_url: url(&get, "CDN_PUBLIC_URL")?,
             messages_internal_url: url(&get, "MESSAGES_INTERNAL_URL")?,
@@ -288,20 +312,7 @@ impl Config {
             )?,
             mail: mail_transport(&get)?,
             webauthn: webauthn::parse(&get, environment)?,
-            github_connections: match optional(&get, "CONNECTION_GITHUB_ENABLED", "false").as_str()
-            {
-                "false" => None,
-                "true" => Some((
-                    required(&get, "CONNECTION_GITHUB_CLIENT_ID")?,
-                    required(&get, "CONNECTION_GITHUB_CLIENT_SECRET")?,
-                )),
-                _ => {
-                    return Err(invalid(
-                        "CONNECTION_GITHUB_ENABLED",
-                        "expected true or false",
-                    ))
-                }
-            },
+            github_connections,
             brand_name: optional(&get, "BRAND_NAME", application::context::DEFAULT_BRAND_NAME),
             app_link_base: optional(&get, "APP_LINK_BASE", "voics://"),
             account_deletion_retention_days: positive(
@@ -395,6 +406,24 @@ mod tests {
                 .github_connections,
             Some(("id".into(), "secret".into()))
         );
+    }
+
+    #[test]
+    fn production_github_callback_requires_https() {
+        let mut values = complete();
+        values.insert("DISCORDY_ENV", "production".to_owned());
+        values.insert("CONNECTION_GITHUB_ENABLED", "true".to_owned());
+        values.insert("CONNECTION_GITHUB_CLIENT_ID", "id".to_owned());
+        values.insert("CONNECTION_GITHUB_CLIENT_SECRET", "secret".to_owned());
+        assert!(matches!(
+            Config::from_lookup(lookup(values.clone())),
+            Err(ConfigError::Invalid {
+                name: "PUBLIC_API_URL",
+                ..
+            })
+        ));
+        values.insert("PUBLIC_API_URL", "https://api.example.test".to_owned());
+        assert!(Config::from_lookup(lookup(values)).is_ok());
     }
 
     #[test]
