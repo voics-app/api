@@ -453,3 +453,58 @@ async fn concurrent_submissions_leave_exactly_one_open_appeal() {
     let (_, list) = call(&w.app, Method::GET, &base, &w.owner, None).await;
     assert_eq!(list.as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn account_anonymization_removes_appeal_text() {
+    let database = start_database().await;
+    let w = world(&database, None).await;
+    let base = format!("/api/v1/guilds/{}/ban-appeals", w.guild_id);
+    let ban = format!("/api/v1/guilds/{}/bans/{}", w.guild_id, w.ann_id);
+    assert_eq!(
+        call(
+            &w.app,
+            Method::PUT,
+            &format!("{base}/form"),
+            &w.owner,
+            Some(json!({"question":"Explain"}))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&w.app, Method::PUT, &ban, &w.owner, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(
+            &w.app,
+            Method::POST,
+            &base,
+            &w.ann,
+            Some(json!({"question":"Explain", "answer":"Personal information"}))
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    sqlx::query("UPDATE users SET delete_after = now() - interval '1 minute' WHERE id = $1")
+        .bind(w.ann_id.parse::<i64>().unwrap())
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    let (private, public) = jwt_keys();
+    let ports = support::ports(&database.pool, &public, &private);
+    assert_eq!(
+        application::use_cases::account::purge_deleted::execute(&ports)
+            .await
+            .unwrap(),
+        1
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM ban_appeals WHERE user_id = $1")
+        .bind(w.ann_id.parse::<i64>().unwrap())
+        .fetch_one(&database.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
