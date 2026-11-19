@@ -70,6 +70,29 @@ async fn only_members_can_read_external_events_and_their_own_interest() {
     assert_eq!(interest["interested"], true);
     let (_, events) = call(&app, Method::GET, &path, &owner, None).await;
     assert_eq!(events[0]["user_count"], 1);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        "/api/v1/users/@me/devices/push",
+        &owner,
+        Some(json!({"platform":"apns", "token":"aa".repeat(32)})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let now_start: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("UPDATE guild_scheduled_events SET scheduled_start_time = now() - interval '1 minute' WHERE id = $1 RETURNING scheduled_start_time")
+        .bind(event_id.parse::<i64>().unwrap()).fetch_one(&database.pool).await.unwrap();
+    let owner_id = guild["owner_id"].as_str().unwrap();
+    let target_path = format!("/internal/v1/guilds/{guild_id}/scheduled-events/{event_id}/push-targets?user_id={owner_id}&scheduled_start_time={}&revision=0", now_start.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+    let req = axum::http::Request::builder()
+        .method(Method::GET)
+        .uri(&target_path)
+        .header("x-internal-token", support::http::INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, targets) = send(&app, req).await;
+    assert_eq!(status, StatusCode::OK, "{targets}");
+    assert_eq!(targets["users"][0]["user_id"], owner_id);
+    assert_eq!(targets["users"][0]["tokens"].as_array().unwrap().len(), 1);
     let added: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_USER_ADD' AND payload->'data'->>'guild_scheduled_event_id' = $1")
         .bind(event_id).fetch_one(&database.pool).await.unwrap();
     assert_eq!(added, 1);
@@ -77,6 +100,14 @@ async fn only_members_can_read_external_events_and_their_own_interest() {
         let (status, _) = call(&app, Method::DELETE, &interest_path, &owner, None).await;
         assert_eq!(status, StatusCode::NO_CONTENT);
     }
+    let req = axum::http::Request::builder()
+        .method(Method::GET)
+        .uri(&target_path)
+        .header("x-internal-token", support::http::INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (_, targets) = send(&app, req).await;
+    assert_eq!(targets["users"], json!([]));
     let removed: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_USER_REMOVE' AND payload->'data'->>'guild_scheduled_event_id' = $1")
         .bind(event_id).fetch_one(&database.pool).await.unwrap();
     assert_eq!(removed, 1);

@@ -67,6 +67,7 @@ pub struct ScheduledEvent {
     pub user_count: u64,
     /// Internal optimistic-concurrency and reminder revision.
     pub revision: i64,
+    pub schedule_revision: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

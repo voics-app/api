@@ -346,6 +346,40 @@ async fn user_push_tokens(
 }
 
 #[derive(Deserialize)]
+struct EventReminderTargetsQuery {
+    user_id: String,
+    scheduled_start_time: chrono::DateTime<chrono::Utc>,
+    revision: i64,
+}
+
+async fn event_reminder_targets(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path((guild_id, event_id)): Path<(String, String)>,
+    Query(query): Query<EventReminderTargetsQuery>,
+) -> Result<Json<ManualPushTargetsDto>, ApiError> {
+    let user_id = parse_id(&query.user_id)?;
+    let tokens = application::use_cases::scheduled_events::reminder_targets(
+        &state.ports,
+        parse_id(&guild_id)?,
+        parse_id(&event_id)?,
+        user_id,
+        query.scheduled_start_time,
+        query.revision,
+    )
+    .await?;
+    let users = if tokens.is_empty() {
+        Vec::new()
+    } else {
+        vec![(user_id, tokens)]
+    };
+    Ok(Json(manual_targets_dto(manual_targets::ManualTargets {
+        users,
+        next_after: None,
+    })))
+}
+
+#[derive(Deserialize)]
 struct PushTokenPageQuery {
     after: Option<String>,
     limit: Option<u32>,
@@ -556,6 +590,10 @@ pub fn routes() -> Router<AppState> {
             delete(forget_push_token).get(push_token_page),
         )
         .route("/internal/v1/users/{id}/push-tokens", get(user_push_tokens))
+        .route(
+            "/internal/v1/guilds/{guild_id}/scheduled-events/{event_id}/push-targets",
+            get(event_reminder_targets),
+        )
         .route("/internal/v1/admin/stats", get(admin_stats))
         .route("/internal/v1/admin/users", get(admin_users))
         .route("/internal/v1/admin/users/{id}/suspend", post(admin_suspend))

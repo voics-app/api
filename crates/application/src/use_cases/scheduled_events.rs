@@ -12,6 +12,83 @@ use crate::support::guild_context::GuildContext;
 use crate::support::images::{store_hashed, ImageUpload};
 use crate::write_set::{Mutation, WriteSet};
 
+/// Resolve push tokens only after rechecking the current event and member policy.
+pub async fn reminder_targets(
+    ports: &Ports,
+    guild_id: Snowflake,
+    event_id: Snowflake,
+    user_id: Snowflake,
+    start: DateTime<Utc>,
+    schedule_revision: i64,
+) -> AppResult<Vec<domain::push_token::PushToken>> {
+    let context = match GuildContext::load(ports, guild_id, user_id).await {
+        Ok(context) => context,
+        Err(AppError::Forbidden(_) | AppError::NotFound(_)) => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let Some(event) = ports.guilds.scheduled_event(guild_id, event_id).await? else {
+        return Ok(Vec::new());
+    };
+    let now = ports.clock.now();
+    if event.schedule_revision != schedule_revision
+        || event.details.start.timestamp_millis() != start.timestamp_millis()
+        || start > now
+        || now - start > chrono::Duration::minutes(5)
+        || !matches!(
+            event.details.status,
+            EventStatus::Scheduled | EventStatus::Active
+        )
+        || !ports
+            .guilds
+            .scheduled_event_interested(event_id, user_id)
+            .await?
+        || !visible(ports, &context, &event).await?
+    {
+        return Ok(Vec::new());
+    }
+    let settings = ports.users.settings(user_id).await?;
+    if settings.status == domain::user::PresenceStatus::Dnd {
+        return Ok(Vec::new());
+    }
+    let notification = ports
+        .users
+        .guild_notification_settings(user_id, guild_id)
+        .await?;
+    match &event.details.kind {
+        EventKind::Stage { channel_id } | EventKind::Voice { channel_id } => {
+            let Some(channel) = ports.channels.find(*channel_id).await? else {
+                return Ok(Vec::new());
+            };
+            if notification
+                .as_ref()
+                .is_some_and(|s| s.is_muted_in(*channel_id, channel.parent_id, now))
+            {
+                return Ok(Vec::new());
+            }
+            if crate::use_cases::push::targets::restricted_context(ports, &channel).await?
+                && settings
+                    .preferences
+                    .get("hide_age_restricted_channels")
+                    .is_some_and(|v| v.as_bool() != Some(false))
+            {
+                return Ok(Vec::new());
+            }
+        }
+        EventKind::External { .. } => {
+            if notification.as_ref().is_some_and(|s| s.mute.is_active(now)) {
+                return Ok(Vec::new());
+            }
+        }
+    }
+    Ok(ports
+        .push_tokens
+        .list_live_for_users(&[user_id])
+        .await?
+        .into_iter()
+        .filter(|token| !token.only_mentions)
+        .collect())
+}
+
 #[derive(Default)]
 pub struct EventPatch {
     pub name: Option<String>,
@@ -119,6 +196,12 @@ pub async fn update(
         .revision
         .checked_add(1)
         .ok_or_else(|| AppError::internal("event revision exhausted"))?;
+    if after.details.start != before.details.start {
+        after.schedule_revision = before
+            .schedule_revision
+            .checked_add(1)
+            .ok_or_else(|| AppError::internal("event schedule revision exhausted"))?;
+    }
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::UpdateScheduledEvent {
@@ -213,6 +296,7 @@ pub async fn create(
         image,
         user_count: 0,
         revision: 0,
+        schedule_revision: 0,
     };
     let mut writes = WriteSet::new();
     writes

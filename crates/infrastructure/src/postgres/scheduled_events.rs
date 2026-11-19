@@ -12,7 +12,7 @@ use serde_json::json;
 use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 
-const COLUMNS: &str = "e.id, e.guild_id, e.creator_id, e.channel_id, e.name, e.description, e.scheduled_start_time, e.scheduled_end_time, e.status, e.revision, e.entity_type, e.location, e.image, (SELECT count(*) FROM guild_scheduled_event_users u WHERE u.event_id = e.id) AS user_count";
+const COLUMNS: &str = "e.id, e.guild_id, e.creator_id, e.channel_id, e.name, e.description, e.scheduled_start_time, e.scheduled_end_time, e.status, e.revision, e.schedule_revision, e.entity_type, e.location, e.image, (SELECT count(*) FROM guild_scheduled_event_users u WHERE u.event_id = e.id) AS user_count";
 
 #[derive(FromRow)]
 struct Row {
@@ -26,6 +26,7 @@ struct Row {
     scheduled_end_time: Option<DateTime<Utc>>,
     status: i16,
     revision: i64,
+    schedule_revision: i64,
     entity_type: i16,
     location: Option<String>,
     image: Option<String>,
@@ -57,6 +58,7 @@ impl TryFrom<Row> for ScheduledEvent {
             image: row.image,
             user_count: u64::try_from(row.user_count).map_err(AppError::internal)?,
             revision: row.revision,
+            schedule_revision: row.schedule_revision,
         })
     }
 }
