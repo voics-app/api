@@ -87,6 +87,27 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(hook["type"], 2);
     assert!(hook.get("token").is_none());
+    let (status, outsider) = send(
+        &app,
+        request(
+            Method::POST,
+            "/api/v1/auth/register",
+            None,
+            Some(json!({"email":"outsider@example.com", "username":"outsider", "password":"a-long-enough-passphrase"})),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let outsider_token = outsider["access_token"].as_str().unwrap();
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &uri,
+        outsider_token,
+        Some(json!({"webhook_channel_id":target_id})),
+    )
+    .await;
+    assert!(status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND);
     let (status, _) = call(
         &app,
         Method::POST,
