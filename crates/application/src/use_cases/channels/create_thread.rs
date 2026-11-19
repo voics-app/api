@@ -98,7 +98,9 @@ pub async fn execute(
     thread.parent_id = Some(parent.id);
     thread.owner_id = Some(actor.user_id);
     thread.nsfw = parent.nsfw;
-    thread.delivery_mode = parent.delivery_mode;
+    if parent.kind == ChannelType::GuildForum {
+        thread.delivery_mode = parent.delivery_mode;
+    }
     thread.thread_metadata = Some(ThreadMetadata {
         archived: false,
         auto_archive_duration: duration,
