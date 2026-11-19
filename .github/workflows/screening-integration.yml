@@ -1,0 +1,14 @@
+name: screening integration
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'migrations/**'
+      - '.github/workflows/screening-integration.yml'
+jobs:
+  screening:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p infrastructure --test http_screening

@@ -108,6 +108,14 @@ pub enum Mutation {
     },
 
     InsertGuild(Guild),
+    CheckScreeningRevision {
+        guild_id: Snowflake,
+        revision: i64,
+    },
+    AcceptScreening {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+    },
     UpdateGuild(Guild),
     DeleteGuild(Snowflake),
     InsertRole(Role),

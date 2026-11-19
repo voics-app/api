@@ -37,7 +37,9 @@ pub async fn execute(ports: &Ports, actor: &Actor, code: &str) -> AppResult<Invi
     }
 
     let user = require_user(ports, actor.user_id).await?;
-    let member = Member::new(guild_id, actor.user_id, now);
+    let screening = ports.guilds.screening(guild_id).await?;
+    let mut member = Member::new(guild_id, actor.user_id, now);
+    member.pending = screening.enabled;
     let profile = MemberProfile {
         member: member.clone(),
         user,
@@ -57,6 +59,10 @@ pub async fn execute(ports: &Ports, actor: &Actor, code: &str) -> AppResult<Invi
         Mutation::ConsumeInvite(invite.code.clone())
     };
     writes
+        .mutate(Mutation::CheckScreeningRevision {
+            guild_id,
+            revision: screening.revision,
+        })
         .mutate(consume)
         .mutate(Mutation::InsertMember(member))
         .emit(DomainEvent::MemberAdd(profile))

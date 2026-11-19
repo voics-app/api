@@ -18,6 +18,7 @@ use application::use_cases::guilds::{
 use application::{AppError, Resource};
 use contracts::objects::{AuditLogDto, GuildDto, GuildFullDto};
 use contracts::requests::{CreateGuildRequest, ModifyGuildRequest};
+use contracts::screening::{AcceptScreeningRequest, ScreeningDto, SetScreeningRequest};
 use contracts::wire::Id;
 use domain::audit::AuditAction;
 
@@ -29,6 +30,64 @@ use crate::state::AppState;
 
 fn region(state: &AppState) -> &str {
     &state.ports.settings.default_voice_region
+}
+
+fn screening_dto(config: application::ports::ScreeningConfig, pending: bool) -> ScreeningDto {
+    ScreeningDto {
+        enabled: config.enabled,
+        rules: config.rules,
+        revision: config.revision,
+        pending,
+    }
+}
+
+async fn get_screening(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<ScreeningDto>, ApiError> {
+    let (config, pending) = application::use_cases::guilds::screening::get(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Guild)?,
+    )
+    .await?;
+    Ok(Json(screening_dto(config, pending)))
+}
+
+async fn put_screening(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<SetScreeningRequest>,
+) -> Result<Json<ScreeningDto>, ApiError> {
+    Ok(Json(screening_dto(
+        application::use_cases::guilds::screening::set(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body.enabled,
+            body.rules,
+        )
+        .await?,
+        false,
+    )))
+}
+
+async fn accept_screening(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<AcceptScreeningRequest>,
+) -> Result<StatusCode, ApiError> {
+    application::use_cases::guilds::screening::accept(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Guild)?,
+        body.revision,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn create(
@@ -185,6 +244,14 @@ async fn audit_logs(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/guilds/{id}/member-verification",
+            get(get_screening).put(put_screening),
+        )
+        .route(
+            "/guilds/{id}/member-verification/accept",
+            post(accept_screening),
+        )
         .route("/guilds", post(create))
         .route(
             "/guilds/{id}",

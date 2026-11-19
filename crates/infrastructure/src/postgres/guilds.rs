@@ -221,6 +221,38 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn screening(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<application::ports::ScreeningConfig> {
+        let (enabled, rules, revision): (bool, Vec<String>, i64) = sqlx::query_as(
+            "SELECT enabled, rules, revision FROM guild_member_screening WHERE guild_id = $1",
+        )
+        .bind(guild_id.as_i64())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(application::ports::ScreeningConfig {
+            enabled,
+            rules,
+            revision,
+        })
+    }
+
+    async fn set_screening(
+        &self,
+        guild_id: Snowflake,
+        enabled: bool,
+        rules: &[String],
+    ) -> AppResult<application::ports::ScreeningConfig> {
+        let (enabled, rules, revision): (bool, Vec<String>, i64) = sqlx::query_as("UPDATE guild_member_screening SET enabled = $2, rules = $3, revision = revision + 1 WHERE guild_id = $1 RETURNING enabled, rules, revision")
+            .bind(guild_id.as_i64()).bind(enabled).bind(rules).fetch_one(&self.pool).await.map_err(db)?;
+        Ok(application::ports::ScreeningConfig {
+            enabled,
+            rules,
+            revision,
+        })
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>> {
         let sql = format!("SELECT {GUILD_COLUMNS} FROM guilds WHERE id = $1");
         let row: Option<GuildRow> = sqlx::query_as(&sql)

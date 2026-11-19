@@ -178,6 +178,33 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertGuild(guild) | Mutation::UpdateGuild(guild) => {
             guilds::upsert_guild(conn, guild).await
         }
+        Mutation::CheckScreeningRevision { guild_id, revision } => {
+            let current: (i64,) = sqlx::query_as(
+                "SELECT revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE",
+            )
+            .bind(guild_id.as_i64())
+            .fetch_one(conn)
+            .await
+            .map_err(db)?;
+            if current.0 != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Rules changed; review them again.".into(),
+                });
+            }
+            Ok(())
+        }
+        Mutation::AcceptScreening { guild_id, user_id } => {
+            let result = sqlx::query("UPDATE members SET pending = false WHERE guild_id = $1 AND user_id = $2 AND pending = true")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).execute(conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Membership changed; reload and try again.".into(),
+                });
+            }
+            Ok(())
+        }
         Mutation::DeleteGuild(guild_id) => guilds::delete_guild(conn, *guild_id).await,
         Mutation::InsertRole(role) | Mutation::UpdateRole(role) => {
             guilds::upsert_role(conn, role).await
