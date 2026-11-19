@@ -39,6 +39,16 @@ jobs:
       # `bundled`. sqlx 0.8 pins libsqlite3-sys 0.30, so the patched 0.39 cannot be used until sqlx moves; drop this then.
       audit-args: --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
 
+  soundboard-integration:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Soundboard HTTP and PostgreSQL route
+        run: cargo test -p infrastructure --test http_soundboard
+
   docker:
     needs: rust
     permissions:
