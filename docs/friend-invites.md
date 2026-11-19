@@ -8,4 +8,4 @@ All routes require a user session. Favourite IDs are private to their owner.
 * `DELETE /users/@me/friend-invites` revokes the caller's current token.
 * `POST /friend-invites` with `{ "token": "..." }` sends a request from the authenticated caller to the token owner using the ordinary relationship rules. Expired or revoked tokens return unknown invite.
 
-The desktop app shares the token through its `voics://friend-invite/<token>` app link. Opening it requires the app and sign-in; queued links are handled after sign-in. Tokens are bearer credentials: share them only with the intended recipients.
+The desktop and mobile apps share an HTTPS link with the token in the fragment: `/friend-invite/#<token>`. The separate landing page opens `voics://friend-invite/<token>`; opening it requires the app and sign-in. Links received while signed out are handled after sign-in. Tokens are bearer credentials: share them only with the intended recipients.
