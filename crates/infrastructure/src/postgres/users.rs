@@ -118,6 +118,30 @@ const SETTINGS_COLUMNS: &str =
 
 #[async_trait]
 impl UserRepository for PgStore {
+    async fn badges(
+        &self,
+        user_id: Snowflake,
+        include_hidden: bool,
+    ) -> AppResult<Vec<(String, bool)>> {
+        sqlx::query_as("SELECT badge_id, visible FROM user_badges WHERE user_id = $1 AND ($2 OR visible) ORDER BY badge_id")
+            .bind(user_id.as_i64()).bind(include_hidden).fetch_all(&self.pool).await.map_err(db)
+    }
+    async fn set_badge_visibility(
+        &self,
+        user_id: Snowflake,
+        badge_id: &str,
+        visible: bool,
+    ) -> AppResult<bool> {
+        let result =
+            sqlx::query("UPDATE user_badges SET visible = $3 WHERE user_id = $1 AND badge_id = $2")
+                .bind(user_id.as_i64())
+                .bind(badge_id)
+                .bind(visible)
+                .execute(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(result.rows_affected() == 1)
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<User>> {
         let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1");
         let row: Option<UserRow> = sqlx::query_as(&sql)
