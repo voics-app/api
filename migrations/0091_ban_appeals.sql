@@ -9,7 +9,7 @@ CREATE TABLE ban_appeals (
     ban_created_at TIMESTAMPTZ NOT NULL,
     question TEXT NOT NULL,
     answer TEXT NOT NULL CHECK (char_length(answer) BETWEEN 1 AND 2000),
-    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'accepted', 'denied')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'accepted', 'denied', 'closed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     resolved_at TIMESTAMPTZ,
     resolved_by BIGINT REFERENCES users(id) ON DELETE SET NULL

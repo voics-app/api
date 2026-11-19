@@ -278,7 +278,7 @@ impl GuildRepository for PgStore {
         .await
         .map_err(db)?;
         let Some(ban) = ban else { return Ok(None) };
-        sqlx::query("UPDATE ban_appeals SET status='denied', resolved_at=now() WHERE guild_id=$1 AND user_id=$2 AND status='open' AND ban_created_at<>$3")
+        sqlx::query("UPDATE ban_appeals SET status='closed', resolved_at=now() WHERE guild_id=$1 AND user_id=$2 AND status='open' AND ban_created_at<>$3")
             .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(ban).execute(&mut *tx).await.map_err(db)?;
         let row: Option<AppealRow> = sqlx::query_as(&format!("INSERT INTO ban_appeals (id,guild_id,user_id,ban_created_at,question,answer) SELECT $1,$2,$3,$4,question,$5 FROM ban_appeal_forms WHERE guild_id=$2 ON CONFLICT DO NOTHING RETURNING {APPEAL_COLUMNS}"))
             .bind(id.as_i64()).bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(ban).bind(answer).fetch_optional(&mut *tx).await.map_err(db)?;

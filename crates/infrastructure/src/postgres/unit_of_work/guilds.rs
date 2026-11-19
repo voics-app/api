@@ -198,6 +198,13 @@ pub(super) async fn delete_ban(
     sqlx::query("DELETE FROM bans WHERE guild_id = $1 AND user_id = $2")
         .bind(guild_id.as_i64())
         .bind(user_id.as_i64())
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
+    // A manual unban supersedes any outstanding appeal for this ban.
+    sqlx::query("UPDATE ban_appeals SET status='closed', resolved_at=now() WHERE guild_id=$1 AND user_id=$2 AND status='open'")
+        .bind(guild_id.as_i64())
+        .bind(user_id.as_i64())
         .execute(conn)
         .await
         .map_err(db)?;
