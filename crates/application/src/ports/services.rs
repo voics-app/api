@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use domain::Snowflake;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::DomainEvent;
 use crate::write_set::WriteSet;
 
@@ -102,6 +102,9 @@ pub struct StoredMessage {
 /// Messages are owned by the `messages` service.
 #[async_trait]
 pub trait MessageService: Send + Sync {
+    async fn sign_media(&self, _urls: Vec<String>) -> AppResult<Vec<String>> {
+        Err(AppError::Unavailable("media signing unavailable".into()))
+    }
     /// Creates a message on behalf of a bot, webhook or interaction.
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage>;
     async fn edit(

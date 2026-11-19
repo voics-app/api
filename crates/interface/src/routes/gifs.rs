@@ -6,7 +6,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{extract::Query, routing::get, Extension, Json, Router};
+use axum::{
+    extract::{Query, State},
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -17,6 +21,7 @@ use application::AppError;
 pub struct GifProvider {
     base: Option<reqwest::Url>,
     key: String,
+    media_hosts: Vec<String>,
     client: reqwest::Client,
     cache: Arc<Mutex<HashMap<String, (Instant, Value)>>>,
 }
@@ -34,9 +39,16 @@ impl GifProvider {
                     && u.fragment().is_none()
             });
         let key = std::env::var("GIF_PROVIDER_KEY").unwrap_or_default();
+        let media_hosts: Vec<String> = std::env::var("GIF_MEDIA_HOSTS")
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
         Self {
-            base: base.filter(|_| !key.is_empty()),
+            base: base.filter(|_| !key.is_empty() && !media_hosts.is_empty()),
             key,
+            media_hosts,
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .redirect(reqwest::redirect::Policy::none())
@@ -95,7 +107,7 @@ impl GifProvider {
         }
         let raw: Value = serde_json::from_slice(&bytes)
             .map_err(|_| AppError::Unavailable("invalid GIF response".into()))?;
-        let value = sanitize(endpoint, &raw, &self.key);
+        let value = sanitize(endpoint, &raw, &self.key, &self.media_hosts);
         let mut cache = self.cache.lock().expect("GIF cache");
         if cache.len() >= 128 {
             cache.clear();
@@ -106,23 +118,30 @@ impl GifProvider {
 }
 
 /// Only expose fields consumed by the picker. Never forward opaque provider metadata.
-fn sanitize(endpoint: &str, raw: &Value, key: &str) -> Value {
+fn allowed_url(text: &str, key: &str, hosts: &[String]) -> bool {
+    if text.len() > 2048 || text.contains(key) {
+        return false;
+    }
+    reqwest::Url::parse(text).is_ok_and(|u| {
+        u.scheme() == "https"
+            && u.username().is_empty()
+            && u.password().is_none()
+            && u.fragment().is_none()
+            && !u.path().contains('%')
+            && u.host_str().is_some_and(|h| hosts.iter().any(|a| a == h))
+            && !u
+                .query_pairs()
+                .any(|(k, v)| k.contains(key) || v.contains(key))
+    })
+}
+fn sanitize(endpoint: &str, raw: &Value, key: &str, hosts: &[String]) -> Value {
     fn safe_text<'a>(v: Option<&'a Value>, key: &str, max: usize) -> Option<&'a str> {
         v.and_then(Value::as_str)
             .filter(|s| !s.is_empty() && s.len() <= max && !s.contains(key))
     }
-    fn safe_url(v: Option<&Value>, key: &str) -> Option<String> {
+    fn safe_url(v: Option<&Value>, key: &str, hosts: &[String]) -> Option<String> {
         let text = safe_text(v, key, 2048)?;
-        let url = reqwest::Url::parse(text).ok()?;
-        if url.scheme() != "https"
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.fragment().is_some()
-            || url.path().contains('%')
-            || url
-                .query_pairs()
-                .any(|(k, v)| k.contains(key) || v.contains(key))
-        {
+        if !allowed_url(text, key, hosts) {
             return None;
         }
         Some(text.to_owned())
@@ -136,8 +155,8 @@ fn sanitize(endpoint: &str, raw: &Value, key: &str) -> Value {
     let results: Vec<_> = raw.get("results").and_then(Value::as_array).into_iter().flatten().take(24).filter_map(|item| {
         let id = safe_text(item.get("id"), key, 100)?;
         let formats = item.get("media_formats")?;
-        let gif = safe_url(formats.get("gif").and_then(|v| v.get("url")), key)?;
-        let tiny = safe_url(formats.get("tinygif").and_then(|v| v.get("url")), key).unwrap_or_else(|| gif.clone());
+        let gif = safe_url(formats.get("gif").and_then(|v| v.get("url")), key, hosts)?;
+        let tiny = safe_url(formats.get("tinygif").and_then(|v| v.get("url")), key, hosts).unwrap_or_else(|| gif.clone());
         let description = safe_text(item.get("content_description"), key, 200).unwrap_or("GIF");
         Some(serde_json::json!({"id": id, "content_description": description, "media_formats": {"gif": {"url": gif}, "tinygif": {"url": tiny}}}))
     }).collect();
@@ -150,10 +169,13 @@ struct Search {
 }
 
 async fn trending(
+    State(state): State<AppState>,
     Caller(_): Caller,
     Extension(provider): Extension<GifProvider>,
 ) -> Result<Json<Value>, ApiError> {
-    Ok(Json(provider.get("featured", None).await?))
+    Ok(Json(
+        sign_results(&state, provider.get("featured", None).await?).await?,
+    ))
 }
 async fn categories(
     Caller(_): Caller,
@@ -162,6 +184,7 @@ async fn categories(
     Ok(Json(provider.get("categories", None).await?))
 }
 async fn search(
+    State(state): State<AppState>,
     Caller(_): Caller,
     Extension(provider): Extension<GifProvider>,
     Query(params): Query<Search>,
@@ -172,7 +195,62 @@ async fn search(
             AppError::invalid("q", "INVALID_QUERY", "Search must be 1–100 characters").into(),
         );
     }
-    Ok(Json(provider.get("search", Some(q)).await?))
+    Ok(Json(
+        sign_results(&state, provider.get("search", Some(q)).await?).await?,
+    ))
+}
+
+async fn sign_results(state: &AppState, mut value: Value) -> Result<Value, ApiError> {
+    let Some(results) = value.get_mut("results").and_then(Value::as_array_mut) else {
+        return Ok(value);
+    };
+    let urls: Vec<String> = results
+        .iter()
+        .filter_map(|v| {
+            v.pointer("/media_formats/tinygif/url")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect();
+    if urls.is_empty() {
+        return Ok(value);
+    }
+    let signed = state.ports.messages.sign_media(urls).await?;
+    if signed.len() != results.len() {
+        return Err(AppError::Unavailable("invalid media signing response".into()).into());
+    }
+    for (item, signed) in results.iter_mut().zip(signed) {
+        item["media_formats"]["tinygif"]["proxy_url"] = Value::String(signed);
+    }
+    Ok(value)
+}
+
+#[derive(Deserialize)]
+struct PreviewRequest {
+    urls: Vec<String>,
+}
+async fn previews(
+    State(state): State<AppState>,
+    Caller(_): Caller,
+    Extension(provider): Extension<GifProvider>,
+    Json(body): Json<PreviewRequest>,
+) -> Result<Json<Value>, ApiError> {
+    if provider.base.is_none()
+        || body.urls.len() > 48
+        || body
+            .urls
+            .iter()
+            .any(|url| !allowed_url(url, &provider.key, &provider.media_hosts))
+    {
+        return Err(AppError::invalid(
+            "urls",
+            "INVALID_URL",
+            "GIF URLs must use a configured media host",
+        )
+        .into());
+    }
+    let signed = state.ports.messages.sign_media(body.urls).await?;
+    Ok(Json(serde_json::json!({"urls": signed})))
 }
 
 pub fn routes() -> Router<AppState> {
@@ -180,6 +258,7 @@ pub fn routes() -> Router<AppState> {
         .route("/gifs/trending", get(trending))
         .route("/gifs/search", get(search))
         .route("/gifs/categories", get(categories))
+        .route("/gifs/previews", post(previews))
 }
 
 #[cfg(test)]
@@ -206,6 +285,7 @@ mod tests {
         let provider = GifProvider {
             base: Some(format!("http://{addr}/v2/").parse().unwrap()),
             key: "fixture-key".into(),
+            media_hosts: vec!["example.test".into()],
             client: reqwest::Client::new(),
             cache: Arc::new(Mutex::new(HashMap::new())),
         };
@@ -225,9 +305,10 @@ mod tests {
             "categories",
             &serde_json::json!({"path": "?key=fixture-key", "tags": [{"name": "Cats", "searchterm": "cats", "path": "fixture-key"}]}),
             "fixture-key",
+            &["example.test".into()],
         );
         assert!(!categories.to_string().contains("fixture-key"));
-        assert!(sanitize("search", &serde_json::json!({"results": [{"id": "1", "media_formats": {"gif": {"url": "https://example.test/a.gif?key=fixture%2Dkey"}}}]}), "fixture-key")["results"].as_array().unwrap().is_empty());
+        assert!(sanitize("search", &serde_json::json!({"results": [{"id": "1", "media_formats": {"gif": {"url": "https://example.test/a.gif?key=fixture%2Dkey"}}}]}), "fixture-key", &["example.test".into()])["results"].as_array().unwrap().is_empty());
         let disabled = GifProvider {
             base: None,
             ..provider

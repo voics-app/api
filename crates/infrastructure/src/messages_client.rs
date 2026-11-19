@@ -85,6 +85,17 @@ fn stored(body: Value) -> AppResult<StoredMessage> {
 
 #[async_trait]
 impl MessageService for HttpMessages {
+    async fn sign_media(&self, urls: Vec<String>) -> AppResult<Vec<String>> {
+        let body = self
+            .send(
+                Method::POST,
+                "internal/v1/media/sign",
+                Some(serde_json::json!({"urls": urls})),
+            )
+            .await?;
+        serde_json::from_value(body.get("urls").cloned().unwrap_or(Value::Null))
+            .map_err(|_| AppError::Unavailable("invalid media signing response".into()))
+    }
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage> {
         let path = format!("internal/v1/channels/{channel_id}/messages");
         stored(self.send(Method::POST, &path, Some(message)).await?)
