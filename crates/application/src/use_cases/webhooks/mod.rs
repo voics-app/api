@@ -3,6 +3,7 @@ pub mod delete_original_response;
 pub mod delete_webhook;
 pub mod edit_original_response;
 pub mod execute_webhook;
+pub mod follow_channel;
 pub mod get_webhook;
 pub mod list_guild_webhooks;
 pub mod reset_webhook_token;

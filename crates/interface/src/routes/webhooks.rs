@@ -11,13 +11,14 @@ use application::support::audit::AuditContext;
 use application::use_cases::webhooks::create_webhook::{self, CreateWebhookInput};
 use application::use_cases::webhooks::update_webhook::{self, UpdateWebhookInput};
 use application::use_cases::webhooks::{
-    delete_original_response, delete_webhook, edit_original_response, execute_webhook, get_webhook,
-    list_guild_webhooks, reset_webhook_token,
+    delete_original_response, delete_webhook, edit_original_response, execute_webhook,
+    follow_channel, get_webhook, list_guild_webhooks, reset_webhook_token,
 };
 use application::Resource;
 use contracts::objects::WebhookDto;
 use contracts::requests::{CreateWebhookRequest, ModifyWebhookRequest};
 use contracts::wire::Id;
+use serde::Deserialize;
 
 use crate::error::ApiError;
 use crate::extract::{AuditReason, Body, Caller};
@@ -27,6 +28,25 @@ use crate::state::AppState;
 
 fn token_base(state: &AppState) -> String {
     state.ports.settings.public_api_base.clone()
+}
+
+#[derive(Deserialize)]
+struct FollowRequest {
+    webhook_channel_id: Id,
+}
+
+async fn follow(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(source): Path<String>,
+    Body(body): Body<FollowRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let source = snowflake(&source, Resource::Channel)?;
+    let hook =
+        follow_channel::execute(&state.ports, &actor, source, body.webhook_channel_id.0).await?;
+    Ok(Json(
+        serde_json::json!({"channel_id": source.to_string(), "webhook_id": hook.id.to_string()}),
+    ))
 }
 
 async fn create(
@@ -213,6 +233,7 @@ async fn delete_original(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/channels/{id}/followers", post(follow))
         .route(
             "/channels/{id}/webhooks",
             post(create).layer(DefaultBodyLimit::max(images::IMAGE_BODY_LIMIT)),

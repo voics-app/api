@@ -316,6 +316,7 @@ impl Interaction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WebhookKind {
     Incoming,
+    ChannelFollower,
     Application,
 }
 
@@ -323,6 +324,7 @@ impl WebhookKind {
     pub const fn code(self) -> u8 {
         match self {
             WebhookKind::Incoming => 1,
+            WebhookKind::ChannelFollower => 2,
             WebhookKind::Application => 3,
         }
     }
@@ -330,6 +332,7 @@ impl WebhookKind {
     pub const fn from_code(code: u8) -> Option<Self> {
         match code {
             1 => Some(WebhookKind::Incoming),
+            2 => Some(WebhookKind::ChannelFollower),
             3 => Some(WebhookKind::Application),
             _ => None,
         }

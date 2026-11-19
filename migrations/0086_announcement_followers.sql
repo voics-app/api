@@ -1,0 +1,31 @@
+-- A channel-following webhook has no reusable bearer token.  Deleting either
+-- channel or the webhook removes the relationship and any pending deliveries.
+CREATE TABLE announcement_followers (
+    source_channel_id BIGINT NOT NULL REFERENCES channels (id) ON DELETE CASCADE,
+    target_channel_id BIGINT NOT NULL REFERENCES channels (id) ON DELETE CASCADE,
+    webhook_id BIGINT NOT NULL UNIQUE REFERENCES webhooks (id) ON DELETE CASCADE,
+    PRIMARY KEY (source_channel_id, target_channel_id),
+    CHECK (source_channel_id <> target_channel_id)
+);
+
+CREATE INDEX announcement_followers_target_idx ON announcement_followers (target_channel_id);
+
+-- Every destination has one stable delivery identity. A claimed send whose
+-- outcome is uncertain must not be retried until the destination write can be
+-- checked using that identity.
+CREATE TABLE announcement_deliveries (
+    source_channel_id BIGINT NOT NULL,
+    source_message_id BIGINT NOT NULL,
+    target_channel_id BIGINT NOT NULL,
+    destination_message_id BIGINT NOT NULL UNIQUE,
+    payload JSONB NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'claimed', 'delivered', 'unknown')),
+    claimed_at TIMESTAMPTZ,
+    PRIMARY KEY (source_channel_id, source_message_id, target_channel_id),
+    FOREIGN KEY (source_channel_id, target_channel_id)
+        REFERENCES announcement_followers (source_channel_id, target_channel_id) ON DELETE CASCADE
+);
+
+CREATE INDEX announcement_deliveries_pending_idx
+    ON announcement_deliveries (source_channel_id, source_message_id, target_channel_id)
+    WHERE state = 'pending';

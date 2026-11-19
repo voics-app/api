@@ -263,6 +263,20 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             original_message_id,
         } => applications::update_interaction(conn, *id, *state, *original_message_id).await,
         Mutation::InsertWebhook(webhook) => applications::insert_webhook(conn, webhook).await,
+        Mutation::InsertAnnouncementFollower {
+            source_channel_id,
+            target_channel_id,
+            webhook_id,
+        } => {
+            sqlx::query("INSERT INTO announcement_followers (source_channel_id, target_channel_id, webhook_id) VALUES ($1, $2, $3)")
+                .bind(source_channel_id.as_i64())
+                .bind(target_channel_id.as_i64())
+                .bind(webhook_id.as_i64())
+                .execute(conn)
+                .await
+                .map_err(db)?;
+            Ok(())
+        }
         Mutation::GuardApplicationInstallation {
             guild_id,
             application_id,
