@@ -1,0 +1,17 @@
+name: thread membership integration
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'migrations/**'
+      - '.github/workflows/threads-integration.yml'
+concurrency:
+  group: thread-membership-integration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  thread-membership:
+    runs-on: vm-runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked -p infrastructure --test http_notification_recipients private_thread_invitation_and_leave_change_http_access_and_notification_audience
