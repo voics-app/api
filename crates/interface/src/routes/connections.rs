@@ -7,8 +7,8 @@ use application::ports::Connections;
 use application::{AppError, Resource};
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
-    response::Html,
+    http::{header, StatusCode},
+    response::{Html, IntoResponse},
     routing::{get, post, put},
     Json, Router,
 };
@@ -43,9 +43,9 @@ struct Callback {
 async fn callback(
     State(state): State<AppState>,
     Query(query): Query<Callback>,
-) -> Result<Html<&'static str>, ApiError> {
+) -> Result<impl IntoResponse, ApiError> {
     service(&state)?.callback(&query.state, &query.code).await?;
-    Ok(Html("<!doctype html><title>Account linked</title><p>Your GitHub account is linked. You can close this window and return to the app.</p>"))
+    Ok(([(header::CACHE_CONTROL, "no-store"), (header::REFERRER_POLICY, "no-referrer")], Html("<!doctype html><title>Account linked</title><p>Your GitHub account is linked. You can close this window and return to the app.</p>")))
 }
 async fn list(
     State(state): State<AppState>,

@@ -374,6 +374,30 @@ mod tests {
     }
 
     #[test]
+    fn github_connections_are_opt_in_and_require_both_credentials() {
+        let config = Config::from_lookup(lookup(complete())).unwrap();
+        assert!(config.github_connections.is_none());
+        let mut values = complete();
+        values.insert("CONNECTION_GITHUB_ENABLED", "true".to_owned());
+        assert_eq!(
+            Config::from_lookup(lookup(values.clone())),
+            Err(ConfigError::Missing("CONNECTION_GITHUB_CLIENT_ID"))
+        );
+        values.insert("CONNECTION_GITHUB_CLIENT_ID", "id".to_owned());
+        assert_eq!(
+            Config::from_lookup(lookup(values.clone())),
+            Err(ConfigError::Missing("CONNECTION_GITHUB_CLIENT_SECRET"))
+        );
+        values.insert("CONNECTION_GITHUB_CLIENT_SECRET", "secret".to_owned());
+        assert_eq!(
+            Config::from_lookup(lookup(values))
+                .unwrap()
+                .github_connections,
+            Some(("id".into(), "secret".into()))
+        );
+    }
+
+    #[test]
     fn complete_environment_loads_with_defaults() {
         let config = Config::from_lookup(lookup(complete())).expect("valid");
         assert_eq!(config.environment, Environment::Local);

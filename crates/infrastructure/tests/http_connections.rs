@@ -119,10 +119,10 @@ async fn github_flow_visibility_and_replay() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
     let callback = response.headers()["location"].to_str().unwrap().to_owned();
-    assert_eq!(
-        client.get(&callback).send().await.unwrap().status(),
-        StatusCode::OK
-    );
+    let completed = client.get(&callback).send().await.unwrap();
+    assert_eq!(completed.status(), StatusCode::OK);
+    assert_eq!(completed.headers()["cache-control"], "no-store");
+    assert_eq!(completed.headers()["referrer-policy"], "no-referrer");
     assert_eq!(
         client.get(&callback).send().await.unwrap().status(),
         StatusCode::BAD_REQUEST
