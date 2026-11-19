@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
+use serde_json::{json, Value};
 
 use application::ports::AuditLogQuery;
 use application::support::audit::AuditContext;
@@ -14,6 +15,7 @@ use application::use_cases::guilds::create_guild::CreateGuildInput;
 use application::use_cases::guilds::update_guild::UpdateGuildInput;
 use application::use_cases::guilds::{
     create_guild, delete_guild, get_guild, leave_guild, list_current_user_guilds, update_guild,
+    widget,
 };
 use application::{AppError, Resource};
 use contracts::objects::{AuditLogDto, GuildDto, GuildFullDto};
@@ -130,6 +132,57 @@ async fn leave(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WidgetPatch {
+    enabled: Option<bool>,
+    #[serde(default, deserialize_with = "contracts::wire::double_option")]
+    channel_id: Option<Option<Id>>,
+}
+
+fn widget_settings_json(settings: application::ports::WidgetSettings) -> Json<Value> {
+    Json(json!({"enabled": settings.enabled, "channel_id": settings.channel_id.map(Id)}))
+}
+
+async fn widget_public(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let widget = widget::public(&state.ports, snowflake(&id, Resource::Guild)?).await?;
+    Ok(Json(
+        json!({"id": Id(widget.id), "name": widget.name, "icon": widget.icon}),
+    ))
+}
+
+async fn widget_get(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(widget_settings_json(
+        widget::settings(&state.ports, &actor, snowflake(&id, Resource::Guild)?).await?,
+    ))
+}
+
+async fn widget_patch(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<WidgetPatch>,
+) -> Result<Json<Value>, ApiError> {
+    let channel = body.channel_id.map(|inner| inner.map(|Id(id)| id));
+    Ok(widget_settings_json(
+        widget::update(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body.enabled,
+            channel,
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
 struct AuditQuery {
     user_id: Option<String>,
     target_id: Option<String>,
@@ -194,6 +247,8 @@ pub fn routes() -> Router<AppState> {
                 .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
         )
         .route("/guilds/{id}/audit-logs", get(audit_logs))
+        .route("/guilds/{id}/widget.json", get(widget_public))
+        .route("/guilds/{id}/widget", get(widget_get).patch(widget_patch))
         .route("/users/@me/guilds", get(my_guilds))
         .route("/users/@me/guilds/{id}", axum::routing::delete(leave))
 }

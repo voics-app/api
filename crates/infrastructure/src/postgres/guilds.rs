@@ -221,6 +221,81 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn public_widget(
+        &self,
+        id: Snowflake,
+    ) -> AppResult<Option<application::ports::PublicWidget>> {
+        let row: Option<(i64, String, Option<String>)> =
+            sqlx::query_as("SELECT id, name, icon FROM guilds WHERE id = $1 AND widget_enabled")
+                .bind(id.as_i64())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(
+            row.map(|(id, name, icon)| application::ports::PublicWidget {
+                id: sf(id),
+                name,
+                icon,
+            }),
+        )
+    }
+    async fn widget_settings(
+        &self,
+        id: Snowflake,
+    ) -> AppResult<Option<application::ports::WidgetSettings>> {
+        let row: Option<(bool, Option<i64>)> =
+            sqlx::query_as("SELECT widget_enabled, widget_channel_id FROM guilds WHERE id = $1")
+                .bind(id.as_i64())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(
+            row.map(|(enabled, channel_id)| application::ports::WidgetSettings {
+                enabled,
+                channel_id: channel_id.map(sf),
+            }),
+        )
+    }
+
+    async fn update_widget_settings(
+        &self,
+        id: Snowflake,
+        enabled: Option<bool>,
+        channel: Option<Option<Snowflake>>,
+    ) -> AppResult<application::ports::WidgetSettings> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM guilds WHERE id = $1 FOR UPDATE")
+                .bind(id.as_i64())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(db)?;
+        if exists.is_none() {
+            return Err(application::AppError::NotFound(
+                application::Resource::Guild,
+            ));
+        }
+        if let Some(Some(channel_id)) = channel {
+            let channel_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM channels WHERE id = $1 AND guild_id = $2 AND kind IN (0, 2, 5, 13))")
+                .bind(channel_id.as_i64()).bind(id.as_i64()).fetch_one(&mut *tx).await.map_err(db)?;
+            if !channel_exists {
+                return Err(application::AppError::invalid(
+                    "channel_id",
+                    "CHANNEL_INVALID",
+                    "Channel must be a text or voice channel in this guild.",
+                ));
+            }
+        }
+        let (enabled, channel_id): (bool, Option<i64>) = sqlx::query_as("UPDATE guilds SET widget_enabled = COALESCE($2, widget_enabled), widget_channel_id = CASE WHEN $3 THEN $4 ELSE widget_channel_id END WHERE id = $1 RETURNING widget_enabled, widget_channel_id")
+            .bind(id.as_i64()).bind(enabled).bind(channel.is_some()).bind(channel.flatten().map(|v| v.as_i64()))
+            .fetch_one(&mut *tx).await.map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(application::ports::WidgetSettings {
+            enabled,
+            channel_id: channel_id.map(sf),
+        })
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>> {
         let sql = format!("SELECT {GUILD_COLUMNS} FROM guilds WHERE id = $1");
         let row: Option<GuildRow> = sqlx::query_as(&sql)

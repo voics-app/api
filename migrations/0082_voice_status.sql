@@ -1,6 +1,8 @@
 -- Kept separate from channel metadata writes so unrelated edits cannot reset it.
 ALTER TABLE channels ADD COLUMN status TEXT
     CHECK (status IS NULL OR char_length(status) <= 500);
+ALTER TABLE guilds ADD COLUMN widget_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE guilds ADD COLUMN widget_channel_id BIGINT REFERENCES channels(id) ON DELETE SET NULL;
 
 -- Counts only actual membership inserts/deletes in the transaction that
 -- changes membership. Other feeds must be committed before insights is exposed.

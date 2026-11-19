@@ -117,6 +117,70 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
         channel: voice_id.parse().unwrap(),
     });
     let app = mk_app(app_ports);
+    let widget_path = format!("/api/v1/guilds/{guild_id}/widget.json");
+    assert_eq!(
+        send(&app, request(Method::GET, &widget_path, None, None))
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    let settings_path = format!("/api/v1/guilds/{guild_id}/widget");
+    assert_eq!(
+        call(
+            &app,
+            Method::PATCH,
+            &settings_path,
+            &guest,
+            Some(json!({"enabled":true}))
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, settings) = call(
+        &app,
+        Method::PATCH,
+        &settings_path,
+        &owner,
+        Some(json!({"enabled":true, "channel_id":text_id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["channel_id"], text_id);
+    let (status, public_widget) = send(&app, request(Method::GET, &widget_path, None, None)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(public_widget["id"], guild_id);
+    assert!(public_widget.get("channel_id").is_none());
+    assert_eq!(
+        call(
+            &app,
+            Method::PATCH,
+            &settings_path,
+            &owner,
+            Some(json!({"channel_id":"999999"}))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(
+            &app,
+            Method::PATCH,
+            &settings_path,
+            &owner,
+            Some(json!({"enabled":false}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(&app, request(Method::GET, &widget_path, None, None))
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
     let path = format!("/api/v1/channels/{voice_id}/voice-status");
     assert_eq!(
         call(

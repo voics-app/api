@@ -5,3 +5,4 @@ pub mod get_guild;
 pub mod leave_guild;
 pub mod list_current_user_guilds;
 pub mod update_guild;
+pub mod widget;
