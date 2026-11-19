@@ -308,3 +308,66 @@ async fn guild_overview_fields_are_validated_and_audited() {
         assert!(keys.contains(&key), "audit log records {key}: {keys:?}");
     }
 }
+
+#[tokio::test]
+async fn forum_settings_round_trip_and_post_tag_validation() {
+    let database = start_database().await;
+    let app = router(&database, None);
+    let (owner, _) = register(&app, "forumowner").await;
+    let guild = create_guild(&app, &owner).await;
+    let guild_id = guild["id"].as_str().unwrap();
+    let (status, forum) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild_id}/channels"),
+        &owner,
+        Some(json!({"name":"forum", "type":15})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{forum}");
+    let id = forum["id"].as_str().unwrap();
+    let (status, forum) = call(&app, Method::PATCH, &format!("/api/v1/channels/{id}"), &owner, Some(json!({"available_tags":[{"name":"Help"}], "require_tags":true, "default_sort_order":1, "default_forum_layout":2}))).await;
+    assert_eq!(status, StatusCode::OK, "{forum}");
+    let tag = forum["available_tags"][0]["id"].as_str().unwrap();
+    let (status, fetched) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{id}"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fetched["available_tags"][0]["id"], tag);
+    assert_eq!(fetched["default_sort_order"], 1);
+    assert_eq!(fetched["default_forum_layout"], 2);
+    assert_eq!(fetched["require_tags"], true);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{id}/threads"),
+        &owner,
+        Some(json!({"name":"without tags"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, post) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{id}/threads"),
+        &owner,
+        Some(json!({"name":"with tag", "applied_tags":[tag]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{post}");
+    assert_eq!(post["applied_tags"], json!([tag]));
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{id}/threads"),
+        &owner,
+        Some(json!({"name":"with message", "applied_tags":[tag], "message":{"content":"hello"}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
