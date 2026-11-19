@@ -6,6 +6,7 @@ pub mod delete_channel;
 pub mod delete_overwrite;
 pub mod forum;
 pub mod get_channel;
+pub mod list_forum_posts;
 pub mod list_guild_channels;
 pub mod put_overwrite;
 pub mod remove_recipient;

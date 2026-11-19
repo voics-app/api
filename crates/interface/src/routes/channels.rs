@@ -13,8 +13,8 @@ use application::use_cases::channels::reorder_channels::ChannelPosition;
 use application::use_cases::channels::update_channel::UpdateChannelInput;
 use application::use_cases::channels::{
     add_recipient, create_guild_channel, create_thread, delete_channel, delete_overwrite,
-    get_channel, list_guild_channels, put_overwrite, remove_recipient, reorder_channels,
-    trigger_typing, update_channel,
+    get_channel, list_forum_posts, list_guild_channels, put_overwrite, remove_recipient,
+    reorder_channels, trigger_typing, update_channel,
 };
 use application::{AppError, Resource};
 use contracts::objects::ChannelDto;
@@ -342,6 +342,17 @@ async fn remove_permission(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn forum_posts(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(parent): Path<String>,
+) -> Result<Json<Vec<ChannelDto>>, ApiError> {
+    let posts =
+        list_forum_posts::execute(&state.ports, &actor, snowflake(&parent, Resource::Channel)?)
+            .await?;
+    Ok(Json(posts.iter().map(ChannelDto::guild).collect()))
+}
+
 async fn thread(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -405,6 +416,6 @@ pub fn routes() -> Router<AppState> {
             "/channels/{id}/recipients/{user_id}",
             put(add_group_recipient).delete(remove_group_recipient),
         )
-        .route("/channels/{id}/threads", post(thread))
+        .route("/channels/{id}/threads", get(forum_posts).post(thread))
         .route("/channels/{id}/typing", post(typing))
 }
