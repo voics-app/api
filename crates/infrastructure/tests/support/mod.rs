@@ -130,6 +130,38 @@ pub struct RecordingMessages {
 
 #[async_trait]
 impl MessageService for RecordingMessages {
+    async fn deliver_crosspost(
+        &self,
+        channel_id: domain::Snowflake,
+        body: serde_json::Value,
+    ) -> AppResult<StoredMessage> {
+        let id: domain::Snowflake = body["message_id"].as_str().unwrap().parse().unwrap();
+        self.channels.lock().unwrap().push(channel_id);
+        self.bodies.lock().unwrap().push(body);
+        Ok(StoredMessage {
+            id,
+            body: serde_json::json!({"id":id.to_string()}),
+        })
+    }
+    async fn mark_crossposted(
+        &self,
+        channel_id: domain::Snowflake,
+        message_id: domain::Snowflake,
+    ) -> AppResult<StoredMessage> {
+        let mut stored = self.stored.lock().unwrap();
+        let body = stored
+            .get_mut(&(channel_id, message_id))
+            .ok_or(AppError::NotFound(application::Resource::Message))?;
+        let flags = body
+            .get("flags")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        body["flags"] = serde_json::json!(flags | 1);
+        Ok(StoredMessage {
+            id: message_id,
+            body: body.clone(),
+        })
+    }
     async fn create(
         &self,
         channel_id: domain::Snowflake,

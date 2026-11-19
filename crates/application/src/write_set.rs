@@ -207,6 +207,17 @@ pub enum Mutation {
         target_channel_id: Snowflake,
         webhook_id: Snowflake,
     },
+    EnqueueAnnouncement {
+        source_channel_id: Snowflake,
+        source_message_id: Snowflake,
+        payload: serde_json::Value,
+        /// (target channel, follower webhook, reserved destination message id).
+        deliveries: Vec<(Snowflake, Snowflake, Snowflake)>,
+    },
+    MarkAnnouncementPublished {
+        source_channel_id: Snowflake,
+        source_message_id: Snowflake,
+    },
     /// Serializes lifecycle changes and rejects actions based on a replaced installation.
     GuardApplicationInstallation {
         guild_id: Snowflake,

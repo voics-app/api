@@ -85,6 +85,25 @@ fn stored(body: Value) -> AppResult<StoredMessage> {
 
 #[async_trait]
 impl MessageService for HttpMessages {
+    async fn deliver_crosspost(
+        &self,
+        channel_id: Snowflake,
+        body: Value,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/crossposts");
+        stored(self.send(Method::POST, &path, Some(body)).await?)
+    }
+    async fn mark_crossposted(
+        &self,
+        channel_id: Snowflake,
+        message_id: Snowflake,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/messages/{message_id}/crossposted");
+        stored(
+            self.send(Method::POST, &path, Some(serde_json::json!({})))
+                .await?,
+        )
+    }
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage> {
         let path = format!("internal/v1/channels/{channel_id}/messages");
         stored(self.send(Method::POST, &path, Some(message)).await?)

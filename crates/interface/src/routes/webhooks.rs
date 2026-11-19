@@ -12,7 +12,8 @@ use application::use_cases::webhooks::create_webhook::{self, CreateWebhookInput}
 use application::use_cases::webhooks::update_webhook::{self, UpdateWebhookInput};
 use application::use_cases::webhooks::{
     delete_original_response, delete_webhook, edit_original_response, execute_webhook,
-    follow_channel, get_webhook, list_followed_channels, list_guild_webhooks, reset_webhook_token,
+    follow_channel, get_webhook, list_followed_channels, list_guild_webhooks, publish_announcement,
+    reset_webhook_token,
 };
 use application::Resource;
 use contracts::objects::WebhookDto;
@@ -65,6 +66,21 @@ async fn followed_channels(
             "webhook_id": item.webhook_id.to_string(),
         }))
         .collect::<Vec<_>>())))
+}
+
+async fn crosspost(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((channel, message)): Path<(String, String)>,
+) -> Result<Json<Value>, ApiError> {
+    let result = publish_announcement::execute(
+        &state.ports,
+        &actor,
+        snowflake(&channel, Resource::Channel)?,
+        snowflake(&message, Resource::Message)?,
+    )
+    .await?;
+    Ok(Json(result.body))
 }
 
 async fn create(
@@ -252,6 +268,10 @@ async fn delete_original(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/channels/{id}/followers", post(follow))
+        .route(
+            "/channels/{channel}/messages/{message}/crosspost",
+            post(crosspost),
+        )
         .route("/guilds/{id}/followed-channels", get(followed_channels))
         .route(
             "/channels/{id}/webhooks",

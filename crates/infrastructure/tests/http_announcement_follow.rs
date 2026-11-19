@@ -4,14 +4,15 @@ mod support;
 use axum::http::{Method, StatusCode};
 use serde_json::json;
 use support::http::{call, request, send, INTERNAL_TOKEN};
-use support::{jwt_keys, ports, start_database};
+use support::{jwt_keys, ports_with_messages, start_database, RecordingMessages};
 
 #[tokio::test]
 async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     let database = start_database().await;
     let (private, public) = jwt_keys();
+    let messages = std::sync::Arc::new(RecordingMessages::default());
     let app = interface::router(interface::state::AppState {
-        ports: ports(&database.pool, &public, &private),
+        ports: ports_with_messages(&database.pool, &public, &private, messages.clone()),
         internal_token: INTERNAL_TOKEN.into(),
         rate_limiter: std::sync::Arc::new(support::AllowAll),
         rate_policy: interface::state::RatePolicy::default(),
@@ -99,6 +100,37 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     assert_eq!(following[0]["channel_id"], source_id);
     assert_eq!(following[0]["webhook_channel_id"], target_id);
     assert_eq!(following[0]["webhook_id"], hook_id);
+    let author = source_guild["owner_id"].as_str().unwrap();
+    let source_sf = source_id.parse().unwrap();
+    let message_sf = "12345".parse().unwrap();
+    messages.stored.lock().unwrap().insert(
+        (source_sf, message_sf),
+        json!({"id":"12345", "author":{"id":author}, "content":"news", "type":0, "flags":0}),
+    );
+    let crosspost_uri = format!("/api/v1/channels/{source_id}/messages/12345/crosspost");
+    let (status, published) = call(&app, Method::POST, &crosspost_uri, token, None).await;
+    assert_eq!(status, StatusCode::OK, "{published}");
+    assert_eq!(published["flags"], 1);
+    let deliveries: i64 = sqlx::query_scalar("SELECT count(*) FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
+        .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(deliveries, 1);
+    infrastructure::announcement_relay::AnnouncementRelay::new(
+        database.pool.clone(),
+        messages.clone(),
+    )
+    .run_once()
+    .await
+    .unwrap();
+    let bodies = messages.bodies.lock().unwrap();
+    let delivered = bodies.last().unwrap();
+    assert_eq!(delivered["webhook_id"], hook_id);
+    assert_eq!(delivered["snapshot"]["content"], "news");
+    drop(bodies);
+    let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
+        .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(state, "delivered");
+    let (status, _) = call(&app, Method::POST, &crosspost_uri, token, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, outsider) = send(
         &app,
         request(

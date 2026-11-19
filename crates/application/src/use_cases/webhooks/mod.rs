@@ -7,6 +7,7 @@ pub mod follow_channel;
 pub mod get_webhook;
 pub mod list_followed_channels;
 pub mod list_guild_webhooks;
+pub mod publish_announcement;
 pub mod reset_webhook_token;
 pub mod update_webhook;
 pub mod webhook_access;

@@ -411,6 +411,7 @@ pub trait WebhookRepository: Send + Sync {
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Webhook>>;
     async fn list_followed_for_guild(&self, guild_id: Snowflake)
         -> AppResult<Vec<FollowedChannel>>;
+    async fn followers_of(&self, channel_id: Snowflake) -> AppResult<Vec<FollowedChannel>>;
 }
 
 /// Push tokens of the mobile app, one per login session.

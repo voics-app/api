@@ -28,15 +28,26 @@ CREATE TRIGGER announcement_follower_delete_webhook
 -- Every destination has one stable delivery identity. A claimed send whose
 -- outcome is uncertain must not be retried until the destination write can be
 -- checked using that identity.
+CREATE TABLE announcement_publications (
+    source_channel_id BIGINT NOT NULL,
+    source_message_id BIGINT NOT NULL,
+    payload JSONB NOT NULL,
+    marked BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (source_channel_id, source_message_id)
+);
+
 CREATE TABLE announcement_deliveries (
     source_channel_id BIGINT NOT NULL,
     source_message_id BIGINT NOT NULL,
     target_channel_id BIGINT NOT NULL,
     destination_message_id BIGINT NOT NULL UNIQUE,
-    payload JSONB NOT NULL,
+    webhook_id BIGINT NOT NULL,
     state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'claimed', 'delivered', 'unknown', 'cancelled')),
     claimed_at TIMESTAMPTZ,
-    PRIMARY KEY (source_channel_id, source_message_id, target_channel_id)
+    PRIMARY KEY (source_channel_id, source_message_id, target_channel_id),
+    FOREIGN KEY (source_channel_id, source_message_id)
+        REFERENCES announcement_publications (source_channel_id, source_message_id) ON DELETE CASCADE
 );
 
 CREATE INDEX announcement_deliveries_pending_idx

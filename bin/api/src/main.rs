@@ -172,6 +172,13 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         },
     };
     let prune_ports = ports.clone();
+    tokio::spawn(
+        infrastructure::announcement_relay::AnnouncementRelay::new(
+            pool.clone(),
+            ports.messages.clone(),
+        )
+        .run(),
+    );
     let audit_ports = ports.clone();
     let purge_ports = ports.clone();
     let purge_every = std::time::Duration::from_secs(config.account_purge_interval_secs);

@@ -50,6 +50,19 @@ impl TryFrom<WebhookRow> for Webhook {
 
 #[async_trait]
 impl WebhookRepository for PgStore {
+    async fn followers_of(&self, channel_id: Snowflake) -> AppResult<Vec<FollowedChannel>> {
+        let rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+            "SELECT source_channel_id, target_channel_id, webhook_id FROM announcement_followers WHERE source_channel_id = $1 ORDER BY target_channel_id"
+        ).bind(channel_id.as_i64()).fetch_all(&self.pool).await.map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|(source, target, webhook)| FollowedChannel {
+                source_channel_id: sf(source),
+                target_channel_id: sf(target),
+                webhook_id: sf(webhook),
+            })
+            .collect())
+    }
     async fn list_followed_for_guild(
         &self,
         guild_id: Snowflake,
