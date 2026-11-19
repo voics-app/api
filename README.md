@@ -85,8 +85,17 @@ The admin queue receives public name/description/category/tags, guild ID and the
 owner at filing. No private channel/member/message data is copied. Resolving a
 report does not automatically delist the server. See the central
 [discovery specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-03-server-discovery.md).
-No new configuration or infrastructure is needed. Membership screening remains
-a separate feature; Community setup does not implement api#40.
+No new configuration or infrastructure is needed. Community setup and rules
+screening are configured separately.
+
+`GET /guilds/{id}/member-verification` returns the current rules, revision and
+the caller's pending status. `PUT` requires `MANAGE_GUILD`; enable screening
+with one to twenty rules. New invite and discovery members become pending and
+cannot send until they `POST /guilds/{id}/member-verification/accept` with the
+revision they reviewed. If rules change concurrently the request returns 409;
+fetch and display the new version before another acceptance. Migration 0092
+stores the configuration and serializes configuration changes with joins and
+acceptance. Existing members are not made pending when screening is enabled.
 
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or

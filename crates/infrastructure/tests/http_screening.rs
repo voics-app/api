@@ -96,6 +96,15 @@ async fn join_and_accept_current_rules_before_sending() {
     let (_, shown) = call(&app, Method::GET, &path, &guest, None).await;
     assert_eq!(shown["pending"], true);
     assert_eq!(shown["revision"], first["revision"]);
+    let (status, _) = call(
+        &app,
+        Method::PUT,
+        &path,
+        &guest,
+        Some(json!({"enabled":false,"rules":[]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     let (_, changed) = call(
         &app,
         Method::PUT,
