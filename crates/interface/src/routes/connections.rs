@@ -45,7 +45,7 @@ async fn callback(
     Query(query): Query<Callback>,
 ) -> Result<Html<&'static str>, ApiError> {
     service(&state)?.callback(&query.state, &query.code).await?;
-    Ok(Html("<!doctype html><title>Account linked</title><p>Your GitHub account is linked. You can close this window and return to Voics.</p>"))
+    Ok(Html("<!doctype html><title>Account linked</title><p>Your GitHub account is linked. You can close this window and return to the app.</p>"))
 }
 async fn list(
     State(state): State<AppState>,

@@ -94,6 +94,10 @@ impl Connections for GithubConnections {
                 "GitHub connections are disabled".into(),
             ));
         }
+        sqlx::query("DELETE FROM connection_oauth_states WHERE expires_at <= now()")
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::internal)?;
         let state = OsSecrets.token(32);
         let verifier = OsSecrets.token(32);
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
