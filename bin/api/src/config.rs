@@ -69,6 +69,7 @@ pub struct Config {
     pub device_prune_interval_secs: u64,
     pub mail: MailTransport,
     pub webauthn: Option<WebauthnConfig>,
+    pub github_connections: Option<(String, String)>,
     /// Product name shown in emails and as the authenticator-app issuer.
     pub brand_name: String,
     /// Prefix of the links in account emails.
@@ -287,6 +288,20 @@ impl Config {
             )?,
             mail: mail_transport(&get)?,
             webauthn: webauthn::parse(&get, environment)?,
+            github_connections: match optional(&get, "CONNECTION_GITHUB_ENABLED", "false").as_str()
+            {
+                "false" => None,
+                "true" => Some((
+                    required(&get, "CONNECTION_GITHUB_CLIENT_ID")?,
+                    required(&get, "CONNECTION_GITHUB_CLIENT_SECRET")?,
+                )),
+                _ => {
+                    return Err(invalid(
+                        "CONNECTION_GITHUB_ENABLED",
+                        "expected true or false",
+                    ))
+                }
+            },
             brand_name: optional(&get, "BRAND_NAME", application::context::DEFAULT_BRAND_NAME),
             app_link_base: optional(&get, "APP_LINK_BASE", "voics://"),
             account_deletion_retention_days: positive(

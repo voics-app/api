@@ -319,3 +319,9 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
+## Linked GitHub accounts
+
+GitHub linking is disabled by default. Set `CONNECTION_GITHUB_ENABLED=true` and supply `CONNECTION_GITHUB_CLIENT_ID` and `CONNECTION_GITHUB_CLIENT_SECRET` from the existing secret injection mechanism. Register the callback as `PUBLIC_API_URL/api/v1/connections/github/callback`. The server exchanges the code and fetches the GitHub identity; it does not persist provider tokens. Connections start private. Disabling the provider stops new authorization while retaining the ability to view, hide, and remove links.
+
+A connection is started with authenticated `POST /users/@me/connections/github/authorize`; open the returned URL in a browser. Manage it with `GET /users/@me/connections`, `PUT /users/@me/connections/github` (`{ "visible": true }`), and `DELETE` on that path. `GET /users/{id}/connections` only returns visible links.
