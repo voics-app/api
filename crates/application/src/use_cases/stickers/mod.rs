@@ -1,3 +1,5 @@
+pub mod builtins;
+
 use crate::context::{Actor, Ports};
 use crate::error::{AppError, AppResult, Resource};
 use crate::events::DomainEvent;
@@ -163,6 +165,9 @@ pub async fn resolve_for_message(
         || access.delivery_mode != domain::delivery_mode::DeliveryMode::Standard
     {
         return Err(AppError::missing_access());
+    }
+    if let Some(sticker) = builtins::find(sticker_id) {
+        return Ok(sticker);
     }
     let guild_id = access.guild_id.ok_or_else(AppError::missing_access)?;
     ports

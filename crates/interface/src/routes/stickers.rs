@@ -108,8 +108,26 @@ async fn remove(
     .await?;
     Ok(StatusCode::NO_CONTENT)
 }
+async fn builtin_pack(Caller(_actor): Caller) -> Json<Vec<StickerDto>> {
+    Json(
+        stickers::builtins::all()
+            .iter()
+            .map(StickerDto::from)
+            .collect(),
+    )
+}
+
+async fn builtin_asset(Path(id): Path<String>) -> Result<Json<serde_json::Value>, ApiError> {
+    let id = snowflake(&id, Resource::Sticker)?;
+    let asset =
+        stickers::builtins::asset(id).ok_or(application::AppError::NotFound(Resource::Sticker))?;
+    Ok(Json(asset))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/stickers/packs", get(builtin_pack))
+        .route("/stickers/{id}/asset", get(builtin_asset))
         .route(
             "/guilds/{id}/stickers",
             get(list)

@@ -132,6 +132,27 @@ async fn guild_administration_follows_the_contract() {
     );
     assert_eq!(joined["guild"]["id"], guild_id);
 
+    let (status, builtins) = call(&app, Method::GET, "/api/v1/stickers/packs", &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(builtins.as_array().unwrap().len(), 3);
+    let builtin_path = format!(
+        "/api/v1/stickers/{}/asset",
+        builtins[0]["id"].as_str().unwrap()
+    );
+    let (status, asset) = send(&app, request(Method::GET, &builtin_path, None, None)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(asset["w"], 320);
+    let resolve_builtin = format!("/internal/v1/channels/{channel_id}/users/{owner_id}/stickers/1");
+    let internal_request = axum::http::Request::builder()
+        .method(Method::GET)
+        .uri(&resolve_builtin)
+        .header("x-internal-token", support::http::INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, resolved) = send(&app, internal_request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resolved["id"], "1");
+
     // A server manager can create, edit and remove a sticker; an ordinary member cannot.
     let path = format!("/api/v1/guilds/{guild_id}/stickers");
     let sticker_request = json!({"name": "wave", "tags": "wave", "image": "data:application/json;base64,eyJ2IjoiNS4wIiwidyI6MzIwLCJoIjozMjAsImxheWVycyI6W119"});
