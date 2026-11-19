@@ -410,6 +410,7 @@ struct BadgeDto {
     visible: bool,
 }
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct BadgeVisibilityRequest {
     visible: bool,
 }

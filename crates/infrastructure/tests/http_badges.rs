@@ -42,6 +42,15 @@ async fn badge_visibility_is_private_and_cannot_grant_badges() {
         Method::PUT,
         "/api/v1/users/@me/badges/fixture_one",
         &alice,
+        Some(json!({"visible": false, "unexpected": true})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call(
+        &app,
+        Method::PUT,
+        "/api/v1/users/@me/badges/fixture_one",
+        &alice,
         Some(json!({"visible": false})),
     )
     .await;
