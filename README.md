@@ -97,6 +97,15 @@ fetch and display the new version before another acceptance. Migration 0092
 stores the configuration and serializes configuration changes with joins and
 acceptance. Existing members are not made pending when screening is enabled.
 
+`GET|PUT /guilds/{id}/onboarding` reads or replaces up to five optional
+questions; options can suggest a channel and grant an eligible role. Managers
+configuring role options also need `MANAGE_ROLES` and must outrank the role.
+`POST /guilds/{id}/onboarding/complete` takes the reviewed revision and one
+option index per question, once per membership and after accepting rules. Roles
+with privileged base permissions or channel overwrites cannot be self-assigned.
+`GET|PUT /guilds/{id}/welcome-screen` configures a description and up to five
+suggested text channels. GET omits channels the caller cannot view.
+
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or
 `{"code":null}`. Codes use 2–32 ASCII letters, digits or hyphens and resolve

@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   screening:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: vm-runner
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
