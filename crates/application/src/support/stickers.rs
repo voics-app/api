@@ -28,7 +28,7 @@ pub fn validate(image: &ImageUpload) -> AppResult<StickerFormat> {
         return Err(invalid());
     }
     let (format, width, height) = match image.content_type.as_str() {
-        "image/png" => png(&image.bytes)?,
+        "image/png" | "image/apng" => png(&image.bytes)?,
         "image/gif" => gif(&image.bytes)?,
         "application/json" => lottie(&image.bytes)?,
         _ => return Err(invalid()),
@@ -164,6 +164,34 @@ mod tests {
             content_type: "image/png".into(),
         };
         assert!(validate(&image).is_err());
+    }
+
+    #[test]
+    fn decodes_real_png_and_gif_and_rejects_corruption() {
+        for (format, content_type, expected) in [
+            (image::ImageFormat::Png, "image/png", StickerFormat::Png),
+            (image::ImageFormat::Gif, "image/gif", StickerFormat::Gif),
+        ] {
+            let mut output = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::new_rgba8(STICKER_WIDTH, STICKER_HEIGHT)
+                .write_to(&mut output, format)
+                .unwrap();
+            let mut upload = ImageUpload {
+                bytes: output.into_inner(),
+                content_type: content_type.into(),
+            };
+            assert_eq!(validate(&upload).unwrap(), expected);
+            upload.bytes.truncate(upload.bytes.len() / 2);
+            assert!(validate(&upload).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_lottie_external_assets_and_expressions() {
+        for data in [br#"{"v":"1","w":320,"h":320,"layers":[],"assets":[{"p":"https://example.test/a.png"}]}"#.as_slice(),
+                     br#"{"v":"1","w":320,"h":320,"layers":[{"x":"1+1"}]}"#.as_slice()] {
+            assert!(validate(&ImageUpload { bytes: data.to_vec(), content_type: "application/json".into() }).is_err());
+        }
     }
 
     #[test]
