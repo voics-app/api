@@ -242,6 +242,12 @@ pub trait ChannelRepository: Send + Sync {
 
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn welcome_screen(&self, guild_id: Snowflake) -> AppResult<serde_json::Value>;
+    async fn set_welcome_screen(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<()>;
     async fn screening(&self, guild_id: Snowflake) -> AppResult<ScreeningConfig>;
     async fn set_screening(
         &self,

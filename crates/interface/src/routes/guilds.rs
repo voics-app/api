@@ -90,6 +90,38 @@ async fn accept_screening(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn get_welcome(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::welcome::get(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+        )
+        .await?,
+    ))
+}
+
+async fn put_welcome(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::welcome::set(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body,
+        )
+        .await?,
+    ))
+}
+
 async fn create(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -251,6 +283,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/guilds/{id}/member-verification/accept",
             post(accept_screening),
+        )
+        .route(
+            "/guilds/{id}/welcome-screen",
+            get(get_welcome).put(put_welcome),
         )
         .route("/guilds", post(create))
         .route(

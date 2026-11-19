@@ -6,3 +6,4 @@ pub mod leave_guild;
 pub mod list_current_user_guilds;
 pub mod screening;
 pub mod update_guild;
+pub mod welcome;

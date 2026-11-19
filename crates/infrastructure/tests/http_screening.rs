@@ -75,6 +75,9 @@ async fn join_and_accept_current_rules_before_sending() {
         .unwrap()["id"]
         .as_str()
         .unwrap();
+    let welcome_path = format!("/api/v1/guilds/{guild_id}/welcome-screen");
+    let (status, _) = call(&app, Method::PUT, &welcome_path, &owner, Some(json!({"enabled":true,"description":"Welcome!","channels":[{"channel_id":channel,"description":"Say hello"}]}))).await;
+    assert_eq!(status, StatusCode::OK);
     let (_, invite) = call(
         &app,
         Method::POST,
@@ -95,6 +98,9 @@ async fn join_and_accept_current_rules_before_sending() {
     assert_eq!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
     let (_, shown) = call(&app, Method::GET, &path, &guest, None).await;
     assert_eq!(shown["pending"], true);
+    let (status, welcome) = call(&app, Method::GET, &welcome_path, &guest, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(welcome["channels"][0]["channel_id"], channel);
     assert_eq!(shown["revision"], first["revision"]);
     let (status, _) = call(
         &app,

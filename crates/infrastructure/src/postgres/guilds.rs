@@ -221,6 +221,29 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn welcome_screen(&self, guild_id: Snowflake) -> AppResult<serde_json::Value> {
+        let (value,): (serde_json::Value,) =
+            sqlx::query_as("SELECT welcome_screen FROM guild_member_screening WHERE guild_id = $1")
+                .bind(guild_id.as_i64())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(value)
+    }
+
+    async fn set_welcome_screen(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<()> {
+        sqlx::query("UPDATE guild_member_screening SET welcome_screen = $2 WHERE guild_id = $1")
+            .bind(guild_id.as_i64())
+            .bind(value)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
     async fn screening(
         &self,
         guild_id: Snowflake,

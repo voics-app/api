@@ -2,7 +2,8 @@ CREATE TABLE guild_member_screening (
     guild_id BIGINT PRIMARY KEY REFERENCES guilds(id) ON DELETE CASCADE,
     enabled BOOLEAN NOT NULL DEFAULT FALSE,
     rules TEXT[] NOT NULL DEFAULT '{}',
-    revision BIGINT NOT NULL DEFAULT 0
+    revision BIGINT NOT NULL DEFAULT 0,
+    welcome_screen JSONB NOT NULL DEFAULT '{"enabled":false,"description":"","channels":[]}'::jsonb
 );
 
 INSERT INTO guild_member_screening (guild_id) SELECT id FROM guilds;
