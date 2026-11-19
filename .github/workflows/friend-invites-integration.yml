@@ -1,0 +1,20 @@
+name: friend-invites-integration
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "migrations/**"
+      - "Cargo.*"
+      - ".github/workflows/friend-invites-integration.yml"
+permissions:
+  contents: read
+jobs:
+  friend-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Exercise personal invites and favourites against Postgres
+        run: cargo test --locked -p infrastructure --test http_relationships personal_friend_invites_and_favourites_follow_relationship_lifecycle
