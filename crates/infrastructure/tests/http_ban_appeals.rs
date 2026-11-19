@@ -488,6 +488,11 @@ async fn account_anonymization_removes_appeal_text() {
         .0,
         StatusCode::CREATED
     );
+    sqlx::query("INSERT INTO user_badges (user_id, badge_id) VALUES ($1, 'fixture')")
+        .bind(w.ann_id.parse::<i64>().unwrap())
+        .execute(&database.pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE users SET delete_after = now() - interval '1 minute' WHERE id = $1")
         .bind(w.ann_id.parse::<i64>().unwrap())
         .execute(&database.pool)
@@ -507,4 +512,10 @@ async fn account_anonymization_removes_appeal_text() {
         .await
         .unwrap();
     assert_eq!(count, 0);
+    let badges: i64 = sqlx::query_scalar("SELECT count(*) FROM user_badges WHERE user_id = $1")
+        .bind(w.ann_id.parse::<i64>().unwrap())
+        .fetch_one(&database.pool)
+        .await
+        .unwrap();
+    assert_eq!(badges, 0);
 }
