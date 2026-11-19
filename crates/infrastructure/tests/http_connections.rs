@@ -164,6 +164,25 @@ async fn github_flow_visibility_and_replay() {
         .await
         .unwrap();
     assert_eq!(public[0]["name"], "test-user");
+    // Disconnect invalidates an in-flight authorization as well as the existing link.
+    let pending: serde_json::Value = client
+        .post(format!(
+            "{base}/api/v1/users/@me/connections/github/authorize"
+        ))
+        .bearer_auth(access)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let redirect = client
+        .get(pending["url"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    let pending_callback = redirect.headers()["location"].to_str().unwrap().to_owned();
     assert_eq!(
         client
             .delete(format!("{base}/api/v1/users/@me/connections"))
@@ -175,6 +194,18 @@ async fn github_flow_visibility_and_replay() {
             .status(),
         StatusCode::NO_CONTENT
     );
+    assert_eq!(
+        client.get(pending_callback).send().await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+    let remaining: serde_json::Value = bearer(format!("{base}/api/v1/users/@me/connections"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(remaining, json!([]));
     api_task.abort();
     provider_task.abort();
 }

@@ -119,8 +119,9 @@ impl Connections for GithubConnections {
         if state.len() > 128 || code.len() > 2048 || state.is_empty() || code.is_empty() {
             return Err(invalid_state());
         }
-        // DELETE consumes the state atomically before exchanging a code. Revoked sessions cannot link.
-        let user: Option<(i64, String)> = sqlx::query_as("DELETE FROM connection_oauth_states s USING sessions x WHERE s.state_hash=$1 AND s.expires_at>now() AND x.id=s.session_id AND x.user_id=s.user_id AND x.revoked_at IS NULL RETURNING s.user_id,s.verifier")
+        // The final transaction consumes this state after provider verification. Disconnect and
+        // callback take the same user lock so an in-flight callback cannot undo a disconnect.
+        let user: Option<(i64, String)> = sqlx::query_as("SELECT s.user_id,s.verifier FROM connection_oauth_states s JOIN sessions x ON x.id=s.session_id AND x.user_id=s.user_id WHERE s.state_hash=$1 AND s.expires_at>now() AND x.revoked_at IS NULL")
             .bind(OsSecrets.hash(state)).fetch_optional(&self.pool).await.map_err(AppError::internal)?;
         let (user, verifier) = user.ok_or_else(invalid_state)?;
         let token: Token = self
@@ -159,8 +160,20 @@ impl Connections for GithubConnections {
         if profile.login.is_empty() || profile.login.len() > 100 {
             return Err(upstream());
         }
+        let mut tx = self.pool.begin().await.map_err(AppError::internal)?;
+        sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+            .bind(user)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::internal)?;
+        let consumed = sqlx::query("DELETE FROM connection_oauth_states s USING sessions x WHERE s.state_hash=$1 AND s.user_id=$2 AND s.expires_at>now() AND x.id=s.session_id AND x.user_id=s.user_id AND x.revoked_at IS NULL")
+            .bind(OsSecrets.hash(state)).bind(user).execute(&mut *tx).await.map_err(AppError::internal)?;
+        if consumed.rows_affected() != 1 {
+            return Err(invalid_state());
+        }
         sqlx::query("INSERT INTO user_connections (user_id,provider,account_id,name) VALUES ($1,'github',$2,$3) ON CONFLICT (user_id,provider) DO UPDATE SET account_id=EXCLUDED.account_id,name=EXCLUDED.name,visible=FALSE")
-            .bind(user).bind(profile.id.to_string()).bind(profile.login).execute(&self.pool).await.map_err(|_| AppError::Conflict { code: 0, message: "Account is already linked".into() })?;
+            .bind(user).bind(profile.id.to_string()).bind(profile.login).execute(&mut *tx).await.map_err(|_| AppError::Conflict { code: 0, message: "Account is already linked".into() })?;
+        tx.commit().await.map_err(AppError::internal)?;
         Ok(())
     }
     async fn list(&self, user: Snowflake, public_only: bool) -> AppResult<Vec<Connection>> {
@@ -195,11 +208,23 @@ impl Connections for GithubConnections {
         Ok(())
     }
     async fn delete(&self, user: Snowflake) -> AppResult<()> {
-        sqlx::query("DELETE FROM user_connections WHERE user_id=$1 AND provider='github'")
+        let mut tx = self.pool.begin().await.map_err(AppError::internal)?;
+        sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
             .bind(user.as_i64())
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(AppError::internal)?;
+        sqlx::query("DELETE FROM connection_oauth_states WHERE user_id=$1")
+            .bind(user.as_i64())
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::internal)?;
+        sqlx::query("DELETE FROM user_connections WHERE user_id=$1 AND provider='github'")
+            .bind(user.as_i64())
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::internal)?;
+        tx.commit().await.map_err(AppError::internal)?;
         Ok(())
     }
 }
