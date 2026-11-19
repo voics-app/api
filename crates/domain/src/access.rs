@@ -67,6 +67,13 @@ impl<'a> GuildAccess<'a> {
         channel: &Channel,
         parent: Option<&Channel>,
     ) -> Permissions {
+        if channel.kind.is_thread()
+            && !parent.is_some_and(|parent| {
+                Some(parent.id) == channel.parent_id && parent.guild_id == channel.guild_id
+            })
+        {
+            return Permissions::from_bits(0);
+        }
         let overwrites = match (channel.kind.is_thread(), parent) {
             (true, Some(parent)) => &parent.overwrites,
             _ => &channel.overwrites,
@@ -285,6 +292,7 @@ mod tests {
         let access = GuildAccess::new(&guild, &roles, Utc::now());
         let parent = channel(100, ChannelType::GuildText);
         let mut thread = channel(101, ChannelType::PrivateThread);
+        thread.parent_id = Some(parent.id);
         thread.owner_id = Some(Snowflake::new(2));
         thread.thread_member_ids.push(Snowflake::new(5));
         let cases = [
@@ -302,6 +310,20 @@ mod tests {
                 "user {}",
                 m.user_id
             );
+        }
+    }
+
+    #[test]
+    fn orphaned_threads_are_hidden_even_from_owner_and_managers() {
+        let (guild, roles) = (guild(), roles());
+        let access = GuildAccess::new(&guild, &roles, Utc::now());
+        for kind in [ChannelType::PublicThread, ChannelType::PrivateThread] {
+            let thread = channel(101, kind);
+            for member in [member(1, &[]), member(2, &[]), member(4, &[22])] {
+                assert!(!access
+                    .in_channel(&member, &thread, None)
+                    .contains(Permissions::VIEW_CHANNEL));
+            }
         }
     }
 
