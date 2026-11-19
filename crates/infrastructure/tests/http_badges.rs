@@ -80,4 +80,29 @@ async fn badge_visibility_is_private_and_cannot_grant_badges() {
     )
     .await;
     assert_eq!(public, json!(["fixture_two"]));
+
+    // Purge anonymizes rather than deleting the users row, so grants must be removed explicitly.
+    let (private, public_key) = jwt_keys();
+    let ports = ports(&database.pool, &public_key, &private);
+    let mut writes = application::write_set::WriteSet::new();
+    writes.mutate(application::write_set::Mutation::AnonymizeUser {
+        user_id: alice_id.parse().unwrap(),
+        username: "deleted-badge-fixture".into(),
+    });
+    ports.unit_of_work.commit(writes).await.unwrap();
+    let (_, public) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/users/{alice_id}/badges"),
+        &bob,
+        None,
+    )
+    .await;
+    assert_eq!(public, json!([]));
+    let count: (i64,) = sqlx::query_as("SELECT count(*) FROM user_badges WHERE user_id = $1")
+        .bind(alice_id.parse::<i64>().unwrap())
+        .fetch_one(&database.pool)
+        .await
+        .unwrap();
+    assert_eq!(count.0, 0);
 }
