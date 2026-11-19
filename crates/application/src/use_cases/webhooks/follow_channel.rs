@@ -16,6 +16,11 @@ pub async fn execute(
     source: Snowflake,
     target: Snowflake,
 ) -> AppResult<Webhook> {
+    if !ports.settings.announcement_delivery_enabled {
+        return Err(AppError::Unavailable(
+            "announcement delivery is disabled".into(),
+        ));
+    }
     let source_access = ChannelAccess::visible(ports, source, actor.user_id).await?;
     let target_access = ChannelAccess::visible(ports, target, actor.user_id).await?;
     target_access.require(Permissions::MANAGE_WEBHOOKS)?;

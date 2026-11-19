@@ -147,6 +147,7 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
             config.internal_token.clone(),
         )),
         settings: Settings {
+            announcement_delivery_enabled: config.announcement_delivery_enabled,
             voice_regions: vec![VoiceRegion {
                 id: region.clone(),
                 name: region.clone(),
@@ -172,13 +173,15 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         },
     };
     let prune_ports = ports.clone();
-    tokio::spawn(
-        infrastructure::announcement_relay::AnnouncementRelay::new(
-            pool.clone(),
-            ports.messages.clone(),
-        )
-        .run(),
-    );
+    if config.announcement_delivery_enabled {
+        tokio::spawn(
+            infrastructure::announcement_relay::AnnouncementRelay::new(
+                pool.clone(),
+                ports.messages.clone(),
+            )
+            .run(),
+        );
+    }
     let audit_ports = ports.clone();
     let purge_ports = ports.clone();
     let purge_every = std::time::Duration::from_secs(config.account_purge_interval_secs);

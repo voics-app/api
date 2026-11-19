@@ -11,8 +11,10 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     let database = start_database().await;
     let (private, public) = jwt_keys();
     let messages = std::sync::Arc::new(RecordingMessages::default());
+    let mut test_ports = ports_with_messages(&database.pool, &public, &private, messages.clone());
+    test_ports.settings.announcement_delivery_enabled = true;
     let app = interface::router(interface::state::AppState {
-        ports: ports_with_messages(&database.pool, &public, &private, messages.clone()),
+        ports: test_ports,
         internal_token: INTERNAL_TOKEN.into(),
         rate_limiter: std::sync::Arc::new(support::AllowAll),
         rate_policy: interface::state::RatePolicy::default(),
@@ -122,11 +124,12 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
         messages.clone(),
     );
     relay.run_once().await.unwrap();
-    let bodies = messages.bodies.lock().unwrap();
-    let delivered = bodies.last().unwrap();
-    assert_eq!(delivered["webhook_id"], hook_id);
-    assert_eq!(delivered["snapshot"]["content"], "news");
-    drop(bodies);
+    {
+        let bodies = messages.bodies.lock().unwrap();
+        let delivered = bodies.last().unwrap();
+        assert_eq!(delivered["webhook_id"], hook_id);
+        assert_eq!(delivered["snapshot"]["content"], "news");
+    }
     let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
         .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
     assert_eq!(state, "unknown");

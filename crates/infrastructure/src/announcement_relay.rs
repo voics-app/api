@@ -37,7 +37,7 @@ impl AnnouncementRelay {
         // A response can be lost after messages stored the reserved identity.
         // Presence with the expected webhook proves success; absence is not
         // proof of failure because the delivered message may have been deleted.
-        let unknown: Vec<(i64, i64, i64, i64, i64)> = sqlx::query_as("SELECT source_channel_id, source_message_id, target_channel_id, destination_message_id, webhook_id FROM announcement_deliveries WHERE state='unknown' ORDER BY claimed_at LIMIT 25")
+        let unknown: Vec<(i64, i64, i64, i64, i64)> = sqlx::query_as("SELECT source_channel_id, source_message_id, target_channel_id, destination_message_id, webhook_id FROM announcement_deliveries WHERE state='unknown' AND (checked_at IS NULL OR checked_at < now() - interval '1 minute') ORDER BY checked_at NULLS FIRST, claimed_at LIMIT 25")
             .fetch_all(&self.pool).await?;
         for (source, original, target, destination, webhook) in unknown {
             let found = self
@@ -52,8 +52,10 @@ impl AnnouncementRelay {
                 sqlx::query("UPDATE announcement_deliveries SET state='delivered' WHERE source_channel_id=$1 AND source_message_id=$2 AND target_channel_id=$3 AND state='unknown'")
                     .bind(source).bind(original).bind(target).execute(&self.pool).await?;
             }
+            sqlx::query("UPDATE announcement_deliveries SET checked_at=now() WHERE source_channel_id=$1 AND source_message_id=$2 AND target_channel_id=$3 AND state='unknown'")
+                .bind(source).bind(original).bind(target).execute(&self.pool).await?;
         }
-        let markers: Vec<(i64, i64)> = sqlx::query_as("SELECT source_channel_id, source_message_id FROM announcement_publications WHERE NOT marked ORDER BY created_at LIMIT 25")
+        let markers: Vec<(i64, i64)> = sqlx::query_as("SELECT source_channel_id, source_message_id FROM announcement_publications WHERE NOT marked AND (marker_checked_at IS NULL OR marker_checked_at < now() - interval '1 minute') ORDER BY marker_checked_at NULLS FIRST, created_at LIMIT 25")
             .fetch_all(&self.pool).await?;
         for (channel, message) in markers {
             if self
@@ -68,6 +70,8 @@ impl AnnouncementRelay {
                 sqlx::query("UPDATE announcement_publications SET marked=true WHERE source_channel_id=$1 AND source_message_id=$2")
                     .bind(channel).bind(message).execute(&self.pool).await?;
             }
+            sqlx::query("UPDATE announcement_publications SET marker_checked_at=now() WHERE source_channel_id=$1 AND source_message_id=$2 AND NOT marked")
+                .bind(channel).bind(message).execute(&self.pool).await?;
         }
         for _ in 0..10 {
             let mut tx = self.pool.begin().await?;
@@ -101,6 +105,10 @@ impl AnnouncementRelay {
             sqlx::query("UPDATE announcement_deliveries SET state=$4 WHERE source_channel_id=$1 AND source_message_id=$2 AND target_channel_id=$3 AND state='claimed'")
                 .bind(source).bind(original).bind(target).bind(state).execute(&self.pool).await?;
         }
+        // The journal keeps identifiers for duplicate prevention, not message
+        // contents, once no target can still be sent by this worker.
+        sqlx::query("UPDATE announcement_publications SET payload='{}'::jsonb WHERE ctid IN (SELECT p.ctid FROM announcement_publications p WHERE p.marked AND p.payload <> '{}'::jsonb AND NOT EXISTS (SELECT 1 FROM announcement_deliveries d WHERE d.source_channel_id=p.source_channel_id AND d.source_message_id=p.source_message_id AND d.state IN ('pending','claimed')) LIMIT 100)")
+            .execute(&self.pool).await?;
         Ok(())
     }
 }

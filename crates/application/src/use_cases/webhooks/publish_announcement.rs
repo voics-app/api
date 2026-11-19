@@ -16,6 +16,11 @@ pub async fn execute(
     channel: Snowflake,
     message_id: Snowflake,
 ) -> AppResult<StoredMessage> {
+    if !ports.settings.announcement_delivery_enabled {
+        return Err(AppError::Unavailable(
+            "announcement delivery is disabled".into(),
+        ));
+    }
     let access = ChannelAccess::visible(ports, channel, actor.user_id).await?;
     access.require(Permissions::READ_MESSAGE_HISTORY)?;
     if access.channel.kind != ChannelType::GuildAnnouncement

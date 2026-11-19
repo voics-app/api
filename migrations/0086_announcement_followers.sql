@@ -33,6 +33,7 @@ CREATE TABLE announcement_publications (
     source_message_id BIGINT NOT NULL,
     payload JSONB NOT NULL,
     marked BOOLEAN NOT NULL DEFAULT false,
+    marker_checked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (source_channel_id, source_message_id)
 );
@@ -45,6 +46,7 @@ CREATE TABLE announcement_deliveries (
     webhook_id BIGINT NOT NULL,
     state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'claimed', 'delivered', 'unknown', 'cancelled')),
     claimed_at TIMESTAMPTZ,
+    checked_at TIMESTAMPTZ,
     PRIMARY KEY (source_channel_id, source_message_id, target_channel_id),
     FOREIGN KEY (source_channel_id, source_message_id)
         REFERENCES announcement_publications (source_channel_id, source_message_id) ON DELETE CASCADE
