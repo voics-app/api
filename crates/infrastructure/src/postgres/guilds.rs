@@ -229,6 +229,8 @@ struct AppealRow {
     answer: String,
     status: String,
     created_at: DateTime<Utc>,
+    resolved_at: Option<DateTime<Utc>>,
+    resolved_by: Option<i64>,
 }
 impl From<AppealRow> for domain::ban_appeal::BanAppeal {
     fn from(r: AppealRow) -> Self {
@@ -241,11 +243,13 @@ impl From<AppealRow> for domain::ban_appeal::BanAppeal {
             answer: r.answer,
             status: r.status,
             created_at: r.created_at,
+            resolved_at: r.resolved_at,
+            resolved_by: sf_opt(r.resolved_by),
         }
     }
 }
 const APPEAL_COLUMNS: &str =
-    "id, guild_id, user_id, ban_created_at, question, answer, status, created_at";
+    "id, guild_id, user_id, ban_created_at, question, answer, status, created_at, resolved_at, resolved_by";
 
 #[async_trait]
 impl GuildRepository for PgStore {
@@ -301,7 +305,7 @@ impl GuildRepository for PgStore {
         Ok(row.map(Into::into))
     }
     async fn appeals(&self, guild_id: Snowflake) -> AppResult<Vec<domain::ban_appeal::BanAppeal>> {
-        let rows: Vec<AppealRow> = sqlx::query_as(&format!("SELECT {APPEAL_COLUMNS} FROM ban_appeals WHERE guild_id=$1 AND status='open' ORDER BY id DESC LIMIT 100"))
+        let rows: Vec<AppealRow> = sqlx::query_as(&format!("SELECT {APPEAL_COLUMNS} FROM ban_appeals WHERE guild_id=$1 ORDER BY (status='open') DESC, id DESC LIMIT 100"))
             .bind(guild_id.as_i64()).fetch_all(&self.pool).await.map_err(db)?;
         Ok(rows.into_iter().map(Into::into).collect())
     }

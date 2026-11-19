@@ -11,4 +11,6 @@ pub struct BanAppeal {
     pub answer: String,
     pub status: String,
     pub created_at: DateTime<Utc>,
+    pub resolved_at: Option<DateTime<Utc>>,
+    pub resolved_by: Option<Snowflake>,
 }

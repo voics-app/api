@@ -456,7 +456,7 @@ struct AppealAnswer {
     answer: String,
 }
 fn appeal_json(a: &domain::ban_appeal::BanAppeal) -> serde_json::Value {
-    serde_json::json!({"id": a.id.to_string(), "user_id": a.user_id.to_string(), "question": a.question, "answer": a.answer, "status": a.status, "created_at": a.created_at})
+    serde_json::json!({"id": a.id.to_string(), "user_id": a.user_id.to_string(), "question": a.question, "answer": a.answer, "status": a.status, "created_at": a.created_at, "resolved_at": a.resolved_at, "resolved_by": a.resolved_by.map(|id| id.to_string())})
 }
 async fn appeal_form(
     State(state): State<AppState>,

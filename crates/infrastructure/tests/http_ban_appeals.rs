@@ -321,6 +321,18 @@ async fn review_permission_is_independent_and_stale_appeal_cannot_unban_a_new_ba
     assert_eq!(
         call(
             &w.app,
+            Method::PATCH,
+            &format!("/api/v1/guilds/{}", w.guild_id),
+            &w.owner,
+            Some(json!({"audit_log_enabled": false}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &w.app,
             Method::POST,
             &format!("{base}/{second_id}/deny"),
             &w.ben,
@@ -334,4 +346,74 @@ async fn review_permission_is_independent_and_stale_appeal_cannot_unban_a_new_ba
         call(&w.app, Method::GET, &ban, &w.owner, None).await.0,
         StatusCode::OK
     );
+    let (status, history) = call(&w.app, Method::GET, &base, &w.ben, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let denied = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == second_id)
+        .unwrap();
+    assert_eq!(denied["status"], "denied");
+    assert_eq!(denied["resolved_by"], w.ben_id);
+    assert!(denied["resolved_at"].is_string());
+    let (_, audit) = call(
+        &w.app,
+        Method::GET,
+        &format!("/api/v1/guilds/{}/audit-logs", w.guild_id),
+        &w.owner,
+        None,
+    )
+    .await;
+    assert!(!audit["audit_log_entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|a| a["action_type"] == 201));
+}
+
+#[tokio::test]
+async fn concurrent_submissions_leave_exactly_one_open_appeal() {
+    let database = start_database().await;
+    let w = world(&database, None).await;
+    let base = format!("/api/v1/guilds/{}/ban-appeals", w.guild_id);
+    let ban = format!("/api/v1/guilds/{}/bans/{}", w.guild_id, w.ann_id);
+    assert_eq!(
+        call(
+            &w.app,
+            Method::PUT,
+            &format!("{base}/form"),
+            &w.owner,
+            Some(json!({"question":"Explain"}))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        call(&w.app, Method::PUT, &ban, &w.owner, None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let (one, two) = tokio::join!(
+        call(
+            &w.app,
+            Method::POST,
+            &base,
+            &w.ann,
+            Some(json!({"answer":"one"}))
+        ),
+        call(
+            &w.app,
+            Method::POST,
+            &base,
+            &w.ann,
+            Some(json!({"answer":"two"}))
+        )
+    );
+    assert!(matches!(
+        (one.0, two.0),
+        (StatusCode::CREATED, StatusCode::CONFLICT) | (StatusCode::CONFLICT, StatusCode::CREATED)
+    ));
+    let (_, list) = call(&w.app, Method::GET, &base, &w.owner, None).await;
+    assert_eq!(list.as_array().unwrap().len(), 1);
 }
