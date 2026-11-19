@@ -38,14 +38,40 @@ async fn start(
 #[derive(Deserialize)]
 struct Callback {
     state: String,
-    code: String,
+    code: Option<String>,
+    error: Option<String>,
 }
 async fn callback(
     State(state): State<AppState>,
     Query(query): Query<Callback>,
 ) -> Result<impl IntoResponse, ApiError> {
-    service(&state)?.callback(&query.state, &query.code).await?;
-    Ok(([(header::CACHE_CONTROL, "no-store"), (header::REFERRER_POLICY, "no-referrer")], Html("<!doctype html><title>Account linked</title><p>Your GitHub account is linked. You can close this window and return to the app.</p>")))
+    let message = match (query.code.as_deref(), query.error.as_deref()) {
+        (Some(code), None) => {
+            service(&state)?.callback(&query.state, code).await?;
+            "Your account is linked. You can close this window and return to the app."
+        }
+        (None, Some("access_denied")) => {
+            service(&state)?.cancel(&query.state).await?;
+            "No account was linked. You can close this window and return to the app."
+        }
+        _ => {
+            return Err(AppError::invalid(
+                "callback",
+                "INVALID_CALLBACK",
+                "Invalid authorization response",
+            )
+            .into())
+        }
+    };
+    Ok((
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::REFERRER_POLICY, "no-referrer"),
+        ],
+        Html(format!(
+            "<!doctype html><title>Account connection</title><p>{message}</p>"
+        )),
+    ))
 }
 async fn list(
     State(state): State<AppState>,

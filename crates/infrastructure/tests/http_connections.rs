@@ -131,6 +131,65 @@ async fn github_flow_visibility_and_replay() {
         client.get(&callback).send().await.unwrap().status(),
         StatusCode::BAD_REQUEST
     );
+    // Denial consumes a state once and leaves the existing connection untouched.
+    let denied_start: serde_json::Value = client
+        .post(format!(
+            "{base}/api/v1/users/@me/connections/github/authorize"
+        ))
+        .bearer_auth(access)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let denied_url = url::Url::parse(denied_start["url"].as_str().unwrap()).unwrap();
+    let denied_state = denied_url
+        .query_pairs()
+        .find(|(key, _)| key == "state")
+        .unwrap()
+        .1
+        .into_owned();
+    let mut denied_callback =
+        url::Url::parse(&format!("{base}/api/v1/connections/github/callback")).unwrap();
+    denied_callback
+        .query_pairs_mut()
+        .append_pair("state", &denied_state)
+        .append_pair("error", "access_denied");
+    let denied = client.get(denied_callback.clone()).send().await.unwrap();
+    assert_eq!(denied.status(), StatusCode::OK);
+    assert_eq!(denied.headers()["cache-control"], "no-store");
+    assert!(denied
+        .text()
+        .await
+        .unwrap()
+        .contains("No account was linked"));
+    assert_eq!(
+        client.get(denied_callback).send().await.unwrap().status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        client
+            .get(format!(
+                "{base}/api/v1/connections/github/callback?state=invalid&error=access_denied"
+            ))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let kept: serde_json::Value = client
+        .get(format!("{base}/api/v1/users/@me/connections"))
+        .bearer_auth(access)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(kept[0]["name"], "test-user");
     // A provider identity already linked to another user produces a conflict.
     let second_start: serde_json::Value = client
         .post(format!(

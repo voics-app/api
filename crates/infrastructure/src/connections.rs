@@ -189,6 +189,17 @@ impl Connections for GithubConnections {
         tx.commit().await.map_err(AppError::internal)?;
         Ok(())
     }
+    async fn cancel(&self, state: &str) -> AppResult<()> {
+        if state.is_empty() || state.len() > 128 {
+            return Err(invalid_state());
+        }
+        let consumed = sqlx::query("DELETE FROM connection_oauth_states s USING sessions x WHERE s.state_hash=$1 AND s.expires_at>now() AND x.id=s.session_id AND x.user_id=s.user_id AND x.revoked_at IS NULL")
+            .bind(OsSecrets.hash(state)).execute(&self.pool).await.map_err(AppError::internal)?;
+        if consumed.rows_affected() != 1 {
+            return Err(invalid_state());
+        }
+        Ok(())
+    }
     async fn list(&self, user: Snowflake, public_only: bool) -> AppResult<Vec<Connection>> {
         let rows: Vec<(String,String,String,bool)> = sqlx::query_as("SELECT provider,account_id,name,visible FROM user_connections WHERE user_id=$1 AND (NOT $2 OR visible) ORDER BY provider")
             .bind(user.as_i64()).bind(public_only).fetch_all(&self.pool).await.map_err(AppError::internal)?;
