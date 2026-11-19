@@ -105,4 +105,44 @@ async fn soundboard_crud_enforces_membership_and_validates_audio() {
         call(&app, Method::GET, &detail, &owner, None).await.0,
         StatusCode::NOT_FOUND
     );
+    let (events,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM outbox WHERE payload->>'type' LIKE 'SOUNDBOARD_SOUND_%'",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(events, 3);
+    let sound = base64::engine::general_purpose::STANDARD.encode(wav());
+    for index in 0..7 {
+        let response = call(
+            &app,
+            Method::POST,
+            &path,
+            &owner,
+            Some(json!({"name":format!("sound{index}"), "sound":sound})),
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::CREATED);
+    }
+    let (first, second) = tokio::join!(
+        call(
+            &app,
+            Method::POST,
+            &path,
+            &owner,
+            Some(json!({"name":"race_a", "sound":sound}))
+        ),
+        call(
+            &app,
+            Method::POST,
+            &path,
+            &owner,
+            Some(json!({"name":"race_b", "sound":sound}))
+        )
+    );
+    let mut statuses = [first.0.as_u16(), second.0.as_u16()];
+    statuses.sort();
+    assert_eq!(statuses, [201, 400]);
+    let (_, listed) = call(&app, Method::GET, &path, &owner, None).await;
+    assert_eq!(listed.as_array().unwrap().len(), 8);
 }
