@@ -15,6 +15,7 @@ pub enum Resource {
     Emoji,
     Guild,
     GuildTemplate,
+    GuildScheduledEvent,
     Interaction,
     Invite,
     KeyPackage,
