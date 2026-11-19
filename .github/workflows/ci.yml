@@ -40,15 +40,15 @@ jobs:
       audit-args: --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
 
   badge-http-integration:
-    # PR CI otherwise runs only library and binary tests. Exercise badge privacy over HTTP
-    # against a disposable Postgres container before merging.
+    # PR CI otherwise runs only library and binary tests. Exercise badge and appeal privacy
+    # over HTTP against disposable Postgres containers before merging.
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: vm-runner
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p infrastructure --test http_badges
+      - run: cargo test -p infrastructure --test http_badges --test http_ban_appeals
 
   docker:
     needs: rust
