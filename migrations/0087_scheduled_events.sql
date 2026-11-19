@@ -33,9 +33,8 @@ CREATE TABLE guild_scheduled_event_users (
 -- One durable notification claim per event and member. The worker must enqueue
 -- notification delivery and mark this row in the same transaction.
 CREATE TABLE guild_scheduled_event_reminders (
-    event_id BIGINT NOT NULL,
-    user_id BIGINT NOT NULL,
+    event_id BIGINT NOT NULL REFERENCES guild_scheduled_events (id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     enqueued_at TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (event_id, user_id),
-    FOREIGN KEY (event_id, user_id) REFERENCES guild_scheduled_event_users (event_id, user_id) ON DELETE CASCADE
+    PRIMARY KEY (event_id, user_id)
 );
