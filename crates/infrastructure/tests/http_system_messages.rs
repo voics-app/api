@@ -361,6 +361,27 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
     .await;
     assert_eq!(status, StatusCode::CREATED, "{post}");
     assert_eq!(post["applied_tags"], json!([tag]));
+    let post_id = post["id"].as_str().unwrap();
+    let (status, pinned) = call(
+        &app,
+        Method::PATCH,
+        &format!("/api/v1/channels/{post_id}"),
+        &owner,
+        Some(json!({"flags": 2})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{pinned}");
+    assert_eq!(pinned["flags"], 2);
+    let (status, fetched_post) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{post_id}"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fetched_post["flags"], 2);
     let (status, _) = call(
         &app,
         Method::POST,

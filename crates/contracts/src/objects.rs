@@ -458,6 +458,18 @@ impl ChannelDto {
                 .kind
                 .is_thread()
                 .then(|| channel.applied_tags.clone()),
+            flags: channel.kind.is_thread().then(|| {
+                if channel
+                    .forum_settings
+                    .get("pinned")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    2
+                } else {
+                    0
+                }
+            }),
             default_sort_order: (channel.kind == domain::channel::ChannelType::GuildForum).then(
                 || {
                     channel
