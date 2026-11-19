@@ -470,6 +470,7 @@ async fn private_thread_invitation_and_leave_change_http_access_and_notification
     .await;
     let thread = created["id"].as_str().unwrap();
     assert_eq!(created["member_count"], 1);
+    assert_eq!(created["is_thread_member"], true);
     let thread_path = format!("/api/v1/channels/{thread}");
     assert_eq!(
         call(&app, Method::GET, &thread_path, &member, None).await.0,
@@ -492,6 +493,7 @@ async fn private_thread_invitation_and_leave_change_http_access_and_notification
     );
     let visible = ok_call(&app, Method::GET, &thread_path, &member, None).await;
     assert_eq!(visible["member_count"], 2);
+    assert_eq!(visible["is_thread_member"], true);
     let list = ok_call(
         &app,
         Method::GET,

@@ -80,7 +80,7 @@ fn overwrite_kind(code: u8) -> Result<OverwriteKind, AppError> {
 
 fn view_dto(view: &ChannelView, viewer: Snowflake) -> ChannelDto {
     match view {
-        ChannelView::Guild(channel) => ChannelDto::guild(channel),
+        ChannelView::Guild(channel) => ChannelDto::guild_for_viewer(channel, viewer),
         ChannelView::Private(private) => ChannelDto::private(
             &private.channel,
             &private.recipients,
@@ -139,7 +139,10 @@ async fn create(
         audit,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(ChannelDto::guild(&channel))))
+    Ok((
+        StatusCode::CREATED,
+        Json(ChannelDto::guild_for_viewer(&channel, actor.user_id)),
+    ))
 }
 
 async fn reorder(
@@ -384,7 +387,12 @@ async fn list_channel_threads(
         query.archived,
     )
     .await?;
-    Ok(Json(threads.iter().map(ChannelDto::guild).collect()))
+    Ok(Json(
+        threads
+            .iter()
+            .map(|thread| ChannelDto::guild_for_viewer(thread, actor.user_id))
+            .collect(),
+    ))
 }
 
 async fn typing(
