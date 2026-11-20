@@ -1,0 +1,53 @@
+name: insights-e2e
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-insights:
+    # Explicitly armed only after the separate checks pass and the coordinator
+    # reserves a VM window. Removing the marker prevents automatic heavy runs.
+    if: github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.title, '[insights-e2e]')
+    runs-on: vm-runner
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: api
+      - uses: actions/checkout@v4
+        with:
+          repository: discordy-voics/messages
+          ref: f666594e88a45185038c86e26b85a4f7de8f61b1
+          token: ${{ secrets.DEPS_TOKEN }}
+          path: messages
+      - uses: actions/checkout@v4
+        with:
+          repository: discordy-voics/gateway
+          ref: 4fafea76304a07c4d88e7ab98732d69d40df5088
+          token: ${{ secrets.DEPS_TOKEN }}
+          path: gateway
+      - uses: actions/checkout@v4
+        with:
+          repository: discordy-voics/gitops
+          ref: 5666231afec92d8fe161a67f57c4364856fa2b30
+          token: ${{ secrets.DEPS_TOKEN }}
+          path: gitops
+      - uses: actions/checkout@v4
+        with:
+          repository: discordy-voics/voice
+          ref: d7c384dc5941b2c43028e3b35c131dc1763c8722
+          token: ${{ secrets.DEPS_TOKEN }}
+          path: voice
+      - name: Run isolated normal route
+        env:
+          QA_API_DIR: ${{ github.workspace }}/api
+          QA_MESSAGES_DIR: ${{ github.workspace }}/messages
+          QA_GATEWAY_DIR: ${{ github.workspace }}/gateway
+          QA_GITOPS_DIR: ${{ github.workspace }}/gitops
+          QA_VOICE_DIR: ${{ github.workspace }}/voice
+        run: bash api/qa/insights/run.sh
