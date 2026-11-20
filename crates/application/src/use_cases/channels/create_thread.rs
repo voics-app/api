@@ -319,7 +319,10 @@ async fn reconcile_forum_post(
     .and_then(Result::ok)
     .flatten();
     let stored = if existing.is_some() {
-        existing
+        // Re-enter the idempotent message operation before publication: a prior
+        // process may have stored the row but crashed before advancing its index.
+        tokio::time::timeout(std::time::Duration::from_secs(10), ports.messages.create_forum_start(thread.id, json!({"author_id": actor.user_id.to_string(), "message_id": message_id.to_string(), "content": content})))
+            .await.ok().and_then(Result::ok)
     } else {
         let token = ports.ids.next_id()?.to_string();
         if ports

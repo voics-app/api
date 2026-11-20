@@ -148,6 +148,9 @@ impl MessageService for RecordingMessages {
         message: serde_json::Value,
     ) -> AppResult<StoredMessage> {
         let id: domain::Snowflake = message["message_id"].as_str().unwrap().parse().unwrap();
+        if let Some(body) = self.stored.lock().unwrap().get(&(channel_id, id)).cloned() {
+            return Ok(StoredMessage { id, body });
+        }
         let body = serde_json::json!({"id": id.to_string(), "channel_id": channel_id.to_string(), "author": {"id": message["author_id"]}, "content": message["content"], "attachments": []});
         self.stored
             .lock()
