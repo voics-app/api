@@ -38,6 +38,27 @@ pub struct UserStats {
 
 #[async_trait]
 pub trait UserRepository: Send + Sync {
+    /// Badge grants and visibility are independent of user flags.
+    async fn badges(
+        &self,
+        _user_id: Snowflake,
+        _include_hidden: bool,
+    ) -> AppResult<Vec<(String, bool)>> {
+        Err(crate::error::AppError::Unavailable(
+            "Badge storage unavailable".into(),
+        ))
+    }
+    /// Update an existing grant only; callers cannot grant themselves badges.
+    async fn set_badge_visibility(
+        &self,
+        _user_id: Snowflake,
+        _badge_id: &str,
+        _visible: bool,
+    ) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "Badge storage unavailable".into(),
+        ))
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<User>>;
     async fn find_many(&self, ids: &[Snowflake]) -> AppResult<Vec<User>>;
     async fn find_by_email(&self, email: &str) -> AppResult<Option<User>>;
