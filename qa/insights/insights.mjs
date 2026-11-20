@@ -95,7 +95,7 @@ ws.onmessage = (event) => {
   if (frame.s != null) sequence = frame.s;
   if (frame.op === 10) {
     timer = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 1, d: sequence })); }, Math.max(1_000, Math.floor(frame.d.heartbeat_interval / 2)));
-    ws.send(JSON.stringify({ op: 2, d: { token: guest.token, device_id: null, intents: 0, properties: { os: 'qa', client: 'qa', version: '0' } } }));
+    ws.send(JSON.stringify({ op: 2, d: { token: guest.token, device_id: null, intents: 641, properties: { os: 'qa', client: 'qa', version: '0' } } }));
   }
 };
 await waitFor('gateway READY', () => frames.some((frame) => frame.t === 'READY'));
@@ -106,6 +106,7 @@ await waitFor('voice join and allocation', () => {
   voiceUpdate(voice.body.id);
   return false;
 }, 90_000);
+const joinedAt = Date.now();
 const statusPath = `/api/v1/channels/${voice.body.id}/voice-status`;
 assert.equal((await request(api, 'PUT', statusPath, guest.token, { status: 'testing together' })).status, 204, 'connected member sets status');
 assert.equal((await request(api, 'GET', `/api/v1/channels/${voice.body.id}`, owner.token)).body.status, 'testing together');
@@ -113,10 +114,11 @@ await waitFor('channel update dispatch', () => frames.some((frame) => frame.t ==
 await pause(17_000);
 voiceUpdate(null);
 await waitFor('voice leave', () => frames.some((frame) => frame.t === 'VOICE_STATE_UPDATE' && frame.d?.user_id === guest.id && frame.d?.channel_id === null));
-await waitFor('observed voice time', async () => {
+const voiceDay = await waitFor('observed voice time', async () => {
   const day = await insights();
-  return typeof day.voice_minutes === 'number' && day.voice_minutes > 0;
+  return typeof day.voice_minutes === 'number' && day.voice_minutes > 0 ? day : null;
 });
+assert.ok(voiceDay.voice_minutes <= (Date.now() - joinedAt) / 60_000 + 0.1, 'voice count does not exceed observed call window');
 assert.equal((await request(api, 'PUT', statusPath, guest.token, { status: null })).status, 403, 'disconnected member has no status permission');
 assert.equal((await request(api, 'DELETE', `/api/v1/users/@me/guilds/${guildId}`, guest.token)).status, 204, 'leave guild');
 assert.equal((await insights()).leavers, 1, 'committed departure counted');
