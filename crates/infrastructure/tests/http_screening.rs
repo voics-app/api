@@ -120,6 +120,26 @@ async fn join_and_accept_current_rules_before_sending() {
     assert_eq!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
     let (_, shown) = call(&app, Method::GET, &path, &guest, None).await;
     assert_eq!(shown["pending"], true);
+    // A reconnect to a large server still carries the caller's pending state,
+    // even when earlier member IDs fill the ordinary snapshot limit.
+    sqlx::query("INSERT INTO users (id, username, created_at) SELECT n, 'screen_seed_' || n, now() FROM generate_series(1, 1000) n")
+        .execute(&database.pool).await.unwrap();
+    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) SELECT $1, n, now() FROM generate_series(1, 1000) n")
+        .bind(guild_id.parse::<i64>().unwrap()).execute(&database.pool).await.unwrap();
+    let ready_request = axum::http::Request::builder()
+        .uri(format!("/internal/v1/users/{guest_id}/ready"))
+        .header("x-internal-token", INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, ready) = send(&app, ready_request).await;
+    assert_eq!(status, StatusCode::OK);
+    let own = ready["guilds"][0]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["user"]["id"] == guest_id)
+        .unwrap();
+    assert_eq!(own["pending"], true);
     let complete = format!("{onboarding_path}/complete");
     let (status, _) = call(
         &app,
