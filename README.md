@@ -136,6 +136,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `WEBAUTHN_RP_ORIGIN` | paired | | Exact HTTPS origin for ceremonies, including a non-default port if used. HTTP `localhost` is accepted only with `DISCORDY_ENV=local`. Unset both to disable new WebAuthn ceremonies |
 | `SNOWFLAKE_WORKER_ID` | yes | | Preferred API worker 0–63; allocation uses 1–63 and permanently excludes legacy worker 0 |
 | `PUBLIC_API_URL` | yes | | Base for webhook URLs |
+| `GATEWAY_INTERNAL_URL` | no | | Internal HTTP(S) gateway URL for voice membership and publication lookup; unset fails closed. |
 | `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
 | `CDN_PUBLIC_URL` | yes | | Public asset base |
 | `MESSAGES_INTERNAL_URL` | yes | | messages service internal base |
