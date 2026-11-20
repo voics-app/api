@@ -256,6 +256,44 @@ pub(super) async fn suspend_user(
 
 pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -> AppResult<()> {
     crate::postgres::community::check_update(conn, channel).await?;
+    // check_update holds the guild row lock. Recheck mode and children under
+    // that lock so forum creation cannot race a change of privacy mode.
+    if channel.kind == domain::channel::ChannelType::GuildForum {
+        let current: Option<String> =
+            sqlx::query_scalar("SELECT delivery_mode FROM channels WHERE id = $1")
+                .bind(channel.id.as_i64())
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(db)?;
+        if current
+            .as_deref()
+            .is_some_and(|mode| mode != channel.delivery_mode.as_str())
+        {
+            let has_posts: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM channels WHERE parent_id = $1 AND kind IN (10, 11, 12) AND COALESCE(forum_settings->>'status','') <> 'deleted')")
+                .bind(channel.id.as_i64()).fetch_one(&mut *conn).await.map_err(db)?;
+            if has_posts {
+                return Err(application::AppError::invalid(
+                    "delivery_mode",
+                    "DELIVERY_MODE_INVALID",
+                    "A forum with posts cannot change delivery mode.",
+                ));
+            }
+        }
+    } else if channel.kind.is_thread() && channel.forum_settings.get("request_key").is_some() {
+        let parent: Option<(i16, String)> =
+            sqlx::query_as("SELECT kind, delivery_mode FROM channels WHERE id = $1")
+                .bind(channel.parent_id.map(|id| id.as_i64()))
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(db)?;
+        if !matches!(parent, Some((15, ref mode)) if mode == channel.delivery_mode.as_str()) {
+            return Err(application::AppError::invalid(
+                "delivery_mode",
+                "DELIVERY_MODE_INVALID",
+                "The forum delivery mode changed.",
+            ));
+        }
+    }
     sqlx::query(
         "INSERT INTO channels (id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
              rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, forum_settings, applied_tags, created_at) \

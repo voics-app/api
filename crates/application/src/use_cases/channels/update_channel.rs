@@ -340,6 +340,21 @@ async fn update_guild_channel(
         channel.overwrites = overwrites;
     }
     let mode = input.delivery_mode.unwrap_or(channel.delivery_mode);
+    if channel.kind == ChannelType::GuildForum && mode != before.delivery_mode {
+        let has_posts = ports
+            .channels
+            .list_for_guild(ctx.guild.id)
+            .await?
+            .iter()
+            .any(|candidate| candidate.parent_id == Some(channel.id) && candidate.kind.is_thread());
+        if has_posts {
+            return Err(AppError::invalid(
+                "delivery_mode",
+                "DELIVERY_MODE_INVALID",
+                "A forum with posts cannot change delivery mode.",
+            ));
+        }
+    }
     if input.delivery_mode.is_some()
         || (mode == DeliveryMode::Ephemeral && channel.overwrites != before.overwrites)
     {
