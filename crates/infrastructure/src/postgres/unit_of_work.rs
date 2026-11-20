@@ -117,7 +117,7 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             if let Some(credentials) = credentials {
                 identity::insert_credentials(&mut *conn, credentials).await?;
             }
-            identity::upsert_settings(conn, settings.as_ref(), false).await
+            identity::upsert_settings(conn, settings.as_ref(), None).await
         }
         Mutation::UpdateUser(user) => identity::upsert_user(conn, user).await,
         Mutation::SetUserAppearance { user_id, patch } => {
@@ -150,7 +150,9 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             user_id,
             suspension,
         } => identity::suspend_user(conn, *user_id, suspension).await,
-        Mutation::UpsertSettings(settings) => identity::upsert_settings(conn, settings, true).await,
+        Mutation::UpsertSettings(settings) => {
+            identity::upsert_settings(conn, settings, Some(settings.settings_revision)).await
+        }
         Mutation::UpsertGuildNotificationSettings(settings) => {
             identity::upsert_guild_notification_settings(conn, settings).await
         }
