@@ -120,6 +120,19 @@ async fn moderators_move_and_disconnect_members() {
         StatusCode::FORBIDDEN,
         "disconnecting needs MOVE_MEMBERS"
     );
+    let (status, _) = call(
+        &app,
+        Method::PATCH,
+        &member_path,
+        &guest,
+        Some(json!({"suppress": false})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "promotion needs MUTE_MEMBERS"
+    );
 
     let (status, _) = call(
         &app,
@@ -166,6 +179,19 @@ async fn moderators_move_and_disconnect_members() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "disconnect");
+    let (status, _) = call(
+        &app,
+        Method::PATCH,
+        &member_path,
+        &owner,
+        Some(json!({"suppress": false})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "promote a current stage audience member"
+    );
 
     let (status, _) = call(
         &app,
@@ -200,8 +226,8 @@ async fn moderators_move_and_disconnect_members() {
             .await
             .expect("count");
     assert_eq!(
-        moves, 2,
-        "the gateway is told about the move and the disconnect"
+        moves, 3,
+        "the gateway is told about the move, disconnect and stage promotion"
     );
     let (target,): (Value,) = sqlx::query_as(
         "SELECT payload->'data' FROM outbox WHERE payload->>'type' = 'VOICE_MEMBER_MOVE' ORDER BY id LIMIT 1",
@@ -211,4 +237,12 @@ async fn moderators_move_and_disconnect_members() {
     .expect("event");
     assert_eq!(target["channel_id"], voice);
     assert_eq!(target["user_id"], guest_id);
+    let (promotion,): (Value,) = sqlx::query_as(
+        "SELECT payload->'data' FROM outbox WHERE payload->>'type' = 'VOICE_MEMBER_MOVE' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&database.pool)
+    .await
+    .expect("promotion event");
+    assert_eq!(promotion["suppress"], false);
+    assert!(promotion.get("channel_id").is_none());
 }

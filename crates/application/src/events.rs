@@ -65,6 +65,7 @@ pub enum DomainEvent {
         guild_id: Snowflake,
         user_id: Snowflake,
         channel_id: Option<Snowflake>,
+        suppress: Option<bool>,
     },
     BanAdd {
         guild_id: Snowflake,

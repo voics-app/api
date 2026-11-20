@@ -174,6 +174,7 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             guild_id,
             user_id,
             channel_id,
+            suppress,
         } => emit(
             TOPIC_GUILD,
             *guild_id,
@@ -181,11 +182,21 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             Some(*guild_id),
             None,
             None,
-            json!({
-                "guild_id": guild_id.to_string(),
-                "user_id": user_id.to_string(),
-                "channel_id": channel_id.map(|id| id.to_string()),
-            }),
+            {
+                let mut data = json!({
+                    "guild_id": guild_id.to_string(),
+                    "user_id": user_id.to_string(),
+                });
+                if let Some(channel_id) = channel_id {
+                    data["channel_id"] = json!(channel_id.to_string());
+                } else if suppress.is_none() {
+                    data["channel_id"] = serde_json::Value::Null;
+                }
+                if let Some(suppress) = suppress {
+                    data["suppress"] = json!(suppress);
+                }
+                data
+            },
         ),
         DomainEvent::BanMessagePurge {
             guild_id,
