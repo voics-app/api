@@ -46,6 +46,14 @@ fn invalid() -> AppError {
     )
 }
 
+fn unsafe_role() -> AppError {
+    AppError::invalid(
+        "role_id",
+        "ROLE_NOT_ELIGIBLE",
+        "Choose a non-managed role without moderation permissions or privileged channel overrides.",
+    )
+}
+
 pub async fn get(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppResult<Value> {
     GuildContext::load(ports, guild_id, actor.user_id).await?;
     let (config, revision) = ports.guilds.onboarding(guild_id).await?;
@@ -101,7 +109,7 @@ pub async fn set(
                 ctx.require_manageable_role(role)?;
                 if id == guild_id || role.managed || role.permissions.bits() & !SAFE_ROLE_BITS != 0
                 {
-                    return Err(invalid());
+                    return Err(unsafe_role());
                 }
                 if guild_channels
                     .iter()
@@ -112,7 +120,7 @@ pub async fn set(
                             && overwrite.allow.bits() & !SAFE_ROLE_BITS != 0
                     })
                 {
-                    return Err(invalid());
+                    return Err(unsafe_role());
                 }
             } else if !o.get("role_id").is_some_and(Value::is_null) {
                 return Err(invalid());
