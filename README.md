@@ -323,3 +323,7 @@ Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians
 ## Stage instances
 
 Guild stage-channel metadata is managed through `POST /stage-instances` and `GET`, `PATCH`, or `DELETE /stage-instances/{channel_id}`. Reading requires channel visibility; starting, changing the topic and ending require `MANAGE_CHANNELS`. Each mutation is committed with its `STAGE_INSTANCE_*` event through the transactional outbox. A channel can have at most one active instance. This metadata lifecycle does not itself enable stage audio; see the stage enforcement design in the docs repository.
+
+## Profile badges
+
+Profile badges are separate from user flags. `GET /api/v1/users/@me/badges` lists the authenticated account's granted badge IDs and visibility; `PUT /api/v1/users/@me/badges/{id}` with `{"visible":false}` or `true` changes an existing grant only. `GET /api/v1/users/{id}/badges` returns only visible badge IDs. Grants are provisioned by trusted operators in `user_badges`; this API does not grant badges. No production badge catalog is defined yet.
