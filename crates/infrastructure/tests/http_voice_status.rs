@@ -144,6 +144,7 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     assert_eq!(days.len(), 7);
     assert_eq!(days.last().unwrap()["new_members"], 2);
     assert_eq!(days.last().unwrap()["membership_complete"], false);
+    assert!(days.last().unwrap()["activity_source_initialized_at_ms"].is_i64());
     assert!(days.last().unwrap()["messages"].is_null());
     assert!(days.last().unwrap()["voice_minutes"].is_null());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -157,7 +158,7 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
                     headers.get("x-internal-token").unwrap(),
                     support::http::INTERNAL_TOKEN
                 );
-                axum::Json(json!({"utc_day": day, "count": 4, "coverage_complete": false}))
+                axum::Json(json!({"utc_day": day, "count": 4, "coverage_complete": false, "source_initialized_at_ms": 1795046400000_u64}))
             },
         ),
     );
@@ -179,6 +180,10 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(observed["days"][6]["messages"], 4);
     assert_eq!(observed["days"][6]["message_complete"], false);
+    assert_eq!(
+        observed["days"][6]["message_source_initialized_at_ms"],
+        1795046400000_u64
+    );
     assert_eq!(observed["message_coverage"], false);
     server.abort();
     let _ = server.await;

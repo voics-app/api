@@ -107,7 +107,7 @@ pub trait MessageService: Send + Sync {
         &self,
         _guild_id: Snowflake,
         _utc_day: i64,
-    ) -> AppResult<(u64, bool)> {
+    ) -> AppResult<(u64, bool, Option<u64>)> {
         Err(AppError::Unavailable(
             "guild message activity is not configured".into(),
         ))

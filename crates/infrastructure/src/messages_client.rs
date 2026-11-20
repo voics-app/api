@@ -89,7 +89,7 @@ impl MessageService for HttpMessages {
         &self,
         guild_id: Snowflake,
         utc_day: i64,
-    ) -> AppResult<(u64, bool)> {
+    ) -> AppResult<(u64, bool, Option<u64>)> {
         let path = format!("internal/v1/guilds/{guild_id}/message-activity/{utc_day}");
         let url = self.base.join(&path).map_err(AppError::internal)?;
         let response = self
@@ -112,8 +112,17 @@ impl MessageService for HttpMessages {
         let day = body.get("utc_day").and_then(Value::as_i64);
         let count = body.get("count").and_then(Value::as_u64);
         let complete = body.get("coverage_complete").and_then(Value::as_bool);
-        match (day, count, complete) {
-            (Some(day), Some(count), Some(complete)) if day == utc_day => Ok((count, complete)),
+        let initialized = body.get("source_initialized_at_ms").and_then(|v| {
+            if v.is_null() {
+                Some(None)
+            } else {
+                v.as_u64().map(Some)
+            }
+        });
+        match (day, count, complete, initialized) {
+            (Some(day), Some(count), Some(complete), Some(initialized)) if day == utc_day => {
+                Ok((count, complete, initialized))
+            }
             _ => Err(AppError::Unavailable(
                 "invalid messages activity response".into(),
             )),

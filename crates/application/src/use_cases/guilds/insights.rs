@@ -15,6 +15,8 @@ pub struct Day {
     pub membership_complete: bool,
     pub messages: Option<u64>,
     pub message_complete: bool,
+    pub message_source_initialized_at_ms: Option<u64>,
+    pub activity_source_initialized_at_ms: i64,
     pub voice_minutes: Option<f64>,
 }
 
@@ -56,8 +58,13 @@ pub async fn execute(
             joins: observed.then(|| row.map_or(0, |row| row.joins)),
             leaves: observed.then(|| row.map_or(0, |row| row.leaves)),
             membership_complete: day > started.date_naive() && day < today,
-            messages: message_result.as_ref().ok().map(|(count, _)| *count),
-            message_complete: message_result.is_ok_and(|(_, complete)| complete) && day < today,
+            messages: message_result.as_ref().ok().map(|(count, _, _)| *count),
+            message_source_initialized_at_ms: message_result
+                .as_ref()
+                .ok()
+                .and_then(|(_, _, initialized)| *initialized),
+            activity_source_initialized_at_ms: started.timestamp_millis(),
+            message_complete: message_result.is_ok_and(|(_, complete, _)| complete) && day < today,
             voice_minutes: row
                 .filter(|row| row.voice_millis > 0)
                 .map(|row| row.voice_millis as f64 / 60_000.0),

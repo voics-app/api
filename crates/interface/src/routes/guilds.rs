@@ -162,7 +162,9 @@ async fn guild_insights(
     let message_coverage = days.iter().all(|day| day.message_complete);
     let days: Vec<_> = days.into_iter().map(|day| json!({
         "date": day.day.to_string(), "new_members": day.joins, "leavers": day.leaves,
-        "membership_complete": day.membership_complete, "messages": day.messages, "message_complete": day.message_complete, "voice_minutes": day.voice_minutes
+        "membership_complete": day.membership_complete, "messages": day.messages, "message_complete": day.message_complete,
+        "message_source_initialized_at_ms": day.message_source_initialized_at_ms,
+        "activity_source_initialized_at_ms": day.activity_source_initialized_at_ms, "voice_minutes": day.voice_minutes
     })).collect();
     Ok(Json(
         json!({"period": period, "days": days, "message_coverage": message_coverage, "voice_coverage": false}),
