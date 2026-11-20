@@ -11,6 +11,15 @@ export QA_SCRIPT="$(realpath "$QA_API_DIR/qa/insights/insights.mjs")"
 local_dir="$(realpath "$QA_GITOPS_DIR/local")"
 [[ "$local_dir" == "$(realpath "$GITHUB_WORKSPACE/gitops/local")" ]] || { echo 'Unexpected gitops checkout path' >&2; exit 2; }
 [[ ! -e "$local_dir/.env" ]] || { echo 'Refusing a non-disposable gitops checkout' >&2; exit 2; }
+compose_ready=0
+cleanup() {
+  if (( compose_ready )); then "${compose[@]}" down --volumes --remove-orphans || true; fi
+  for service in api messages gateway voice-sfu voice-signaling; do
+    docker image rm "$QA_IMAGE_PREFIX/$service:fixture" >/dev/null 2>&1 || true
+  done
+  rm -f -- "$local_dir/.env"
+}
+trap cleanup EXIT
 (
   cd "$local_dir"
   ./gen-dev-keys.sh
@@ -21,14 +30,8 @@ export VOICE_TOKEN_SECRET="$(openssl rand -hex 32)"
 export TURN_STATIC_AUTH_SECRET="$(openssl rand -hex 32)"
 export RELEASE_COOKIE="$(openssl rand -hex 32)"
 compose=(docker compose --project-name "$project" --project-directory "$local_dir" --env-file "$local_dir/.env" -f "$local_dir/compose.yaml" -f "$QA_API_DIR/qa/insights/compose.override.yaml" --profile full --profile qa)
-cleanup() {
-  "${compose[@]}" down --volumes --remove-orphans || true
-  for service in api messages gateway voice-sfu voice-signaling; do
-    docker image rm "$QA_IMAGE_PREFIX/$service:fixture" >/dev/null 2>&1 || true
-  done
-  rm -f -- "$local_dir/.env"
-}
-trap cleanup EXIT
+compose_ready=1
+"${compose[@]}" config --quiet
 
 docker build -t "$QA_IMAGE_PREFIX/api:fixture" "$QA_API_DIR"
 docker build -t "$QA_IMAGE_PREFIX/messages:fixture" "$QA_MESSAGES_DIR"
