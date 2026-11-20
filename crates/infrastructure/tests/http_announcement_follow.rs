@@ -149,6 +149,40 @@ async fn follow_requires_visible_announcement_and_target_webhook_permission() {
     );
     let (status, _) = call(&app, Method::POST, &crosspost_uri, token, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Hold the same follower lock used by publication while a concurrent
+    // unfollow starts. Once the enqueue commits, the delete trigger must see
+    // and cancel the pending row rather than leave an orphaned delivery.
+    let source_raw = source_id.parse::<i64>().unwrap();
+    let target_raw = target_id.parse::<i64>().unwrap();
+    let hook_raw = hook_id.parse::<i64>().unwrap();
+    let mut tx = database.pool.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$2 AND webhook_id=$3 FOR KEY SHARE")
+        .bind(source_raw).bind(target_raw).bind(hook_raw).fetch_one(&mut *tx).await.unwrap();
+    let pool = database.pool.clone();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let mut remove = tokio::spawn(async move {
+        let _ = started_tx.send(());
+        sqlx::query("DELETE FROM webhooks WHERE id=$1")
+            .bind(hook_raw)
+            .execute(&pool)
+            .await
+            .unwrap();
+    });
+    started_rx.await.unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut remove)
+            .await
+            .is_err()
+    );
+    sqlx::query("INSERT INTO announcement_publications (source_channel_id, source_message_id, payload) VALUES ($1, 12346, '{}'::jsonb)")
+        .bind(source_raw).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO announcement_deliveries (source_channel_id, source_message_id, target_channel_id, webhook_id, destination_message_id) SELECT $1, 12346, $2, $3, 12347 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$2 AND webhook_id=$3 FOR KEY SHARE")
+        .bind(source_raw).bind(target_raw).bind(hook_raw).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    remove.await.unwrap();
+    let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=12346 AND target_channel_id=$2")
+        .bind(source_raw).bind(target_raw).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(state, "cancelled");
     let (status, outsider) = send(
         &app,
         request(
