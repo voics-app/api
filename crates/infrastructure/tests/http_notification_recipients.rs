@@ -559,3 +559,85 @@ async fn an_unavailable_dependency_does_not_fall_back_to_unfiltered_recipients()
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(body.get("recipients").is_none());
 }
+
+#[tokio::test]
+async fn thread_lifecycle_uses_injected_time_and_publishes_transitions() {
+    use application::ports::ThreadLifecycleStore;
+    use chrono::Duration;
+    use infrastructure::postgres::PgThreadLifecycle;
+
+    let database = start_database().await;
+    let app = app(&database);
+    let (owner, _) = account(&app, "lifecycleowner").await;
+    let (_, parent) = guild(&app, &owner, &[]).await;
+    let created = ok_call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{parent}/threads"),
+        &owner,
+        Some(json!({"name":"Lifecycle", "type":11, "auto_archive_duration":60})),
+    )
+    .await;
+    let thread = created["id"].as_str().unwrap();
+    let id = domain::Snowflake::new(thread.parse().unwrap());
+    let initial: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT last_activity_at FROM thread_activity WHERE thread_id = $1")
+            .bind(id.as_i64())
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+    let lifecycle = PgThreadLifecycle::new(database.pool.clone(), "nl-home".into());
+    assert_eq!(
+        lifecycle
+            .archive_due(initial + Duration::minutes(59), 10)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        lifecycle
+            .archive_due(initial + Duration::minutes(60), 10)
+            .await
+            .unwrap(),
+        1
+    );
+    let path = format!("/api/v1/channels/{thread}");
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        true
+    );
+    lifecycle
+        .record_message(
+            id,
+            initial + Duration::minutes(59),
+            initial + Duration::minutes(61),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        false
+    );
+    assert_eq!(
+        lifecycle
+            .archive_due(initial + Duration::minutes(119), 10)
+            .await
+            .unwrap(),
+        1
+    );
+    lifecycle
+        .record_message(
+            id,
+            initial + Duration::minutes(59),
+            initial + Duration::minutes(120),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        true
+    );
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'THREAD_UPDATE' AND payload->>'channel_id' = $1")
+        .bind(thread).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(events, 3);
+}

@@ -113,6 +113,10 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         relationships: store.clone(),
         reports: store.clone(),
         channels: store.clone(),
+        thread_lifecycle: Arc::new(infrastructure::postgres::PgThreadLifecycle::new(
+            pool.clone(),
+            region.clone(),
+        )),
         guilds: store.clone(),
         invites: store.clone(),
         emojis: store.clone(),

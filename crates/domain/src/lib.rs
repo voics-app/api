@@ -25,6 +25,7 @@ pub mod report;
 pub mod session;
 pub mod snowflake;
 pub mod template;
+pub mod thread_lifecycle;
 pub mod user;
 pub mod user_preferences;
 pub mod validation;

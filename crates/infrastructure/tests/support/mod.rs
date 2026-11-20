@@ -253,6 +253,10 @@ pub fn ports_with_messages(
         relationships: store.clone(),
         reports: store.clone(),
         channels: store.clone(),
+        thread_lifecycle: Arc::new(infrastructure::postgres::PgThreadLifecycle::new(
+            pool.clone(),
+            "nl-home".into(),
+        )),
         guilds: store.clone(),
         invites: store.clone(),
         emojis: store.clone(),

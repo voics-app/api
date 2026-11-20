@@ -15,3 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked -p infrastructure --test http_notification_recipients private_thread_invitation_and_leave_change_http_access_and_notification_audience
+  thread-lifecycle:
+    runs-on: vm-runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked -p infrastructure --test http_notification_recipients thread_lifecycle_uses_injected_time_and_publishes_transitions
