@@ -48,6 +48,7 @@ async fn concurrent_settings_patch_retries_and_emits_committed_snapshots() {
         barrier: Barrier::new(2),
     });
     p.unit_of_work = gate.clone();
+    let users = p.users.clone();
     let app = interface::router(AppState {
         ports: p,
         internal_token: support::http::INTERNAL_TOKEN.into(),
@@ -163,4 +164,35 @@ async fn concurrent_settings_patch_retries_and_emits_committed_snapshots() {
     let (_, stored) = call(&app, Method::GET, path, token, None).await;
     assert_eq!(stored["theme"], "light");
     assert_eq!(stored["preferences"]["reduce_motion"], json!(true));
+
+    // A non-CAS writer still advances the trigger, so a new writer using an old
+    // snapshot is rejected and does not enqueue a stale event.
+    let id = domain::Snowflake::new(user["user"]["id"].as_str().unwrap().parse().unwrap());
+    let mut stale = users.settings(id).await.unwrap();
+    sqlx::query("UPDATE user_settings SET theme = 'oled' WHERE user_id = $1")
+        .bind(id.as_i64())
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    stale
+        .preferences
+        .insert("notify_sounds".into(), json!(false));
+    let mut writes = WriteSet::new();
+    writes
+        .mutate(Mutation::UpsertSettings(stale.clone()))
+        .emit(application::events::DomainEvent::UserSettingsUpdate(stale));
+    assert!(matches!(
+        gate.inner.commit(writes).await,
+        Err(application::AppError::SettingsWriteConflict)
+    ));
+    let (_, after) = call(&app, Method::GET, path, token, None).await;
+    assert_eq!(after["theme"], "oled");
+    assert!(after["preferences"].get("notify_sounds").is_none());
+    let rows: (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM outbox WHERE payload->>'type' = 'USER_SETTINGS_UPDATE'",
+    )
+    .fetch_one(&database.pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.0, 6, "the stale attempt must not enqueue an event");
 }
