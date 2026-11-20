@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: discordy-voics/messages
-          ref: f666594e88a45185038c86e26b85a4f7de8f61b1
+          ref: 88a1b79718e5a477ff1f156d5beaca8d07a4d0a6
           token: ${{ secrets.DEPS_TOKEN }}
           path: messages
       - uses: actions/checkout@v4

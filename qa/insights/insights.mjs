@@ -70,6 +70,10 @@ const insights = async () => {
   assert.equal(result.body.days.length, 7);
   assert.equal(result.body.message_coverage, false, 'mixed rollout remains incomplete');
   assert.equal(result.body.voice_coverage, false, 'voice gaps remain incomplete');
+  for (const source of ['membership', 'messages', 'voice']) {
+    const coverage = result.body.coverage[source];
+    assert.equal(coverage.complete_days + coverage.partial_days + coverage.unavailable_days, 7, `${source} period coverage accounts for every day`);
+  }
   return result.body.days.at(-1);
 };
 await pause(5_000); // Allow any guild-join system messages to settle before the baseline.
@@ -78,6 +82,14 @@ const baseline = await waitFor('message marker source', async () => {
   return typeof day.messages === 'number' && day.message_source_initialized_at_ms ? day : null;
 });
 assert.equal(baseline.new_members, 2, 'two committed joins');
+assert.equal(baseline.coverage.membership, 'partial');
+assert.equal(baseline.coverage.messages, 'partial');
+assert.equal(baseline.coverage.voice, 'unavailable');
+const month = await request(api, 'GET', `/api/v1/guilds/${guildId}/insights?period=30`, owner.token);
+assert.equal(month.status, 200);
+assert.equal(month.body.days.length, 30);
+assert.equal(month.body.days[0].coverage.messages, 'unavailable', 'pre-source history is unknown');
+assert.equal(month.body.days[0].messages, null, 'pre-source history is not a fabricated zero');
 const sent = await request(messages, 'POST', `/api/v1/channels/${text.body.id}/messages`, owner.token, { content: 'one observed guild message' });
 assert.equal(sent.status, 200, 'send normal message');
 await waitFor('message marker', async () => {
@@ -119,6 +131,7 @@ const voiceDay = await waitFor('observed voice time', async () => {
   return typeof day.voice_minutes === 'number' && day.voice_minutes > 0 ? day : null;
 });
 assert.ok(voiceDay.voice_minutes <= (Date.now() - joinedAt) / 60_000 + 0.1, 'voice count does not exceed observed call window');
+assert.equal(voiceDay.coverage.voice, 'partial', 'sampled voice is not complete coverage');
 assert.equal((await request(api, 'PUT', statusPath, guest.token, { status: null })).status, 403, 'disconnected member has no status permission');
 assert.equal((await request(api, 'DELETE', `/api/v1/users/@me/guilds/${guildId}`, guest.token)).status, 204, 'leave guild');
 assert.equal((await insights()).leavers, 1, 'committed departure counted');

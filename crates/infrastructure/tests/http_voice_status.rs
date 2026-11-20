@@ -147,18 +147,22 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     assert!(days.last().unwrap()["activity_source_initialized_at_ms"].is_i64());
     assert!(days.last().unwrap()["messages"].is_null());
     assert!(days.last().unwrap()["voice_minutes"].is_null());
+    assert_eq!(days.last().unwrap()["coverage"]["membership"], "partial");
+    assert_eq!(days.last().unwrap()["coverage"]["messages"], "unavailable");
+    assert_eq!(days.last().unwrap()["coverage"]["voice"], "unavailable");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+    let initialized_ms = chrono::Utc::now().timestamp_millis() as u64;
     let upstream = axum::Router::new().route(
         "/internal/v1/guilds/{guild}/message-activity/{day}",
         axum::routing::get(
-            |axum::extract::Path((_guild, day)): axum::extract::Path<(String, i64)>,
+            move |axum::extract::Path((_guild, day)): axum::extract::Path<(String, i64)>,
              headers: axum::http::HeaderMap| async move {
                 assert_eq!(
                     headers.get("x-internal-token").unwrap(),
                     support::http::INTERNAL_TOKEN
                 );
-                axum::Json(json!({"utc_day": day, "count": 4, "coverage_complete": false, "source_initialized_at_ms": 1795046400000_u64}))
+                axum::Json(json!({"utc_day": day, "count": 4, "coverage_complete": false, "source_initialized_at_ms": initialized_ms}))
             },
         ),
     );
@@ -182,8 +186,12 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     assert_eq!(observed["days"][6]["message_complete"], false);
     assert_eq!(
         observed["days"][6]["message_source_initialized_at_ms"],
-        1795046400000_u64
+        initialized_ms
     );
+    assert_eq!(observed["days"][6]["coverage"]["messages"], "partial");
+    assert!(observed["days"][0]["messages"].is_null());
+    assert_eq!(observed["coverage"]["messages"]["partial_days"], 1);
+    assert_eq!(observed["coverage"]["messages"]["unavailable_days"], 6);
     assert_eq!(observed["message_coverage"], false);
     server.abort();
     let _ = server.await;
@@ -465,4 +473,7 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     .await
     .unwrap();
     assert_eq!(total, 20_000, "long unobserved gaps are not invented");
+    let (_, after_voice) = call(&app, Method::GET, &insights_path, &owner, None).await;
+    assert_eq!(after_voice["days"][6]["coverage"]["voice"], "partial");
+    assert_eq!(after_voice["coverage"]["voice"]["partial_days"], 2);
 }

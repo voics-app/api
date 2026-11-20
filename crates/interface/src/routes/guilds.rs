@@ -145,6 +145,25 @@ struct InsightsQuery {
     period: Option<u32>,
 }
 
+fn coverage_summary<'a>(values: impl Iterator<Item = &'a str>) -> Value {
+    let (mut complete, mut partial, mut unavailable) = (0u32, 0u32, 0u32);
+    for value in values {
+        match value {
+            "complete" => complete += 1,
+            "partial" => partial += 1,
+            _ => unavailable += 1,
+        }
+    }
+    let status = if unavailable == 0 && partial == 0 {
+        "complete"
+    } else if complete + partial == 0 {
+        "unavailable"
+    } else {
+        "partial"
+    };
+    json!({"status": status, "complete_days": complete, "partial_days": partial, "unavailable_days": unavailable})
+}
+
 async fn guild_insights(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -160,14 +179,20 @@ async fn guild_insights(
     )
     .await?;
     let message_coverage = days.iter().all(|day| day.message_complete);
+    let coverage = json!({
+        "membership": coverage_summary(days.iter().map(|day| day.membership_coverage)),
+        "messages": coverage_summary(days.iter().map(|day| day.message_coverage)),
+        "voice": coverage_summary(days.iter().map(|day| day.voice_coverage)),
+    });
     let days: Vec<_> = days.into_iter().map(|day| json!({
         "date": day.day.to_string(), "new_members": day.joins, "leavers": day.leaves,
         "membership_complete": day.membership_complete, "messages": day.messages, "message_complete": day.message_complete,
         "message_source_initialized_at_ms": day.message_source_initialized_at_ms,
-        "activity_source_initialized_at_ms": day.activity_source_initialized_at_ms, "voice_minutes": day.voice_minutes
+        "activity_source_initialized_at_ms": day.activity_source_initialized_at_ms, "voice_minutes": day.voice_minutes,
+        "coverage": {"membership": day.membership_coverage, "messages": day.message_coverage, "voice": day.voice_coverage}
     })).collect();
     Ok(Json(
-        json!({"period": period, "days": days, "message_coverage": message_coverage, "voice_coverage": false}),
+        json!({"period": period, "days": days, "coverage": coverage, "message_coverage": message_coverage, "voice_coverage": false}),
     ))
 }
 
