@@ -404,6 +404,55 @@ async fn delete_relationship(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(serde::Serialize)]
+struct BadgeDto {
+    id: String,
+    visible: bool,
+}
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BadgeVisibilityRequest {
+    visible: bool,
+}
+
+async fn own_badges(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+) -> Result<Json<Vec<BadgeDto>>, ApiError> {
+    let rows = state.ports.users.badges(actor.user_id, true).await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(id, visible)| BadgeDto { id, visible })
+            .collect(),
+    ))
+}
+async fn public_badges(
+    State(state): State<AppState>,
+    Caller(_actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let id = parse_id(&id)?;
+    get_user::execute(&state.ports, id).await?;
+    let rows = state.ports.users.badges(id, false).await?;
+    Ok(Json(rows.into_iter().map(|(id, _)| id).collect()))
+}
+async fn set_badge_visibility(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<BadgeVisibilityRequest>,
+) -> Result<StatusCode, ApiError> {
+    if !state
+        .ports
+        .users
+        .set_badge_visibility(actor.user_id, &id, body.visible)
+        .await?
+    {
+        return Err(AppError::NotFound(application::Resource::User).into());
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -412,6 +461,9 @@ pub fn routes() -> Router<AppState> {
                 .patch(update_me)
                 .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT * 2)),
         )
+        .route("/users/@me/badges", get(own_badges))
+        .route("/users/@me/badges/{id}", put(set_badge_visibility))
+        .route("/users/{id}/badges", get(public_badges))
         .route("/users/@me/disable", post(disable_account))
         .route("/users/@me/delete", post(delete_account))
         .route(
