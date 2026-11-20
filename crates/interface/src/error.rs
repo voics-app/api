@@ -116,6 +116,12 @@ impl IntoResponse for ApiError {
         let mut methods = None;
         let mut retry_after = None;
         let (status, code, message, errors) = match self.0 {
+            AppError::SettingsWriteConflict => (
+                StatusCode::CONFLICT,
+                GENERAL_ERROR,
+                "Settings changed concurrently; retry".into(),
+                None,
+            ),
             AppError::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 UNAUTHORIZED,

@@ -161,6 +161,8 @@ pub struct FriendSourceFlagsPatch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserSettings {
     pub user_id: Snowflake,
+    /// Internal optimistic concurrency token; never exposed to clients.
+    pub settings_revision: i64,
     pub friend_source_flags: FriendSourceFlags,
     pub default_delivery_mode: DeliveryMode,
     pub e2ee_calls_default: bool,
@@ -185,6 +187,7 @@ impl UserSettings {
     pub fn defaults_for(user_id: Snowflake) -> Self {
         Self {
             user_id,
+            settings_revision: 0,
             friend_source_flags: FriendSourceFlags::default(),
             default_delivery_mode: DeliveryMode::Standard,
             e2ee_calls_default: false,

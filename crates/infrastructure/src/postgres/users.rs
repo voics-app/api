@@ -75,6 +75,7 @@ impl From<UserRow> for User {
 #[derive(FromRow)]
 struct SettingsRow {
     user_id: i64,
+    settings_revision: i64,
     default_delivery_mode: String,
     e2ee_calls_default: bool,
     theme: String,
@@ -98,6 +99,7 @@ impl From<SettingsRow> for UserSettings {
     fn from(row: SettingsRow) -> Self {
         UserSettings {
             user_id: sf(row.user_id),
+            settings_revision: row.settings_revision,
             friend_source_flags: domain::user::FriendSourceFlags {
                 all: row.friend_source_all,
                 mutual_friends: row.friend_source_mutual_friends,
@@ -122,10 +124,34 @@ impl From<SettingsRow> for UserSettings {
 }
 
 const SETTINGS_COLUMNS: &str =
-    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids, friend_source_all, friend_source_mutual_friends, friend_source_mutual_guilds";
+    "user_id, settings_revision, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids, friend_source_all, friend_source_mutual_friends, friend_source_mutual_guilds";
 
 #[async_trait]
 impl UserRepository for PgStore {
+    async fn badges(
+        &self,
+        user_id: Snowflake,
+        include_hidden: bool,
+    ) -> AppResult<Vec<(String, bool)>> {
+        sqlx::query_as("SELECT badge_id, visible FROM user_badges WHERE user_id = $1 AND ($2 OR visible) ORDER BY badge_id")
+            .bind(user_id.as_i64()).bind(include_hidden).fetch_all(&self.pool).await.map_err(db)
+    }
+    async fn set_badge_visibility(
+        &self,
+        user_id: Snowflake,
+        badge_id: &str,
+        visible: bool,
+    ) -> AppResult<bool> {
+        let result =
+            sqlx::query("UPDATE user_badges SET visible = $3 WHERE user_id = $1 AND badge_id = $2")
+                .bind(user_id.as_i64())
+                .bind(badge_id)
+                .bind(visible)
+                .execute(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(result.rows_affected() == 1)
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<User>> {
         let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1");
         let row: Option<UserRow> = sqlx::query_as(&sql)

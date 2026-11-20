@@ -322,3 +322,9 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
+Profile badges are separate from user flags. `GET /api/v1/users/@me/badges` lists the authenticated account's granted badge IDs and visibility; `PUT /api/v1/users/@me/badges/{id}` with `{"visible":false}` or `true` changes an existing grant only. `GET /api/v1/users/{id}/badges` returns only visible badge IDs. Grants are provisioned by trusted operators in `user_badges`; this API does not grant badges. No production badge catalog is defined yet.
+
+### Concurrent user settings
+
+Settings PATCH applies a bounded optimistic retry against a database revision, so concurrent changes to different fields or preference keys merge instead of silently restoring a stale snapshot. Exhausted contention returns 409 for a caller retry; rejected attempts do not publish settings events. Migration 0122 adds the revision and an update trigger. Roll out the migration first, then fence every older API writer before enabling privacy controls: older binaries do not compare revisions and can still overwrite newer settings.

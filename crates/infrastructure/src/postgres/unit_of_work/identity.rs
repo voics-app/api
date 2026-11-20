@@ -96,18 +96,20 @@ pub(super) async fn set_totp_secret(
 pub(super) async fn upsert_settings(
     conn: &mut PgConnection,
     settings: &UserSettings,
+    expected_revision: Option<i64>,
 ) -> AppResult<()> {
-    sqlx::query(
+    let result = sqlx::query(
         "INSERT INTO user_settings (user_id, default_delivery_mode, e2ee_calls_default, theme, locale, \
              status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, \
-             message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids, friend_source_all, friend_source_mutual_friends, friend_source_mutual_guilds) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) \
+             message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids, friend_source_all, friend_source_mutual_friends, friend_source_mutual_guilds, settings_revision) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CASE WHEN $19::bigint IS NOT NULL THEN 1 ELSE 0 END) \
          ON CONFLICT (user_id) DO UPDATE SET default_delivery_mode = EXCLUDED.default_delivery_mode, \
              e2ee_calls_default = EXCLUDED.e2ee_calls_default, theme = EXCLUDED.theme, locale = EXCLUDED.locale, status = EXCLUDED.status, \
              custom_status = EXCLUDED.custom_status, developer_mode = EXCLUDED.developer_mode, \
              accent_color = EXCLUDED.accent_color, guild_folders = EXCLUDED.guild_folders, \
              guild_positions = EXCLUDED.guild_positions, \
-             message_display_compact = EXCLUDED.message_display_compact, preferences = EXCLUDED.preferences, \n             pinned_dm_channel_ids = EXCLUDED.pinned_dm_channel_ids, pinned_channel_ids = EXCLUDED.pinned_channel_ids, friend_source_all = EXCLUDED.friend_source_all, friend_source_mutual_friends = EXCLUDED.friend_source_mutual_friends, friend_source_mutual_guilds = EXCLUDED.friend_source_mutual_guilds",
+             message_display_compact = EXCLUDED.message_display_compact, preferences = EXCLUDED.preferences, \n             pinned_dm_channel_ids = EXCLUDED.pinned_dm_channel_ids, pinned_channel_ids = EXCLUDED.pinned_channel_ids, friend_source_all = EXCLUDED.friend_source_all, friend_source_mutual_friends = EXCLUDED.friend_source_mutual_friends, friend_source_mutual_guilds = EXCLUDED.friend_source_mutual_guilds \
+             WHERE $19::bigint IS NULL OR user_settings.settings_revision = $19",
     )
     .bind(settings.user_id.as_i64())
     .bind(settings.default_delivery_mode.as_str())
@@ -141,9 +143,13 @@ pub(super) async fn upsert_settings(
     .bind(settings.friend_source_flags.all)
     .bind(settings.friend_source_flags.mutual_friends)
     .bind(settings.friend_source_flags.mutual_guilds)
+    .bind(expected_revision)
     .execute(conn)
     .await
     .map_err(db)?;
+    if result.rows_affected() == 0 {
+        return Err(application::AppError::SettingsWriteConflict);
+    }
     Ok(())
 }
 
@@ -470,6 +476,7 @@ pub(super) async fn anonymize_user(
         "user_passkeys",
         "passkey_challenges",
         "application_authorizations",
+        "user_badges",
     ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE user_id = $1"))
             .bind(user_id.as_i64())
