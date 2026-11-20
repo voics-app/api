@@ -417,6 +417,7 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
         "replay must not enqueue another opener event"
     );
     assert_eq!(events[0]["data"]["content"], "hello");
+    assert_eq!(events[0]["data"]["guild_id"], guild_id);
     assert_eq!(events[0]["data"]["id"], listed[0]["last_message_id"]);
     let (status, _) = call(
         &app,

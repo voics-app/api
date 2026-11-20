@@ -91,15 +91,19 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             guild_id,
             channel_id,
             message,
-        } => emit(
-            TOPIC_MESSAGE,
-            *channel_id,
-            "MESSAGE_CREATE",
-            Some(*guild_id),
-            Some(*channel_id),
-            None,
-            message.clone(),
-        ),
+        } => {
+            let mut data = message.clone();
+            data["guild_id"] = json!(guild_id.to_string());
+            emit(
+                TOPIC_MESSAGE,
+                *channel_id,
+                "MESSAGE_CREATE",
+                Some(*guild_id),
+                Some(*channel_id),
+                None,
+                data,
+            );
+        }
         DomainEvent::ThreadCreate(channel) => guild_channel(&mut emit, "THREAD_CREATE", channel),
         DomainEvent::ThreadUpdate(channel) => guild_channel(&mut emit, "THREAD_UPDATE", channel),
         DomainEvent::ThreadDelete(channel) => guild_channel(&mut emit, "THREAD_DELETE", channel),
