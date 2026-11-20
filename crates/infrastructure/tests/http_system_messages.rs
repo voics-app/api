@@ -447,8 +447,16 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(private_list[0].get("forum_first_message").is_none());
-    assert!(private_list[0].get("message_count").is_none());
+    assert!(private_list.as_array().unwrap().is_empty());
+    let (status, _) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{post_id}"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     sqlx::query("UPDATE channels SET delivery_mode = 'standard' WHERE id = $1")
         .bind(id.parse::<i64>().unwrap())
         .execute(&database.pool)

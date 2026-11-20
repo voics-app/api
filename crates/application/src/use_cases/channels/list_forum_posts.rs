@@ -27,6 +27,7 @@ pub async fn execute(
         .filter(|channel| {
             channel.parent_id == Some(parent_id)
                 && channel.kind == ChannelType::PublicThread
+                && channel.delivery_mode == parent.delivery_mode
                 && !channel
                     .forum_settings
                     .get("pending")

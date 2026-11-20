@@ -1,4 +1,4 @@
-use domain::channel::Channel;
+use domain::channel::{Channel, ChannelType};
 use domain::permissions::Permissions;
 use domain::Snowflake;
 
@@ -60,6 +60,11 @@ impl ChannelAccess {
             (true, Some(parent_id)) => ports.channels.find(parent_id).await?,
             _ => None,
         };
+        if parent.as_ref().is_some_and(|parent| {
+            parent.kind == ChannelType::GuildForum && parent.delivery_mode != channel.delivery_mode
+        }) {
+            return Err(AppError::missing_access());
+        }
         let permissions = guild.channel_permissions(&channel, parent.as_ref());
         Ok(Self {
             channel,
