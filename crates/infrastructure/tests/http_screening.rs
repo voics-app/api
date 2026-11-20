@@ -118,6 +118,15 @@ async fn join_and_accept_current_rules_before_sending() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{channel}/threads"),
+        &guest,
+        Some(json!({"name":"Before rules"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
     let (_, shown) = call(&app, Method::GET, &path, &guest, None).await;
     assert_eq!(shown["pending"], true);
     // A reconnect to a large server still carries the caller's pending state,

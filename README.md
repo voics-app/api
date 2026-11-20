@@ -95,7 +95,8 @@ cannot send until they `POST /guilds/{id}/member-verification/accept` with the
 revision they reviewed. If rules change concurrently the request returns 409;
 fetch and display the new version before another acceptance. Migration 0092
 stores the configuration and serializes configuration changes with joins and
-acceptance. Existing members are not made pending when screening is enabled.
+acceptance. Pending members also cannot create threads, which generate a system
+message. Existing members are not made pending when screening is enabled.
 
 `GET|PUT /guilds/{id}/onboarding` reads or replaces up to five optional
 questions; options can suggest a channel and grant an eligible role. Managers

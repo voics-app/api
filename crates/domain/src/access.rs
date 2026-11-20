@@ -92,6 +92,8 @@ impl<'a> GuildAccess<'a> {
             permissions.without(
                 Permissions::SEND_MESSAGES
                     | Permissions::SEND_MESSAGES_IN_THREADS
+                    | Permissions::CREATE_PUBLIC_THREADS
+                    | Permissions::CREATE_PRIVATE_THREADS
                     | Permissions::ADMINISTRATOR,
             )
         } else {
@@ -273,6 +275,8 @@ mod tests {
                 assert!(permissions.contains(Permissions::VIEW_CHANNEL));
                 assert!(!permissions.contains(Permissions::SEND_MESSAGES));
                 assert!(!permissions.contains(Permissions::SEND_MESSAGES_IN_THREADS));
+                assert!(!permissions.contains(Permissions::CREATE_PUBLIC_THREADS));
+                assert!(!permissions.contains(Permissions::CREATE_PRIVATE_THREADS));
                 assert!(!permissions.contains(Permissions::ADMINISTRATOR));
             }
         }
