@@ -240,8 +240,32 @@ pub trait ChannelRepository: Send + Sync {
     async fn count(&self) -> AppResult<u64>;
 }
 
+#[derive(Debug, Clone)]
+pub struct ScheduledEventDelivery {
+    pub id: uuid::Uuid,
+    pub lease_id: uuid::Uuid,
+    pub guild_id: Snowflake,
+    pub event_id: Snowflake,
+    pub user_id: Snowflake,
+    pub session_id: uuid::Uuid,
+    pub start: DateTime<Utc>,
+    pub schedule_revision: i64,
+}
+
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn claim_scheduled_event_delivery(&self) -> AppResult<Option<ScheduledEventDelivery>>;
+    async fn scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+    ) -> AppResult<Option<ScheduledEventDelivery>>;
+    async fn finish_scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+        retry_after_secs: Option<u32>,
+    ) -> AppResult<bool>;
     async fn scheduled_events(
         &self,
         guild_id: Snowflake,

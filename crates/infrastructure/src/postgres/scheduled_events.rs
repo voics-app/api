@@ -2,6 +2,7 @@
 use super::convert::{sf, sf_opt};
 use super::error::db;
 use crate::events::route::Routed;
+use application::ports::ScheduledEventDelivery;
 use application::{AppError, AppResult};
 use chrono::{DateTime, Utc};
 use contracts::envelope::{Envelope, TOPIC_USER};
@@ -211,6 +212,67 @@ struct DueEvent {
     schedule_revision: i64,
 }
 
+#[derive(FromRow)]
+struct DeliveryRow {
+    id: Uuid,
+    lease_id: Uuid,
+    guild_id: i64,
+    event_id: i64,
+    user_id: i64,
+    session_id: Uuid,
+    scheduled_start_time: DateTime<Utc>,
+    event_revision: i64,
+}
+
+impl From<DeliveryRow> for ScheduledEventDelivery {
+    fn from(row: DeliveryRow) -> Self {
+        Self {
+            id: row.id,
+            lease_id: row.lease_id,
+            guild_id: sf(row.guild_id),
+            event_id: sf(row.event_id),
+            user_id: sf(row.user_id),
+            session_id: row.session_id,
+            start: row.scheduled_start_time,
+            schedule_revision: row.event_revision,
+        }
+    }
+}
+
+pub(super) async fn claim_delivery(pool: &PgPool) -> AppResult<Option<ScheduledEventDelivery>> {
+    sqlx::query("UPDATE guild_scheduled_event_push_deliveries SET completed_at=now(), lease_id=NULL, lease_until=NULL WHERE id IN (SELECT id FROM guild_scheduled_event_push_deliveries WHERE completed_at IS NULL AND scheduled_start_time < now()-interval '5 minutes' AND (lease_until IS NULL OR lease_until <= now()) ORDER BY scheduled_start_time LIMIT 200 FOR UPDATE SKIP LOCKED)")
+        .execute(pool).await.map_err(db)?;
+    let lease_id = Uuid::now_v7();
+    let row: Option<DeliveryRow> = sqlx::query_as("WITH candidate AS (SELECT d.id FROM guild_scheduled_event_push_deliveries d WHERE d.completed_at IS NULL AND d.next_attempt_at <= now() AND (d.lease_until IS NULL OR d.lease_until <= now()) AND d.scheduled_start_time >= now() - interval '5 minutes' ORDER BY d.next_attempt_at, d.id LIMIT 1 FOR UPDATE SKIP LOCKED), claimed AS (UPDATE guild_scheduled_event_push_deliveries d SET lease_id=$1, lease_until=now()+interval '60 seconds', attempts=attempts+1 FROM candidate c WHERE d.id=c.id RETURNING d.*) SELECT c.id, c.lease_id, e.guild_id, c.event_id, c.user_id, c.session_id, c.scheduled_start_time, c.event_revision FROM claimed c JOIN guild_scheduled_events e ON e.id=c.event_id")
+        .bind(lease_id).fetch_optional(pool).await.map_err(db)?;
+    Ok(row.map(Into::into))
+}
+
+pub(super) async fn leased_delivery(
+    pool: &PgPool,
+    delivery_id: Uuid,
+    lease_id: Uuid,
+) -> AppResult<Option<ScheduledEventDelivery>> {
+    let row: Option<DeliveryRow> = sqlx::query_as("SELECT d.id, d.lease_id, e.guild_id, d.event_id, d.user_id, d.session_id, d.scheduled_start_time, d.event_revision FROM guild_scheduled_event_push_deliveries d JOIN guild_scheduled_events e ON e.id=d.event_id WHERE d.id=$1 AND d.lease_id=$2 AND d.completed_at IS NULL AND d.lease_until > now()")
+        .bind(delivery_id).bind(lease_id).fetch_optional(pool).await.map_err(db)?;
+    Ok(row.map(Into::into))
+}
+
+pub(super) async fn finish_delivery(
+    pool: &PgPool,
+    delivery_id: Uuid,
+    lease_id: Uuid,
+    retry_after_secs: Option<u32>,
+) -> AppResult<bool> {
+    let changed = match retry_after_secs {
+        Some(seconds) => sqlx::query("UPDATE guild_scheduled_event_push_deliveries SET lease_id=NULL, lease_until=NULL, next_attempt_at=now()+make_interval(secs => $3) WHERE id=$1 AND lease_id=$2 AND completed_at IS NULL AND lease_until > now()")
+            .bind(delivery_id).bind(lease_id).bind(f64::from(seconds.clamp(1, 60))).execute(pool).await.map_err(db)?,
+        None => sqlx::query("UPDATE guild_scheduled_event_push_deliveries SET completed_at=now(), lease_id=NULL, lease_until=NULL WHERE id=$1 AND lease_id=$2 AND completed_at IS NULL AND lease_until > now()")
+            .bind(delivery_id).bind(lease_id).execute(pool).await.map_err(db)?,
+    };
+    Ok(changed.rows_affected() != 0)
+}
+
 /// Atomically enqueues a bounded batch. Multiple replicas skip rows held by a peer.
 pub async fn enqueue_due_reminders(pool: &PgPool) -> AppResult<usize> {
     const EVENTS_PER_BATCH: i64 = 20;
@@ -249,6 +311,9 @@ pub async fn enqueue_due_reminders(pool: &PgPool) -> AppResult<usize> {
                 ),
             };
             super::outbox::enqueue(&mut tx, &routed, now).await?;
+            sqlx::query("INSERT INTO guild_scheduled_event_push_deliveries (event_id, user_id, session_id, event_revision, scheduled_start_time) SELECT $1, $2, p.session_id, $3, $4 FROM push_tokens p JOIN sessions s ON s.id=p.session_id WHERE p.user_id=$2 AND s.revoked_at IS NULL AND NOT p.only_mentions ON CONFLICT DO NOTHING")
+                .bind(event.id).bind(user_id).bind(event.schedule_revision).bind(event.scheduled_start_time)
+                .execute(&mut *tx).await.map_err(db)?;
             enqueued += 1;
         }
         if users.len() < USERS_PER_EVENT as usize {

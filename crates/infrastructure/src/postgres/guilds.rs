@@ -221,6 +221,34 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn claim_scheduled_event_delivery(
+        &self,
+    ) -> AppResult<Option<application::ports::ScheduledEventDelivery>> {
+        super::scheduled_events::claim_delivery(&self.pool).await
+    }
+
+    async fn scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+    ) -> AppResult<Option<application::ports::ScheduledEventDelivery>> {
+        super::scheduled_events::leased_delivery(&self.pool, delivery_id, lease_id).await
+    }
+
+    async fn finish_scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+        retry_after_secs: Option<u32>,
+    ) -> AppResult<bool> {
+        super::scheduled_events::finish_delivery(
+            &self.pool,
+            delivery_id,
+            lease_id,
+            retry_after_secs,
+        )
+        .await
+    }
     async fn scheduled_events(
         &self,
         guild_id: Snowflake,

@@ -43,3 +43,21 @@ CREATE TABLE guild_scheduled_event_reminders (
     enqueued_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (event_id, user_id, event_revision, scheduled_start_time)
 );
+
+-- One durable push delivery per live session. No provider token is stored here.
+CREATE TABLE guild_scheduled_event_push_deliveries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id BIGINT NOT NULL REFERENCES guild_scheduled_events (id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    session_id UUID NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+    event_revision BIGINT NOT NULL,
+    scheduled_start_time TIMESTAMPTZ NOT NULL,
+    lease_id UUID,
+    lease_until TIMESTAMPTZ,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (event_id, user_id, session_id, event_revision, scheduled_start_time)
+);
+CREATE INDEX guild_event_push_pending_idx ON guild_scheduled_event_push_deliveries (next_attempt_at, id)
+    WHERE completed_at IS NULL;

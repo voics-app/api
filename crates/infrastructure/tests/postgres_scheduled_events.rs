@@ -119,6 +119,8 @@ async fn competing_workers_enqueue_one_reminder_per_schedule_and_user() {
         .execute(pool)
         .await
         .unwrap();
+    sqlx::query("INSERT INTO sessions (id, user_id, created_at) VALUES ('00000000-0000-0000-0000-000000000001', 1, now())").execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO push_tokens (session_id, user_id, platform, token, environment, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', 1, 'fcm', 'fixture-token', 'production', now(), now())").execute(pool).await.unwrap();
     sqlx::query("INSERT INTO guild_scheduled_events (id, guild_id, name, scheduled_start_time, scheduled_end_time, status, entity_type, location) VALUES (20, 10, 'Meetup', now() - interval '1 minute', now() + interval '1 hour', 1, 3, 'Park')")
         .execute(pool).await.unwrap();
     sqlx::query(
@@ -141,6 +143,42 @@ async fn competing_workers_enqueue_one_reminder_per_schedule_and_user() {
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_START' AND payload->'data'->>'guild_scheduled_event_id' = '20'")
         .fetch_one(pool).await.unwrap();
     assert_eq!(count, 1);
+    let store = PgStore::new(pool.clone());
+    let claim = store
+        .claim_scheduled_event_delivery()
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(store
+        .claim_scheduled_event_delivery()
+        .await
+        .unwrap()
+        .is_none());
+    assert!(store
+        .finish_scheduled_event_delivery(claim.id, claim.lease_id, Some(1))
+        .await
+        .unwrap());
+    sqlx::query("UPDATE guild_scheduled_event_push_deliveries SET next_attempt_at=now()-interval '1 second' WHERE id=$1").bind(claim.id).execute(pool).await.unwrap();
+    let retry = store
+        .claim_scheduled_event_delivery()
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(retry.id, claim.id);
+    assert_ne!(retry.lease_id, claim.lease_id);
+    assert!(!store
+        .finish_scheduled_event_delivery(claim.id, claim.lease_id, None)
+        .await
+        .unwrap());
+    assert!(store
+        .finish_scheduled_event_delivery(retry.id, retry.lease_id, None)
+        .await
+        .unwrap());
+    assert!(store
+        .claim_scheduled_event_delivery()
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[tokio::test]
