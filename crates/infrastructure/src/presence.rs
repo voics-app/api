@@ -99,39 +99,6 @@ fn is_online(aggregate: &str) -> bool {
 
 #[async_trait]
 impl PresenceDirectory for ValkeyPresence {
-    async fn in_voice_channel(
-        &self,
-        guild_id: Snowflake,
-        channel_id: Snowflake,
-        user_id: Snowflake,
-    ) -> AppResult<bool> {
-        let (base, token, client) = self.gateway.as_ref().ok_or_else(|| {
-            AppError::Unavailable("gateway voice lookup is not configured".into())
-        })?;
-        let url = base
-            .join(&format!(
-                "/internal/v1/guilds/{guild_id}/channels/{channel_id}/voice-members/{user_id}"
-            ))
-            .map_err(AppError::internal)?;
-        let response = client
-            .get(url)
-            .header("X-Internal-Token", token)
-            .send()
-            .await
-            .map_err(|_| AppError::Unavailable("gateway voice lookup failed".into()))?;
-        if !response.status().is_success() {
-            return Err(AppError::Unavailable("gateway voice lookup failed".into()));
-        }
-        let value: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|_| AppError::Unavailable("invalid gateway voice lookup response".into()))?;
-        value
-            .get("connected")
-            .and_then(|v| v.as_bool())
-            .ok_or_else(|| AppError::Unavailable("invalid gateway voice lookup response".into()))
-    }
-
     async fn can_publish_soundboard(
         &self,
         guild_id: Snowflake,
