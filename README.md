@@ -10,6 +10,14 @@ type-2 webhook; publication reserves one delivery per source message and target
 channel in Postgres. The relay checks the reserved destination after a lost
 response and never blindly re-sends an unknown result. This work remains in
 review pending cross-service verification and an operator recovery procedure.
+For the isolated bridge test, build `announcement_fixture` from the companion
+messages worktree (`cargo build --locked -p discordy-messages-interface --example
+announcement_fixture`), set `MESSAGES_FIXTURE_BIN` to that binary, and run
+`cargo test --locked -p infrastructure --test http_announcement_bridge -- --ignored`.
+It starts one disposable PostgreSQL container and a loopback messages fixture;
+it exercises a lost response after the destination was stored. The regular PR
+job cannot check out the private messages repository with its repository-scoped
+token, so it does not run this cross-repository test.
 
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts

@@ -280,7 +280,7 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
                 .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).bind(payload)
                 .execute(&mut *conn).await.map_err(db)?;
             for (target, webhook, destination_id) in deliveries {
-                sqlx::query("INSERT INTO announcement_deliveries (source_channel_id, source_message_id, target_channel_id, webhook_id, destination_message_id) SELECT $1, $2, $3, $4, $5 WHERE EXISTS (SELECT 1 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$3 AND webhook_id=$4)")
+                sqlx::query("INSERT INTO announcement_deliveries (source_channel_id, source_message_id, target_channel_id, webhook_id, destination_message_id) SELECT $1, $2, $3, $4, $5 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$3 AND webhook_id=$4 FOR KEY SHARE")
                     .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).bind(target.as_i64())
                     .bind(webhook.as_i64()).bind(destination_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
             }
