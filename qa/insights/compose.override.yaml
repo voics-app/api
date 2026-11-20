@@ -37,6 +37,8 @@ services:
   insights-qa:
     image: node:24-alpine
     profiles: [qa]
+    environment:
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
     entrypoint: ["node", "/qa/insights.mjs"]
     volumes:
       - ${QA_SCRIPT}:/qa/insights.mjs:ro

@@ -97,6 +97,18 @@ await waitFor('message marker', async () => {
   return day.messages === baseline.messages + 1 && day.message_complete === false;
 });
 
+// Exercise the trusted service boundary used by announcement delivery, including replay.
+const crosspostId = (BigInt(sent.body.id) + 1024n).toString();
+const crosspostBody = { source_channel_id: voice.body.id, message_id: crosspostId, webhook_id: owner.id, webhook_name: 'QA announcement', snapshot: { content: 'one crossposted message', embeds: [], attachments: [] } };
+const deliver = () => fetch(`${messages}/internal/v1/channels/${text.body.id}/crossposts`, {
+  method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-token': process.env.INTERNAL_SERVICE_TOKEN }, body: JSON.stringify(crosspostBody),
+});
+assert.equal((await deliver()).status, 200, 'deliver crosspost');
+assert.equal((await deliver()).status, 200, 'replay crosspost');
+await waitFor('one crosspost marker after replay', async () => (await insights()).messages === baseline.messages + 2);
+await pause(2_000);
+assert.equal((await insights()).messages, baseline.messages + 2, 'crosspost replay does not add another marker');
+
 const ws = new WebSocket('ws://gateway:4000/gateway?v=1&encoding=json');
 const frames = [];
 let timer;
