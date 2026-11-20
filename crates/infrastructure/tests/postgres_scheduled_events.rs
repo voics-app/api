@@ -2,9 +2,12 @@
 mod support;
 
 use application::ports::GuildRepository;
+use application::ports::UnitOfWork;
+use application::write_set::{Mutation, WriteSet};
 use domain::scheduled_event::EventKind;
 use domain::Snowflake;
 use infrastructure::postgres::PgStore;
+use infrastructure::postgres::PgUnitOfWork;
 
 #[tokio::test]
 async fn interest_counts_and_membership_cleanup_round_trip() {
@@ -138,4 +141,55 @@ async fn competing_workers_enqueue_one_reminder_per_schedule_and_user() {
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'GUILD_SCHEDULED_EVENT_START' AND payload->'data'->>'guild_scheduled_event_id' = '20'")
         .fetch_one(pool).await.unwrap();
     assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn interest_waiting_on_event_lock_rechecks_the_start_time() {
+    let database = support::start_database().await;
+    let pool = &database.pool;
+    sqlx::query("INSERT INTO users (id, username, created_at) VALUES (1, 'owner', now())")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO guilds (id, name, owner_id, created_at) VALUES (10, 'guild', 1, now())",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES (10, 1, now())")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO guild_scheduled_events (id, guild_id, name, scheduled_start_time, scheduled_end_time, status, entity_type, location) VALUES (20, 10, 'Meetup', now() + interval '1 hour', now() + interval '2 hours', 1, 3, 'Park')").execute(pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM guild_scheduled_events WHERE id = 20 FOR UPDATE")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let uow = PgUnitOfWork::new(pool.clone(), "nl-home".into());
+    let waiting = tokio::spawn(async move {
+        let mut writes = WriteSet::new();
+        writes.mutate(Mutation::SetScheduledEventInterest {
+            guild_id: Snowflake::new(10),
+            event_id: Snowflake::new(20),
+            user_id: Snowflake::new(1),
+            channel_id: None,
+            interested: true,
+        });
+        uow.commit(writes).await
+    });
+    tokio::task::yield_now().await;
+    sqlx::query("UPDATE guild_scheduled_events SET scheduled_start_time = now() - interval '1 minute' WHERE id = 20").execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    assert!(matches!(
+        waiting.await.unwrap(),
+        Err(application::AppError::Conflict { .. })
+    ));
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM guild_scheduled_event_users WHERE event_id=20")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
 }

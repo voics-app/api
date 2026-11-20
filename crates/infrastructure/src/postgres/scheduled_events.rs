@@ -163,20 +163,44 @@ pub(super) async fn set_interest(
     user: Snowflake,
     interested: bool,
 ) -> AppResult<bool> {
+    let current: Option<(i16, DateTime<Utc>)> = sqlx::query_as("SELECT status, scheduled_start_time FROM guild_scheduled_events WHERE guild_id=$1 AND id=$2 FOR UPDATE")
+        .bind(guild.as_i64()).bind(event.as_i64()).fetch_optional(&mut *conn).await.map_err(db)?;
+    let Some((status, start)) = current else {
+        return Err(AppError::NotFound(
+            application::Resource::GuildScheduledEvent,
+        ));
+    };
+    if interested && (status != 1 || start <= Utc::now()) {
+        return Err(AppError::Conflict {
+            code: 0,
+            message: "Event is no longer open for interest.".into(),
+        });
+    }
     let query = if interested {
-        "INSERT INTO guild_scheduled_event_users (guild_id, event_id, user_id) SELECT $1, id, $3 FROM guild_scheduled_events WHERE guild_id = $1 AND id = $2 AND status = 1 AND scheduled_start_time > now() ON CONFLICT DO NOTHING"
+        "INSERT INTO guild_scheduled_event_users (guild_id, event_id, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
     } else {
         "DELETE FROM guild_scheduled_event_users WHERE guild_id = $1 AND event_id = $2 AND user_id = $3"
     };
-    Ok(sqlx::query(query)
+    let changed = sqlx::query(query)
         .bind(guild.as_i64())
         .bind(event.as_i64())
         .bind(user.as_i64())
-        .execute(conn)
+        .execute(&mut *conn)
         .await
         .map_err(db)?
         .rows_affected()
-        != 0)
+        != 0;
+    if interested && !changed {
+        let already_interested: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM guild_scheduled_event_users WHERE guild_id=$1 AND event_id=$2 AND user_id=$3)")
+            .bind(guild.as_i64()).bind(event.as_i64()).bind(user.as_i64()).fetch_one(conn).await.map_err(db)?;
+        if !already_interested {
+            return Err(AppError::Conflict {
+                code: 0,
+                message: "Event is no longer open for interest.".into(),
+            });
+        }
+    }
+    Ok(changed)
 }
 
 #[derive(FromRow)]
