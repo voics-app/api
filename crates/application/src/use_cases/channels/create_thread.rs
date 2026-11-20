@@ -364,6 +364,11 @@ async fn reconcile_forum_post(
                 .guard_forum_publication(thread.id, token)
                 .mutate(Mutation::UpdateChannel(thread.clone()))
                 .emit(DomainEvent::ThreadCreate(thread.clone()))
+                .emit(DomainEvent::ForumOpeningMessage {
+                    guild_id,
+                    channel_id: thread.id,
+                    message: message.body.clone(),
+                })
                 .audit(audit.entry(
                     ports,
                     guild_id,

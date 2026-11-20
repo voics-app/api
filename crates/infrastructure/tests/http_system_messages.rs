@@ -409,6 +409,15 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
     assert_eq!(listed[0]["message_count"], 1);
     assert_eq!(listed[0]["forum_first_message"]["content"], "hello");
     assert!(listed[0]["last_message_id"].is_string());
+    let events: Vec<Value> = sqlx::query_scalar("SELECT payload FROM outbox WHERE payload->>'type' = 'MESSAGE_CREATE' AND payload->'data'->>'channel_id' = $1")
+        .bind(post_id).fetch_all(&database.pool).await.unwrap();
+    assert_eq!(
+        events.len(),
+        1,
+        "replay must not enqueue another opener event"
+    );
+    assert_eq!(events[0]["data"]["content"], "hello");
+    assert_eq!(events[0]["data"]["id"], listed[0]["last_message_id"]);
     let (status, _) = call(
         &app,
         Method::DELETE,

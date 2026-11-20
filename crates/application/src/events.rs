@@ -93,6 +93,12 @@ pub enum DomainEvent {
         channel_id: Snowflake,
         code: String,
     },
+    /// Forum opener, emitted by the API outbox only after message storage is confirmed.
+    ForumOpeningMessage {
+        guild_id: Snowflake,
+        channel_id: Snowflake,
+        message: Value,
+    },
     ThreadCreate(Channel),
     ThreadUpdate(Channel),
     ThreadDelete(Channel),
