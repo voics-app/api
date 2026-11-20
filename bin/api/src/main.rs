@@ -176,12 +176,29 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         },
     };
     let prune_ports = ports.clone();
+    let lifecycle_ports = ports.clone();
     let audit_ports = ports.clone();
     let purge_ports = ports.clone();
     let purge_every = std::time::Duration::from_secs(config.account_purge_interval_secs);
     let prune_every = std::time::Duration::from_secs(config.device_prune_interval_secs);
 
     tokio::spawn(OutboxRelay::new(pool.clone(), publisher.clone()).run());
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            match lifecycle_ports
+                .thread_lifecycle
+                .archive_due(lifecycle_ports.clock.now(), 100)
+                .await
+            {
+                Ok(0) => {}
+                Ok(count) => tracing::info!(count, "auto-archived inactive threads"),
+                Err(error) => tracing::warn!(%error, "thread auto-archive pass failed"),
+            }
+        }
+    });
     tokio::spawn(async move {
         const AUDIT_RETENTION_INTERVAL_SECS: u64 = 3600;
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(

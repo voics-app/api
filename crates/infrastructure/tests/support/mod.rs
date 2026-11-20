@@ -168,6 +168,12 @@ impl MessageService for RecordingMessages {
                 body: body.clone(),
             }))
     }
+    async fn message_counts(
+        &self,
+        channel_ids: &[domain::Snowflake],
+    ) -> AppResult<Vec<(domain::Snowflake, u64)>> {
+        Ok(channel_ids.iter().copied().map(|id| (id, 0)).collect())
+    }
 }
 
 struct NoMessages;
@@ -202,6 +208,12 @@ impl MessageService for NoMessages {
         Err(AppError::Unavailable(
             "messages service not wired in this test".into(),
         ))
+    }
+    async fn message_counts(
+        &self,
+        channel_ids: &[domain::Snowflake],
+    ) -> AppResult<Vec<(domain::Snowflake, u64)>> {
+        Ok(channel_ids.iter().copied().map(|id| (id, 0)).collect())
     }
 }
 

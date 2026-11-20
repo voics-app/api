@@ -624,14 +624,17 @@ async fn thread_lifecycle_uses_injected_time_and_publishes_transitions() {
         ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
         true
     );
-    lifecycle
-        .record_message(
-            id,
-            initial + Duration::minutes(59),
-            initial + Duration::minutes(61),
-        )
-        .await
+    let activity = axum::http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("/internal/v1/threads/{thread}/activity"))
+        .header("x-internal-token", INTERNAL_TOKEN)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(
+            json!({"occurred_at": initial + Duration::minutes(59)}).to_string(),
+        ))
         .unwrap();
+    let (status, _) = send(&app, activity).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(
         ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
         false
