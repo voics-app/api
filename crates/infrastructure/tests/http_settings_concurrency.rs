@@ -83,7 +83,10 @@ async fn concurrent_settings_patch_retries_and_emits_committed_snapshots() {
     let (status, stored) = call(&app, Method::GET, path, token, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(stored["theme"], "light");
-    assert_eq!(stored["preferences"]["hide_age_restricted_channels"], true);
+    assert_eq!(
+        stored["preferences"]["hide_age_restricted_channels"],
+        json!(true)
+    );
     let rows: Vec<(Value,)> = sqlx::query_as(
         "SELECT payload FROM outbox WHERE payload->>'type' = 'USER_SETTINGS_UPDATE' ORDER BY id",
     )
@@ -93,7 +96,10 @@ async fn concurrent_settings_patch_retries_and_emits_committed_snapshots() {
     assert_eq!(rows.len(), 2, "the rejected attempt must not emit an event");
     let last = &rows[1].0["data"];
     assert_eq!(last["theme"], "light");
-    assert_eq!(last["preferences"]["hide_age_restricted_channels"], true);
+    assert_eq!(
+        last["preferences"]["hide_age_restricted_channels"],
+        json!(true)
+    );
 
     // Two independent keys within the same sparse preferences object also merge on retry.
     gate.attempts.store(0, Ordering::SeqCst);
@@ -117,8 +123,8 @@ async fn concurrent_settings_patch_retries_and_emits_committed_snapshots() {
     assert_eq!(b.0, StatusCode::OK);
     assert!(gate.attempts.load(Ordering::SeqCst) >= 3);
     let (_, stored) = call(&app, Method::GET, path, token, None).await;
-    assert_eq!(stored["preferences"]["reduce_motion"], true);
-    assert_eq!(stored["preferences"]["notify_sounds"], false);
+    assert_eq!(stored["preferences"]["reduce_motion"], json!(true));
+    assert_eq!(stored["preferences"]["notify_sounds"], json!(false));
     let rows: Vec<(Value,)> = sqlx::query_as(
         "SELECT payload FROM outbox WHERE payload->>'type' = 'USER_SETTINGS_UPDATE' ORDER BY id",
     )
@@ -156,5 +162,5 @@ async fn concurrent_settings_patch_retries_and_emits_committed_snapshots() {
     assert!(gate.attempts.load(Ordering::SeqCst) >= 3);
     let (_, stored) = call(&app, Method::GET, path, token, None).await;
     assert_eq!(stored["theme"], "light");
-    assert_eq!(stored["preferences"]["reduce_motion"], true);
+    assert_eq!(stored["preferences"]["reduce_motion"], json!(true));
 }
