@@ -44,6 +44,16 @@ impl UnitOfWork for PgUnitOfWork {
         }
         let mut tx = self.pool.begin().await.map_err(db)?;
         let conn = &mut *tx;
+        if let Some((id, token)) = &writes.forum_guard {
+            let valid: Option<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE id = $1 AND forum_settings->>'pending' = 'true' AND forum_settings->>'status' = 'publishing' AND forum_settings->>'lease_token' = $2 FOR UPDATE")
+                .bind(id.as_i64()).bind(token).fetch_optional(&mut *conn).await.map_err(db)?;
+            if valid.is_none() {
+                return Err(application::AppError::Conflict {
+                    code: 0,
+                    message: "Forum publication lease was superseded.".into(),
+                });
+            }
+        }
         for mutation in &writes.mutations {
             if !matches!(mutation, Mutation::InsertAudit(_)) {
                 apply(conn, mutation).await?;

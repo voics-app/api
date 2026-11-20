@@ -236,12 +236,16 @@ async fn create_forum_post(
         ));
     }
     let now = ports.clock.now();
-    let mut thread = Channel::new(
-        ports.ids.next_id()?,
-        ChannelType::PublicThread,
-        parent.guild_id,
-        now,
-    );
+    // The message service atomically stores the marker and opener in one
+    // ten-day partition. Reserve a fresh pair if the clock crosses a boundary.
+    let (thread_id, message_id) = loop {
+        let thread_id = ports.ids.next_id()?;
+        let message_id = ports.ids.next_id()?;
+        if thread_id.bucket() == message_id.bucket() {
+            break (thread_id, message_id);
+        }
+    };
+    let mut thread = Channel::new(thread_id, ChannelType::PublicThread, parent.guild_id, now);
     apply_name(&mut thread, &input.name)?;
     if let Some(seconds) = input.rate_limit_per_user {
         apply_slowmode(&mut thread, seconds)?;
@@ -259,7 +263,6 @@ async fn create_forum_post(
         invitable: input.invitable.unwrap_or(true),
         create_timestamp: now,
     });
-    let message_id = ports.ids.next_id()?;
     thread.forum_settings = json!({"pending": true, "status": "pending", "request_key": request_key, "request_hash": digest, "message_id": message_id.to_string()});
     let mut writes = WriteSet::new();
     writes.mutate(Mutation::InsertChannel(thread.clone()));
@@ -298,7 +301,7 @@ async fn reconcile_forum_post(
     if status == "deleted" {
         return Err(AppError::NotFound(crate::error::Resource::Channel));
     }
-    if status == "published" {
+    if status == "published" || status == "failed" {
         return Ok(thread);
     }
     let message_id = thread
@@ -307,28 +310,34 @@ async fn reconcile_forum_post(
         .and_then(Value::as_str)
         .and_then(|id| id.parse::<Snowflake>().ok())
         .ok_or_else(|| AppError::internal("Invalid forum message reservation"))?;
-    let claimed = ports
-        .channels
-        .transition_forum_post(thread.id, "pending", "dispatching")
-        .await?;
-    let created = if claimed {
-        tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            ports.messages.create_forum_start(thread.id, json!({"author_id": actor.user_id.to_string(), "message_id": message_id.to_string(), "content": content})),
-        ).await.ok().and_then(Result::ok)
+    let existing = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        ports.messages.get(thread.id, message_id),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .flatten();
+    let stored = if existing.is_some() {
+        existing
     } else {
-        None
-    };
-    let stored = match created {
-        Some(message) => Some(message),
-        None => tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            ports.messages.get(thread.id, message_id),
-        )
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .flatten(),
+        let token = ports.ids.next_id()?.to_string();
+        if ports
+            .channels
+            .claim_forum_post(thread.id, "dispatching", &token)
+            .await?
+        {
+            match tokio::time::timeout(std::time::Duration::from_secs(10), ports.messages.create_forum_start(thread.id, json!({"author_id": actor.user_id.to_string(), "message_id": message_id.to_string(), "content": content}))).await {
+                Ok(Ok(message)) => Some(message),
+                Ok(Err(AppError::NotFound(crate::error::Resource::Message))) => {
+                    ports.channels.fail_forum_post(thread.id, &token).await?;
+                    None
+                },
+                _ => None,
+            }
+        } else {
+            None
+        }
     };
     if let Some(message) = stored {
         let matches = message.id == message_id
@@ -339,10 +348,11 @@ async fn reconcile_forum_post(
                 .and_then(Value::as_str)
                 == Some(actor.user_id.to_string().as_str())
             && message.body.get("content").and_then(Value::as_str) == Some(content);
+        let token = ports.ids.next_id()?.to_string();
         if matches
             && ports
                 .channels
-                .transition_forum_post(thread.id, "dispatching", "publishing")
+                .claim_forum_post(thread.id, "publishing", &token)
                 .await?
         {
             thread.forum_settings["pending"] = json!(false);
@@ -351,6 +361,7 @@ async fn reconcile_forum_post(
             let changes = vec![AuditChange::new("name", None, Some(json!(thread.name)))];
             let mut writes = WriteSet::new();
             writes
+                .guard_forum_publication(thread.id, token)
                 .mutate(Mutation::UpdateChannel(thread.clone()))
                 .emit(DomainEvent::ThreadCreate(thread.clone()))
                 .audit(audit.entry(
@@ -360,8 +371,13 @@ async fn reconcile_forum_post(
                     Some(thread.id),
                     changes,
                 )?);
-            ports.unit_of_work.commit(writes).await?;
-            return Ok(thread);
+            match ports.unit_of_work.commit(writes).await {
+                Ok(()) => return Ok(thread),
+                Err(AppError::Conflict { .. }) => {
+                    return Ok(ports.channels.find(thread.id).await?.unwrap_or(thread))
+                }
+                Err(error) => return Err(error),
+            }
         }
     }
     Ok(ports.channels.find(thread.id).await?.unwrap_or(thread))

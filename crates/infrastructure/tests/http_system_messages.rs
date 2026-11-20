@@ -363,9 +363,13 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
         Some(json!({"name":"with tag", "applied_tags":[tag], "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa001", "message":{"content":"hello"}})),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "{post}");
-    assert_eq!(post["applied_tags"], json!([tag]));
-    let post_id = post["id"].as_str().unwrap();
+    assert_eq!(status, StatusCode::ACCEPTED, "{post}");
+    let pending_id = post["id"].as_str().unwrap();
+    let (status, recovered) = call(&app, Method::POST, &format!("/api/v1/channels/{id}/threads"), &owner, Some(json!({"name":"with tag", "applied_tags":[tag], "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa001", "message":{"content":"hello"}}))).await;
+    assert_eq!(status, StatusCode::CREATED, "{recovered}");
+    assert_eq!(recovered["id"], pending_id);
+    assert_eq!(recovered["applied_tags"], json!([tag]));
+    let post_id = recovered["id"].as_str().unwrap();
     let (status, pinned) = call(
         &app,
         Method::PATCH,
@@ -477,6 +481,14 @@ async fn uncertain_forum_start_stays_hidden_and_reuses_the_reservation() {
     .await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(again["id"], post_id);
+    sqlx::query("UPDATE channels SET forum_settings = jsonb_set(forum_settings, '{lease_until}', '0'::jsonb) WHERE id = $1")
+        .bind(post_id.parse::<i64>().unwrap()).execute(&database.pool).await.unwrap();
+    let messages = Arc::new(RecordingMessages::default());
+    let recovered_app = router(&database, Some(messages.clone()));
+    let (status, recovered) = call(&recovered_app, Method::POST, &format!("/api/v1/channels/{id}/threads"), &owner, Some(json!({"name":"pending", "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa002", "message":{"content":"first"}}))).await;
+    assert_eq!(status, StatusCode::CREATED, "{recovered}");
+    assert_eq!(recovered["id"], post_id);
+    assert_eq!(recorded(&messages).len(), 1);
     let (status, _) = call(&app, Method::POST, &format!("/api/v1/channels/{id}/threads"), &owner, Some(json!({"name":"different", "request_id":"426ae9e8-d500-4ec7-889e-4b3d95eaa002", "message":{"content":"first"}}))).await;
     assert_eq!(status, StatusCode::CONFLICT);
 }

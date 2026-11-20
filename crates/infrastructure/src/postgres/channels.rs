@@ -174,9 +174,25 @@ impl ChannelRepository for PgStore {
             None => Ok(None),
         }
     }
-    async fn transition_forum_post(&self, id: Snowflake, from: &str, to: &str) -> AppResult<bool> {
-        let result = sqlx::query("UPDATE channels SET forum_settings = jsonb_set(forum_settings, '{status}', to_jsonb($3::text)) WHERE id = $1 AND forum_settings->>'status' = $2")
-            .bind(id.as_i64()).bind(from).bind(to).execute(&self.pool).await.map_err(db)?;
+    async fn fail_forum_post(&self, id: Snowflake, token: &str) -> AppResult<bool> {
+        let result = sqlx::query("UPDATE channels SET forum_settings = jsonb_set(forum_settings, '{status}', to_jsonb('failed'::text)) WHERE id = $1 AND forum_settings->>'pending' = 'true' AND forum_settings->>'status' = 'dispatching' AND forum_settings->>'lease_token' = $2")
+            .bind(id.as_i64()).bind(token).execute(&self.pool).await.map_err(db)?;
+        Ok(result.rows_affected() == 1)
+    }
+    async fn claim_forum_post(&self, id: Snowflake, phase: &str, token: &str) -> AppResult<bool> {
+        let eligible = match phase {
+            "dispatching" => "(forum_settings->>'status' = 'pending' OR (forum_settings->>'status' = 'dispatching' AND COALESCE((forum_settings->>'lease_until')::bigint, 0) <= extract(epoch from clock_timestamp())::bigint))",
+            "publishing" => "(forum_settings->>'status' = 'dispatching' OR (forum_settings->>'status' = 'publishing' AND COALESCE((forum_settings->>'lease_until')::bigint, 0) <= extract(epoch from clock_timestamp())::bigint))",
+            _ => return Err(application::AppError::internal("invalid forum lease phase")),
+        };
+        let sql = format!("UPDATE channels SET forum_settings = forum_settings || jsonb_build_object('status', $2::text, 'lease_token', $3::text, 'lease_until', extract(epoch from clock_timestamp())::bigint + 30) WHERE id = $1 AND forum_settings->>'pending' = 'true' AND {eligible}");
+        let result = sqlx::query(&sql)
+            .bind(id.as_i64())
+            .bind(phase)
+            .bind(token)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
         Ok(result.rows_affected() == 1)
     }
 

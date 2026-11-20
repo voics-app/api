@@ -244,12 +244,18 @@ pub trait ChannelRepository: Send + Sync {
                     == Some(request_key)
         }))
     }
-    /// Atomically advances a forum creation reservation once.
-    async fn transition_forum_post(
+    /// Marks a confirmed deleted opener as terminal only while this lease is current.
+    async fn fail_forum_post(&self, _id: Snowflake, _token: &str) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "forum reservations unavailable".into(),
+        ))
+    }
+    /// Claims or takes over an expired forum delivery/publication lease.
+    async fn claim_forum_post(
         &self,
         _id: Snowflake,
-        _from: &str,
-        _to: &str,
+        _phase: &str,
+        _token: &str,
     ) -> AppResult<bool> {
         Err(crate::error::AppError::Unavailable(
             "forum reservations unavailable".into(),
