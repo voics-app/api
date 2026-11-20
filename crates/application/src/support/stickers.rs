@@ -124,6 +124,26 @@ fn lottie(bytes: &[u8]) -> AppResult<(StickerFormat, u32, u32)> {
         .and_then(|v| v.as_u64())
         .and_then(|v| u32::try_from(v).ok())
         .ok_or_else(invalid)?;
+    let frame_rate = value
+        .get("fr")
+        .and_then(|v| v.as_f64())
+        .ok_or_else(invalid)?;
+    let first = value
+        .get("ip")
+        .and_then(|v| v.as_f64())
+        .ok_or_else(invalid)?;
+    let last = value
+        .get("op")
+        .and_then(|v| v.as_f64())
+        .ok_or_else(invalid)?;
+    if frame_rate <= 0.0
+        || frame_rate > 120.0
+        || last <= first
+        || last - first > frame_rate * 60.0
+        || value.get("assets").is_some_and(|v| !v.is_array())
+    {
+        return Err(invalid());
+    }
     if contains_external_asset_or_expression(&value) {
         return Err(invalid());
     }
@@ -155,7 +175,7 @@ mod tests {
     #[test]
     fn rejects_mime_spoof_and_wrong_dimensions() {
         let image = ImageUpload {
-            bytes: br#"{"v":"1","w":319,"h":320,"layers":[]}"#.to_vec(),
+            bytes: br#"{"v":"1","w":319,"h":320,"fr":30,"ip":0,"op":60,"layers":[]}"#.to_vec(),
             content_type: "application/json".into(),
         };
         assert!(validate(&image).is_err());
@@ -188,8 +208,8 @@ mod tests {
 
     #[test]
     fn rejects_lottie_external_assets_and_expressions() {
-        for data in [br#"{"v":"1","w":320,"h":320,"layers":[],"assets":[{"p":"https://example.test/a.png"}]}"#.as_slice(),
-                     br#"{"v":"1","w":320,"h":320,"layers":[{"x":"1+1"}]}"#.as_slice()] {
+        for data in [br#"{"v":"1","w":320,"h":320,"fr":30,"ip":0,"op":60,"layers":[],"assets":[{"p":"https://example.test/a.png"}]}"#.as_slice(),
+                     br#"{"v":"1","w":320,"h":320,"fr":30,"ip":0,"op":60,"layers":[{"x":"1+1"}]}"#.as_slice()] {
             assert!(validate(&ImageUpload { bytes: data.to_vec(), content_type: "application/json".into() }).is_err());
         }
     }
@@ -197,7 +217,7 @@ mod tests {
     #[test]
     fn accepts_bounded_lottie_and_rejects_oversize() {
         let mut image = ImageUpload {
-            bytes: br#"{"v":"1","w":320,"h":320,"layers":[]}"#.to_vec(),
+            bytes: br#"{"v":"1","w":320,"h":320,"fr":30,"ip":0,"op":60,"layers":[]}"#.to_vec(),
             content_type: "application/json".into(),
         };
         assert_eq!(validate(&image).unwrap(), StickerFormat::Lottie);
