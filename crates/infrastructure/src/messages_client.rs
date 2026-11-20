@@ -113,7 +113,17 @@ impl MessageService for HttpMessages {
         message: Value,
     ) -> AppResult<StoredMessage> {
         let path = format!("internal/v1/channels/{channel_id}/forum-start");
-        stored(self.send(Method::POST, &path, Some(message)).await?)
+        let (status, body) = self.exchange(Method::POST, &path, Some(message)).await?;
+        if status == reqwest::StatusCode::GONE {
+            return Err(AppError::NotFound(application::Resource::Message));
+        }
+        if !status.is_success() {
+            return Err(AppError::BadRequest {
+                code: 0,
+                message: format!("messages responded {status}"),
+            });
+        }
+        stored(body)
     }
 
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage> {
