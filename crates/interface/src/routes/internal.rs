@@ -157,6 +157,7 @@ async fn channel_delivery(
     Ok(Json(ChannelRoutingDto {
         guild_id: routing.guild_id.map(Id),
         channel_type: routing.channel_type.code(),
+        thread_locked: routing.thread_locked,
         delivery_mode: routing.delivery_mode.as_str().to_owned(),
         recipient_ids: routing.recipient_ids.into_iter().map(Id).collect(),
     }))
@@ -173,6 +174,7 @@ async fn channel_access_info(
         permissions: Perm(info.permissions),
         guild_id: info.guild_id.map(Id),
         channel_type: info.channel_type.code(),
+        thread_locked: info.thread_locked,
         delivery_mode: info.delivery_mode.as_str().to_owned(),
         recipient_ids: info.recipient_ids.into_iter().map(Id).collect(),
     }))
