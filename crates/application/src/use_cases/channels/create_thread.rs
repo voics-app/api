@@ -344,6 +344,8 @@ async fn reconcile_forum_post(
     };
     if let Some(message) = stored {
         let matches = message.id == message_id
+            && message.body.get("channel_id").and_then(Value::as_str)
+                == Some(thread.id.to_string().as_str())
             && message
                 .body
                 .get("author")
