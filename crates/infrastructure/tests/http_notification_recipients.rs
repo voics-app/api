@@ -594,6 +594,24 @@ async fn thread_lifecycle_uses_injected_time_and_publishes_transitions() {
             .unwrap(),
         0
     );
+    sqlx::query("ALTER TABLE outbox ADD CONSTRAINT reject_thread_update CHECK (payload->>'type' <> 'THREAD_UPDATE')")
+        .execute(&database.pool).await.unwrap();
+    assert!(lifecycle
+        .archive_due(initial + Duration::minutes(60), 10)
+        .await
+        .is_err());
+    let archived: bool = sqlx::query_scalar(
+        "SELECT (thread_metadata->>'archived')::boolean FROM channels WHERE id = $1",
+    )
+    .bind(id.as_i64())
+    .fetch_one(&database.pool)
+    .await
+    .unwrap();
+    assert!(!archived, "outbox failure rolls back the archive");
+    sqlx::query("ALTER TABLE outbox DROP CONSTRAINT reject_thread_update")
+        .execute(&database.pool)
+        .await
+        .unwrap();
     assert_eq!(
         lifecycle
             .archive_due(initial + Duration::minutes(60), 10)
@@ -640,4 +658,24 @@ async fn thread_lifecycle_uses_injected_time_and_publishes_transitions() {
     let events: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'THREAD_UPDATE' AND payload->>'channel_id' = $1")
         .bind(thread).fetch_one(&database.pool).await.unwrap();
     assert_eq!(events, 3);
+    ok_call(
+        &app,
+        Method::PATCH,
+        &path,
+        &owner,
+        Some(json!({"locked":true})),
+    )
+    .await;
+    lifecycle
+        .record_message(
+            id,
+            initial + Duration::minutes(120),
+            initial + Duration::minutes(120),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        true
+    );
 }
