@@ -347,12 +347,20 @@ async fn forum_posts(
     Caller(actor): Caller,
     Path(parent): Path<String>,
 ) -> Result<Json<Vec<ChannelDto>>, ApiError> {
-    let posts =
-        list_forum_posts::execute(&state.ports, &actor, snowflake(&parent, Resource::Channel)?)
-            .await?;
+    let parent_id = snowflake(&parent, Resource::Channel)?;
+    let posts = list_forum_posts::execute(&state.ports, &actor, parent_id).await?;
+    let forum = state
+        .ports
+        .channels
+        .find(parent_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Channel))?;
     let ids: Vec<_> = posts
         .iter()
-        .filter(|post| post.delivery_mode == DeliveryMode::Standard)
+        .filter(|post| {
+            forum.delivery_mode == DeliveryMode::Standard
+                && post.delivery_mode == DeliveryMode::Standard
+        })
         .map(|post| post.id)
         .collect();
     let summaries = tokio::time::timeout(

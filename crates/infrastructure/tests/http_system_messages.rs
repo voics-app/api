@@ -421,6 +421,41 @@ async fn forum_settings_round_trip_and_post_tag_validation() {
     assert_eq!(events[0]["data"]["id"], listed[0]["last_message_id"]);
     let (status, _) = call(
         &app,
+        Method::PATCH,
+        &format!("/api/v1/channels/{id}"),
+        &owner,
+        Some(json!({"delivery_mode":"ephemeral"})),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a populated forum cannot silently change privacy mode"
+    );
+    // Simulate legacy mixed-mode data; a private parent must never expose stored previews.
+    sqlx::query("UPDATE channels SET delivery_mode = 'ephemeral' WHERE id = $1")
+        .bind(id.parse::<i64>().unwrap())
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    let (status, private_list) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/channels/{id}/threads"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(private_list[0].get("forum_first_message").is_none());
+    assert!(private_list[0].get("message_count").is_none());
+    sqlx::query("UPDATE channels SET delivery_mode = 'standard' WHERE id = $1")
+        .bind(id.parse::<i64>().unwrap())
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    let (status, _) = call(
+        &app,
         Method::DELETE,
         &format!("/api/v1/channels/{post_id}"),
         &owner,
