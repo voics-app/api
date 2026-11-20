@@ -19,6 +19,7 @@ pub async fn commit_member_update(
     after: Member,
     patch: domain::profile::MemberProfilePatch,
     voice: Option<Option<Snowflake>>,
+    voice_suppress: Option<bool>,
     audit: AuditContext<'_>,
 ) -> AppResult<MemberProfile> {
     let profile = member_profile(ports, after).await?;
@@ -103,6 +104,7 @@ pub async fn commit_member_update(
             guild_id: member.guild_id,
             user_id: member.user_id,
             channel_id,
+            suppress: None,
         });
         writes.audit(audit.entry(
             ports,
@@ -111,6 +113,14 @@ pub async fn commit_member_update(
             Some(member.user_id),
             changes,
         )?);
+    }
+    if let Some(suppress) = voice_suppress {
+        writes.emit(DomainEvent::VoiceMemberMove {
+            guild_id: member.guild_id,
+            user_id: member.user_id,
+            channel_id: None,
+            suppress: Some(suppress),
+        });
     }
     ports.unit_of_work.commit(writes).await?;
     let stored = ports

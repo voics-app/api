@@ -150,6 +150,27 @@ impl PgStore {
 
 #[async_trait]
 impl ChannelRepository for PgStore {
+    async fn stage_instance(
+        &self,
+        channel_id: Snowflake,
+    ) -> AppResult<Option<domain::stage_instance::StageInstance>> {
+        let row: Option<(i64, i64, i64, String)> = sqlx::query_as(
+            "SELECT id, guild_id, channel_id, topic FROM stage_instances WHERE channel_id = $1",
+        )
+        .bind(channel_id.as_i64())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(
+            |(id, guild_id, channel_id, topic)| domain::stage_instance::StageInstance {
+                id: sf(id),
+                guild_id: sf(guild_id),
+                channel_id: sf(channel_id),
+                topic,
+            },
+        ))
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Channel>> {
         let sql = format!("SELECT {CHANNEL_COLUMNS} FROM channels WHERE id = $1");
         let row: Option<ChannelRow> = sqlx::query_as(&sql)

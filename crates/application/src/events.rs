@@ -41,6 +41,9 @@ pub enum DomainEvent {
         guild_id: Snowflake,
         recipients: Option<Vec<Snowflake>>,
     },
+    StageInstanceCreate(domain::stage_instance::StageInstance),
+    StageInstanceUpdate(domain::stage_instance::StageInstance),
+    StageInstanceDelete(domain::stage_instance::StageInstance),
     ChannelCreate(Channel),
     ChannelUpdate(Channel),
     ChannelDelete(Channel),
@@ -62,6 +65,7 @@ pub enum DomainEvent {
         guild_id: Snowflake,
         user_id: Snowflake,
         channel_id: Option<Snowflake>,
+        suppress: Option<bool>,
     },
     BanAdd {
         guild_id: Snowflake,
