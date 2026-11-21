@@ -14,7 +14,7 @@ JPEG, GIF and WebP data-URI upload rules with a 10 MiB decoded limit per image. 
 DTOs and transactional user/member events include the new fields. Server images use
 `guilds/{guild}/users/{user}/{avatars|banners}/{hash}.{png|gif}`; clients fall back to the
 global profile when overrides are cleared. Migration `0054` requires no new settings.
-See [the profile specification](https://github.com/discordy-voics/docs/blob/feature/community-profiles/specs/2026-11-18-profile-customization.md).
+See [the profile specification](https://github.com/voics-app/docs/blob/feature/community-profiles/specs/2026-11-18-profile-customization.md).
 
 Age-restricted background notifications (client#76): the internal channel push-targets
 endpoint follows the channel's parent chain. Restricted or incomplete context forces
@@ -35,7 +35,7 @@ owner-at-filing association. Public listing reports retain their existing policy
 The optional account preference `preferences.hide_age_restricted_channels` accepts
 only booleans and uses the existing settings merge and sync events. Missing means
 false; this does not attest age or change channel permissions. See
-[the channel-gate specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-18-age-restricted-channels.md).
+[the channel-gate specification](https://github.com/voics-app/docs/blob/develop/specs/2026-11-18-age-restricted-channels.md).
 
 ## Run locally
 
@@ -57,7 +57,7 @@ make dev
 make test     # unit and integration tests; integration tests start containers
 make lint     # rustfmt check and clippy with -D warnings
 make build    # release binary
-make docker   # OCI image, ghcr.io/discordy-voics/api:<version>
+make docker   # OCI image, ghcr.io/voics-app/api:<version>
 ```
 
 Integration tests start throwaway containers with testcontainers (Postgres 16, Redpanda v24.2.7, Valkey 8). Docker must be running.
@@ -86,7 +86,7 @@ duplicate-open-report behavior apply. Migration 0053 adds report kind `guild`.
 The admin queue receives public name/description/category/tags, guild ID and the
 owner at filing. No private channel/member/message data is copied. Resolving a
 report does not automatically delist the server. See the central
-[discovery specification](https://github.com/discordy-voics/docs/blob/develop/specs/2026-11-03-server-discovery.md).
+[discovery specification](https://github.com/voics-app/docs/blob/develop/specs/2026-11-03-server-discovery.md).
 No new configuration or infrastructure is needed. Membership screening remains
 a separate feature; Community setup does not implement api#40.
 
@@ -198,7 +198,7 @@ replica capacity, legacy rollout preflight, failure behavior and the mandatory r
 
 ## Pending owner actions
 
-- The reusable workflows `discordy-voics/.github/.github/workflows/rust.yml` and `docker.yml` must exist on `main` before `ci.yml` can run.
+- The reusable workflows `voics-app/.github/.github/workflows/rust.yml` and `docker.yml` must exist on `main` before `ci.yml` can run.
 - The messages service must expose `POST|PATCH|DELETE /internal/v1/channels/{id}/messages[/{mid}]`. P4 does not pin these routes, so api calls them for bot, webhook and interaction messages. Until they exist, those calls return 503.
 - Interaction creation and callbacks are routed but have no HTTP contract test yet.
 - Redpanda topics listed in `contracts::envelope::API_TOPICS` are created by the compose init container and the cluster, not by api.
@@ -321,3 +321,5 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
+
+Profile badges are separate from user flags. `GET /api/v1/users/@me/badges` lists the authenticated account's granted badge IDs and visibility; `PUT /api/v1/users/@me/badges/{id}` with `{"visible":false}` or `true` changes an existing grant only. `GET /api/v1/users/{id}/badges` returns only visible badge IDs. Grants are provisioned by trusted operators in `user_badges`; this API does not grant badges. No production badge catalog is defined yet.
