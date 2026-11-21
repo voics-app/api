@@ -6,6 +6,9 @@ use std::time::Duration;
 
 use url::Url;
 
+mod webauthn;
+pub use webauthn::WebauthnConfig;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Environment {
     Local,
@@ -65,6 +68,7 @@ pub struct Config {
     /// Seconds between two stale-device prune runs.
     pub device_prune_interval_secs: u64,
     pub mail: MailTransport,
+    pub webauthn: Option<WebauthnConfig>,
     /// Product name shown in emails and as the authenticator-app issuer.
     pub brand_name: String,
     /// Prefix of the links in account emails.
@@ -93,7 +97,7 @@ pub enum ConfigError {
     Invalid { name: &'static str, reason: String },
 }
 
-const WORKER_ID_MAX: u16 = 1023;
+const WORKER_ID_MAX: u16 = 63;
 const DEFAULT_CORS_ALLOWED_ORIGINS: &str = "null,http://localhost:5173";
 const DEFAULT_DEVICE_MAX_IDLE_DAYS: &str = "30";
 const DEFAULT_DEVICE_PRUNE_INTERVAL_SECS: &str = "3600";
@@ -225,7 +229,7 @@ impl Config {
             .ok_or_else(|| {
                 invalid(
                     "SNOWFLAKE_WORKER_ID",
-                    "expected an integer between 0 and 1023",
+                    "expected a preferred API worker between 0 and 63",
                 )
             })?;
         let bind_addr = optional(&get, "API_BIND_ADDR", "0.0.0.0:8080")
@@ -282,6 +286,7 @@ impl Config {
                 DEFAULT_DEVICE_PRUNE_INTERVAL_SECS,
             )?,
             mail: mail_transport(&get)?,
+            webauthn: webauthn::parse(&get, environment)?,
             brand_name: optional(&get, "BRAND_NAME", application::context::DEFAULT_BRAND_NAME),
             app_link_base: optional(&get, "APP_LINK_BASE", "voics://"),
             account_deletion_retention_days: positive(

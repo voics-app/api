@@ -29,6 +29,9 @@ pub struct LoginRequest {
 #[derive(Debug, Deserialize)]
 pub struct RefreshRequest {
     pub refresh_token: String,
+    /// Persisted before the request. Reusing it can recover a lost rotation response.
+    #[serde(default)]
+    pub request_id: Option<uuid::Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +97,14 @@ pub struct UploadKeyPackagesRequest {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyCurrentUserRequest {
+    #[serde(default, deserialize_with = "double_option")]
+    pub banner: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub pronouns: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub theme_colors: Option<Option<[u32; 2]>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub accent_color: Option<Option<u32>>,
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
@@ -239,6 +250,12 @@ pub struct CreateGuildRequest {
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyGuildRequest {
     #[serde(default)]
+    pub features: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub rules_channel_id: Option<Option<Id>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub public_updates_channel_id: Option<Option<Id>>,
+    #[serde(default)]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "double_option")]
     pub icon: Option<Option<String>>,
@@ -268,6 +285,10 @@ pub struct ModifyGuildRequest {
     pub owner_id: Option<Id>,
     #[serde(default)]
     pub prune_admin_only: Option<bool>,
+    #[serde(default)]
+    pub audit_log_enabled: Option<bool>,
+    #[serde(default)]
+    pub audit_log_retention_days: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -417,6 +438,12 @@ pub struct RolePositionRequest {
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyMemberRequest {
     #[serde(default, deserialize_with = "double_option")]
+    pub avatar: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub banner: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub bio: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
     pub nick: Option<Option<String>>,
     #[serde(default)]
     pub roles: Option<Vec<Id>>,
@@ -529,11 +556,13 @@ pub struct CreateInteractionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OAuth2AuthorizeRequest {
     pub client_id: Id,
     pub guild_id: Id,
-    pub permissions: Perm,
+    pub permissions: String,
     pub scope: String,
+    pub installation_revision: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -618,12 +647,12 @@ pub struct RegisterPushTokenRequest {
 /// `POST /reports`: report a message or a user.
 #[derive(Debug, Deserialize)]
 pub struct CreateReportRequest {
-    /// `message` or `user`.
+    /// `message`, `user` or `channel` (guild channels only).
     pub target: String,
     pub category: String,
     #[serde(default)]
     pub note: Option<String>,
-    /// Message reports: the channel and message.
+    /// Channel and message reports: the channel. A channel report supplies no message.
     #[serde(default)]
     pub channel_id: Option<String>,
     #[serde(default)]

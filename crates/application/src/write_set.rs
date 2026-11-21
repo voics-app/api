@@ -21,6 +21,14 @@ use domain::Snowflake;
 
 use crate::events::DomainEvent;
 
+/// Only explicitly supplied metadata. Credential and identity fields are deliberately absent.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WebhookMetadataPatch {
+    pub name: Option<String>,
+    pub avatar: Option<Option<String>>,
+    pub channel_id: Option<Snowflake>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mutation {
     InsertUser {
@@ -29,6 +37,15 @@ pub enum Mutation {
         settings: Box<UserSettings>,
     },
     UpdateUser(User),
+    SetUserAppearance {
+        user_id: Snowflake,
+        patch: domain::profile::AppearancePatch,
+    },
+    SetMemberProfile {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        patch: domain::profile::MemberProfilePatch,
+    },
     /// Activates (`Some`) or removes (`None`) TOTP, clearing any pending
     /// secret; removal also deletes the backup codes.
     SetTotpSecret {
@@ -95,12 +112,18 @@ pub enum Mutation {
     DeleteGuild(Snowflake),
     InsertRole(Role),
     UpdateRole(Role),
+    /// Makes room for the managed bot role without rewriting role metadata or permissions.
+    ShiftRolesForBot {
+        guild_id: Snowflake,
+    },
     DeleteRole {
         guild_id: Snowflake,
         role_id: Snowflake,
     },
     /// Inserts or replaces the member and its role list.
     UpsertMember(Member),
+    /// Rejects concurrent joins instead of resetting an existing member's roles.
+    InsertMember(Member),
     DeleteMember {
         guild_id: Snowflake,
         user_id: Snowflake,
@@ -119,6 +142,14 @@ pub enum Mutation {
     DeleteInvite(String),
     /// Increments uses; fails with a conflict when the invite is exhausted.
     ConsumeInvite(String),
+    SetVanityInvite {
+        guild_id: Snowflake,
+        invite: Option<domain::vanity::VanityInvite>,
+    },
+    ConsumeVanityInvite {
+        guild_id: Snowflake,
+        code: String,
+    },
 
     InsertEmoji(Emoji),
     UpdateEmoji(Emoji),
@@ -128,6 +159,14 @@ pub enum Mutation {
     },
 
     InsertAudit(AuditLogEntry),
+    SetAuditPolicy {
+        guild_id: Snowflake,
+        policy: domain::audit_policy::AuditPolicy,
+    },
+    SetCommunity {
+        guild_id: Snowflake,
+        channels: Option<domain::guild::CommunityChannels>,
+    },
 
     InsertApplication(Application),
     UpdateApplication(Application),
@@ -163,7 +202,34 @@ pub enum Mutation {
     },
 
     InsertWebhook(Webhook),
-    UpdateWebhook(Webhook),
+    /// Serializes lifecycle changes and rejects actions based on a replaced installation.
+    GuardApplicationInstallation {
+        guild_id: Snowflake,
+        application_id: Snowflake,
+        bot_user_id: Snowflake,
+        expected_generation: Option<i64>,
+        expected_revision: Option<i64>,
+    },
+    RegisterApplicationInstallation {
+        guild_id: Snowflake,
+        application_id: Snowflake,
+        bot_user_id: Snowflake,
+        installed_at: DateTime<Utc>,
+    },
+    RecordBotConsent(domain::bot_authorization::BotConsent),
+    RevokeBotConsent {
+        id: Snowflake,
+        user_id: Snowflake,
+    },
+    UpdateWebhook {
+        id: Snowflake,
+        patch: WebhookMetadataPatch,
+    },
+    /// Rotates only the incoming webhook credential; metadata is preserved.
+    SetWebhookToken {
+        id: Snowflake,
+        token_hash: String,
+    },
     DeleteWebhook(Snowflake),
 }
 

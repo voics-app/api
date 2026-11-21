@@ -2,6 +2,7 @@
 //! events in the outbox within the same transaction (P6).
 
 mod applications;
+mod authorizations;
 mod devices;
 mod guilds;
 mod identity;
@@ -10,6 +11,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::PgPool;
 
+use application::events::DomainEvent;
 use application::ports::UnitOfWork;
 use application::write_set::{Mutation, WriteSet};
 use application::AppResult;
@@ -43,10 +45,59 @@ impl UnitOfWork for PgUnitOfWork {
         let mut tx = self.pool.begin().await.map_err(db)?;
         let conn = &mut *tx;
         for mutation in &writes.mutations {
-            apply(conn, mutation).await?;
+            if !matches!(mutation, Mutation::InsertAudit(_)) {
+                apply(conn, mutation).await?;
+            }
+        }
+        let mut recorded = std::collections::HashSet::new();
+        for mutation in &writes.mutations {
+            if let Mutation::InsertAudit(entry) = mutation {
+                if super::audit_policy::records(conn, entry).await? {
+                    guilds::insert_audit(conn, entry).await?;
+                    recorded.insert(entry.id);
+                }
+            }
         }
         let now = Utc::now();
         for event in &writes.events {
+            if matches!(event, DomainEvent::AuditLogEntryCreate(entry) if !recorded.contains(&entry.id))
+            {
+                continue;
+            }
+            // A profile snapshot may predate another factor change. Publish the
+            // committed user, including derived MFA state, under the write lock.
+            let committed;
+            let event = if let DomainEvent::UserUpdate(user) = event {
+                let row: super::users::UserRow = sqlx::query_as(&format!(
+                    "SELECT {} FROM users WHERE id = $1",
+                    super::users::USER_COLUMNS
+                ))
+                .bind(user.id.as_i64())
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(db)?;
+                committed = DomainEvent::UserUpdate(row.into());
+                &committed
+            } else if let DomainEvent::MemberUpdate(profile) = event {
+                committed = DomainEvent::MemberUpdate(
+                    super::guilds::committed_member(conn, &profile.member).await?,
+                );
+                &committed
+            } else if let DomainEvent::RoleUpdate(role) = event {
+                let row: Option<super::guilds::RoleRow> = sqlx::query_as(&format!(
+                    "SELECT {} FROM roles WHERE id = $1",
+                    super::guilds::ROLE_COLUMNS
+                ))
+                .bind(role.id.as_i64())
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(db)?;
+                let Some(row) = row else { continue };
+                committed = DomainEvent::RoleUpdate(row.into());
+                &committed
+            } else {
+                event
+            };
             for routed in route(event, &self.default_region, now) {
                 outbox::enqueue(&mut *conn, &routed, now).await?;
             }
@@ -69,6 +120,14 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             identity::upsert_settings(conn, settings.as_ref()).await
         }
         Mutation::UpdateUser(user) => identity::upsert_user(conn, user).await,
+        Mutation::SetUserAppearance { user_id, patch } => {
+            super::profile::set_user(conn, *user_id, patch).await
+        }
+        Mutation::SetMemberProfile {
+            guild_id,
+            user_id,
+            patch,
+        } => super::profile::set_member(conn, *guild_id, *user_id, patch).await,
         Mutation::SetTotpSecret { user_id, secret } => {
             identity::set_totp_secret(conn, *user_id, secret.as_deref()).await
         }
@@ -123,10 +182,21 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertRole(role) | Mutation::UpdateRole(role) => {
             guilds::upsert_role(conn, role).await
         }
+        Mutation::ShiftRolesForBot { guild_id } => {
+            sqlx::query(
+                "UPDATE roles SET position = position + 1 WHERE guild_id = $1 AND id <> $1",
+            )
+            .bind(guild_id.as_i64())
+            .execute(conn)
+            .await
+            .map_err(db)?;
+            Ok(())
+        }
         Mutation::DeleteRole { guild_id, role_id } => {
             guilds::delete_role(conn, *guild_id, *role_id).await
         }
         Mutation::UpsertMember(member) => guilds::upsert_member(conn, member).await,
+        Mutation::InsertMember(member) => guilds::insert_member(conn, member).await,
         Mutation::DeleteMember { guild_id, user_id } => {
             guilds::delete_member(conn, *guild_id, *user_id).await
         }
@@ -141,6 +211,12 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertInvite(invite) => guilds::insert_invite(conn, invite).await,
         Mutation::DeleteInvite(code) => guilds::delete_invite(conn, code).await,
         Mutation::ConsumeInvite(code) => guilds::consume_invite(conn, code).await,
+        Mutation::SetVanityInvite { guild_id, invite } => {
+            super::vanity::set(conn, *guild_id, invite.as_ref()).await
+        }
+        Mutation::ConsumeVanityInvite { guild_id, code } => {
+            super::vanity::consume(conn, *guild_id, code).await
+        }
         Mutation::InsertEmoji(emoji) | Mutation::UpdateEmoji(emoji) => {
             guilds::upsert_emoji(conn, emoji).await
         }
@@ -148,6 +224,12 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             guilds::delete_emoji(conn, *guild_id, *emoji_id).await
         }
         Mutation::InsertAudit(entry) => guilds::insert_audit(conn, entry).await,
+        Mutation::SetAuditPolicy { guild_id, policy } => {
+            super::audit_policy::set(conn, *guild_id, *policy).await
+        }
+        Mutation::SetCommunity { guild_id, channels } => {
+            super::community::set(conn, *guild_id, *channels).await
+        }
 
         Mutation::InsertApplication(app) | Mutation::UpdateApplication(app) => {
             applications::upsert_application(conn, app).await
@@ -180,8 +262,48 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             state,
             original_message_id,
         } => applications::update_interaction(conn, *id, *state, *original_message_id).await,
-        Mutation::InsertWebhook(webhook) | Mutation::UpdateWebhook(webhook) => {
-            applications::upsert_webhook(conn, webhook).await
+        Mutation::InsertWebhook(webhook) => applications::insert_webhook(conn, webhook).await,
+        Mutation::GuardApplicationInstallation {
+            guild_id,
+            application_id,
+            bot_user_id,
+            expected_generation,
+            expected_revision,
+        } => {
+            authorizations::guard(
+                conn,
+                *guild_id,
+                *application_id,
+                *bot_user_id,
+                *expected_generation,
+                *expected_revision,
+            )
+            .await
+        }
+        Mutation::RegisterApplicationInstallation {
+            guild_id,
+            application_id,
+            bot_user_id,
+            installed_at,
+        } => {
+            authorizations::register(
+                conn,
+                *guild_id,
+                *application_id,
+                *bot_user_id,
+                *installed_at,
+            )
+            .await
+        }
+        Mutation::RecordBotConsent(consent) => authorizations::consent(conn, consent).await,
+        Mutation::RevokeBotConsent { id, user_id } => {
+            authorizations::revoke(conn, *id, *user_id).await
+        }
+        Mutation::UpdateWebhook { id, patch } => {
+            applications::update_webhook(conn, *id, patch).await
+        }
+        Mutation::SetWebhookToken { id, token_hash } => {
+            applications::set_webhook_token(conn, *id, token_hash).await
         }
         Mutation::DeleteWebhook(webhook_id) => {
             applications::delete_webhook(conn, *webhook_id).await

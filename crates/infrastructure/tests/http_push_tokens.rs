@@ -4,6 +4,9 @@
 
 mod support;
 
+#[path = "http_push_tokens/age_restricted.rs"]
+mod age_restricted;
+
 use std::sync::Arc;
 
 use async_trait::async_trait;

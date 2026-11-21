@@ -64,6 +64,30 @@ impl TryFrom<AuditRow> for AuditLogEntry {
 
 #[async_trait]
 impl AuditLogRepository for PgStore {
+    async fn prune_expired(&self, now: DateTime<Utc>) -> AppResult<u64> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let result = sqlx::query(
+            "DELETE FROM audit_log a USING guilds g WHERE a.guild_id = g.id
+            AND a.created_at < $1 - g.audit_log_retention_days * INTERVAL '1 day'",
+        )
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        sqlx::query(
+            "DELETE FROM outbox o USING guilds g
+            WHERE o.payload->>'type' = 'AUDIT_LOG_ENTRY_CREATE'
+              AND o.payload->>'guild_id' = g.id::text
+              AND o.created_at < $1 - g.audit_log_retention_days * INTERVAL '1 day'",
+        )
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(result.rows_affected())
+    }
+
     async fn list(
         &self,
         guild_id: Snowflake,
@@ -72,6 +96,7 @@ impl AuditLogRepository for PgStore {
         let rows: Vec<AuditRow> = sqlx::query_as(
             "SELECT id, guild_id, user_id, target_id, action, changes, reason, created_at FROM audit_log \
              WHERE guild_id = $1 \
+               AND created_at >= CURRENT_TIMESTAMP - (SELECT audit_log_retention_days FROM guilds WHERE id = $1) * INTERVAL '1 day' \
                AND ($2::bigint IS NULL OR user_id = $2) \
                AND ($3::smallint IS NULL OR action = $3) \
                AND ($4::bigint IS NULL OR id < $4) \

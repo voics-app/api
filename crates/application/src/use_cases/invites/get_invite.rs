@@ -60,11 +60,7 @@ async fn online_count(ports: &Ports, guild_id: domain::Snowflake) -> Option<u64>
 
 /// Public: anyone holding the code may look it up.
 pub async fn execute(ports: &Ports, code: &str) -> AppResult<InviteView> {
-    let invite = ports
-        .invites
-        .find(code)
-        .await?
-        .ok_or(AppError::NotFound(Resource::Invite))?;
+    let (invite, _) = super::vanity::resolve(ports, code).await?;
     if !invite.is_usable(ports.clock.now()) {
         return Err(AppError::NotFound(Resource::Invite));
     }

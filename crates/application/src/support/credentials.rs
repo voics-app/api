@@ -74,12 +74,15 @@ pub async fn verify_second_factor(
         MFA_WINDOW,
     )
     .await?;
-    let secret = credentials
-        .totp_secret
-        .as_deref()
-        .ok_or_else(mfa_not_enabled)?;
+    if credentials.totp_secret.is_none() && ports.passkeys.list(user_id).await?.is_empty() {
+        return Err(mfa_not_enabled());
+    }
     if looks_like_totp(code) {
-        if ports.totp.verify(secret, code.trim(), ports.clock.now()) {
+        if credentials
+            .totp_secret
+            .as_deref()
+            .is_some_and(|secret| ports.totp.verify(secret, code.trim(), ports.clock.now()))
+        {
             return Ok(());
         }
     } else if let Some(canonical) = normalize_backup_code(code) {

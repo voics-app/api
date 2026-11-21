@@ -40,6 +40,10 @@ pub struct UserDto {
     pub discriminator: &'static str,
     pub global_name: Option<String>,
     pub avatar: Option<String>,
+    pub banner: Option<String>,
+    pub pronouns: Option<String>,
+    pub theme_colors: Option<[u32; 2]>,
+    pub accent_color: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
     pub bot: bool,
@@ -65,6 +69,10 @@ impl UserDto {
             discriminator: "0",
             global_name: user.global_name.clone(),
             avatar: user.avatar.clone(),
+            banner: user.banner.clone(),
+            pronouns: user.pronouns.clone(),
+            theme_colors: user.theme_colors,
+            accent_color: user.accent_color,
             bio: user.bio.clone(),
             bot: user.bot,
             system: user.system,
@@ -536,6 +544,8 @@ pub struct GuildDto {
     pub roles: Vec<RoleDto>,
     pub emojis: Vec<EmojiDto>,
     pub features: Vec<String>,
+    pub rules_channel_id: Option<Id>,
+    pub public_updates_channel_id: Option<Id>,
     pub mfa_level: u8,
     pub system_channel_id: Option<Id>,
     pub system_channel_flags: u32,
@@ -547,6 +557,8 @@ pub struct GuildDto {
     pub approximate_member_count: Option<u64>,
     pub voice_region: String,
     pub prune_admin_only: bool,
+    pub audit_log_enabled: bool,
+    pub audit_log_retention_days: u16,
 }
 
 impl GuildDto {
@@ -567,7 +579,12 @@ impl GuildDto {
             explicit_content_filter: guild.explicit_content_filter,
             roles: roles.iter().map(RoleDto::from).collect(),
             emojis: emojis.iter().map(EmojiDto::from).collect(),
-            features: Vec::new(),
+            features: guild
+                .community
+                .map(|_| vec!["COMMUNITY".into()])
+                .unwrap_or_default(),
+            rules_channel_id: guild.community.map(|c| Id(c.rules_channel_id)),
+            public_updates_channel_id: guild.community.map(|c| Id(c.public_updates_channel_id)),
             mfa_level: 0,
             system_channel_id: guild.system_channel_id.map(Id),
             system_channel_flags: guild.system_channel_flags,
@@ -581,6 +598,8 @@ impl GuildDto {
                 .clone()
                 .unwrap_or_else(|| default_region.to_owned()),
             prune_admin_only: guild.prune_admin_only,
+            audit_log_enabled: guild.audit_policy.enabled,
+            audit_log_retention_days: guild.audit_policy.retention_days,
         }
     }
 
@@ -600,6 +619,8 @@ pub struct MemberDto {
     pub user: Option<UserDto>,
     pub nick: Option<String>,
     pub avatar: Option<String>,
+    pub banner: Option<String>,
+    pub bio: Option<String>,
     pub roles: Vec<Id>,
     pub joined_at: String,
     pub deaf: bool,
@@ -615,6 +636,8 @@ impl MemberDto {
             user: user.map(UserDto::public),
             nick: member.nick.clone(),
             avatar: member.avatar.clone(),
+            banner: member.banner.clone(),
+            bio: member.bio.clone(),
             roles: ids(&member.role_ids),
             joined_at: timestamp(member.joined_at),
             deaf: member.deaf,
@@ -1020,6 +1043,10 @@ mod tests {
             global_name: None,
             avatar: None,
             bio: None,
+            banner: None,
+            pronouns: None,
+            theme_colors: None,
+            accent_color: None,
             bot: false,
             system: false,
             email: Some("alice@example.com".into()),
@@ -1171,7 +1198,11 @@ pub struct GuildTemplateDto {
 }
 
 impl GuildTemplateDto {
-    pub fn new(template: &domain::template::GuildTemplate, creator: Option<&User>) -> Self {
+    pub fn new(
+        template: &domain::template::GuildTemplate,
+        creator: Option<&User>,
+        is_dirty: bool,
+    ) -> Self {
         Self {
             code: template.code.clone(),
             name: template.name.clone(),
@@ -1183,7 +1214,7 @@ impl GuildTemplateDto {
             updated_at: timestamp(template.updated_at),
             source_guild_id: template.source_guild_id.map(Id),
             serialized_source_guild: template.source.to_json(),
-            is_dirty: false,
+            is_dirty,
         }
     }
 }

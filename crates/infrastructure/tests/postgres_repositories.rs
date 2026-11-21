@@ -30,6 +30,10 @@ fn user(id: u64, name: &str) -> User {
         global_name: None,
         avatar: None,
         bio: None,
+        banner: None,
+        pronouns: None,
+        theme_colors: None,
+        accent_color: None,
         bot: false,
         system: false,
         email: Some(format!("{name}@example.com")),
@@ -126,6 +130,8 @@ async fn guild_lifecycle_round_trips_through_postgres() {
         banner: None,
         splash: None,
         prune_admin_only: false,
+        audit_policy: Default::default(),
+        community: None,
         created_at: now,
     };
     let everyone = Role {

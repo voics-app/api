@@ -4,6 +4,9 @@
 
 mod support;
 
+#[path = "http_reports/channel_reports.rs"]
+mod channel_reports;
+
 use std::sync::Arc;
 
 use axum::http::{Method, StatusCode};

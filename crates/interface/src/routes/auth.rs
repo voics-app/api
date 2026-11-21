@@ -34,7 +34,7 @@ use crate::state::AppState;
 
 /// Client details of a login request: its User-Agent and, behind Cloudflare, the
 /// visitor's country.
-fn client_info(headers: &HeaderMap) -> ClientInfo {
+pub(super) fn client_info(headers: &HeaderMap) -> ClientInfo {
     let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
     ClientInfo::from_headers(header("user-agent"), header("cf-ipcountry"))
 }
@@ -49,7 +49,7 @@ pub struct AuthResponse {
     user: UserDto,
 }
 
-async fn to_response(state: &AppState, tokens: AuthTokens) -> AppResult<AuthResponse> {
+pub(super) async fn to_response(state: &AppState, tokens: AuthTokens) -> AppResult<AuthResponse> {
     let locale = state.ports.users.settings(tokens.user.id).await?.locale;
     Ok(AuthResponse {
         access_token: tokens.access_token,
@@ -102,7 +102,8 @@ async fn refresh_tokens(
     State(state): State<AppState>,
     Body(body): Body<RefreshRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
-    let tokens = refresh::execute(&state.ports, &body.refresh_token).await?;
+    let tokens =
+        refresh::execute_with_recovery(&state.ports, &body.refresh_token, body.request_id).await?;
     Ok(Json(to_response(&state, tokens).await?))
 }
 

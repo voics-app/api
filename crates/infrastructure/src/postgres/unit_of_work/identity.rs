@@ -23,7 +23,7 @@ pub(super) async fn upsert_user(conn: &mut PgConnection, user: &User) -> AppResu
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) \
          ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, email = EXCLUDED.email, \
              global_name = EXCLUDED.global_name, avatar = EXCLUDED.avatar, bio = EXCLUDED.bio, verified = EXCLUDED.verified, \
-             mfa_enabled = EXCLUDED.mfa_enabled, flags = EXCLUDED.flags, platform_admin = EXCLUDED.platform_admin, \
+             flags = EXCLUDED.flags, platform_admin = EXCLUDED.platform_admin, \
              suspended = EXCLUDED.suspended, suspension_reason = EXCLUDED.suspension_reason, \
              suspended_until = EXCLUDED.suspended_until",
     )
@@ -80,6 +80,8 @@ pub(super) async fn set_totp_secret(
     user_id: Snowflake,
     secret: Option<&str>,
 ) -> AppResult<()> {
+    // Factor changes share the account lock with passkey activation/removal.
+    super::super::passkeys::lock_account(conn, user_id).await?;
     sqlx::query(
         "UPDATE user_credentials SET totp_secret = $2, pending_totp_secret = NULL WHERE user_id = $1",
     )
@@ -88,20 +90,7 @@ pub(super) async fn set_totp_secret(
     .execute(&mut *conn)
     .await
     .map_err(db)?;
-    if secret.is_none() {
-        sqlx::query("DELETE FROM user_backup_codes WHERE user_id = $1")
-            .bind(user_id.as_i64())
-            .execute(&mut *conn)
-            .await
-            .map_err(db)?;
-    }
-    sqlx::query("UPDATE users SET mfa_enabled = $2 WHERE id = $1")
-        .bind(user_id.as_i64())
-        .bind(secret.is_some())
-        .execute(conn)
-        .await
-        .map_err(db)?;
-    Ok(())
+    super::super::passkeys::sync_mfa(conn, user_id).await
 }
 
 pub(super) async fn upsert_settings(
@@ -266,6 +255,7 @@ pub(super) async fn suspend_user(
 }
 
 pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -> AppResult<()> {
+    crate::postgres::community::check_update(conn, channel).await?;
     sqlx::query(
         "INSERT INTO channels (id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
              rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at) \
@@ -343,6 +333,7 @@ pub(super) async fn delete_channel(
     conn: &mut PgConnection,
     channel_id: Snowflake,
 ) -> AppResult<()> {
+    crate::postgres::community::check_delete(conn, channel_id).await?;
     sqlx::query("DELETE FROM channels WHERE id = $1")
         .bind(channel_id.as_i64())
         .execute(conn)
@@ -455,6 +446,7 @@ pub(super) async fn anonymize_user(
 ) -> AppResult<()> {
     sqlx::query(
         "UPDATE users SET username = $2, email = NULL, global_name = NULL, avatar = NULL, bio = NULL, \
+             banner = NULL, pronouns = NULL, theme_colors = NULL, accent_color = NULL, \
              verified = FALSE, mfa_enabled = FALSE, delete_after = NULL, \
              disabled_at = COALESCE(disabled_at, now()) WHERE id = $1",
     )
@@ -463,7 +455,20 @@ pub(super) async fn anonymize_user(
     .execute(&mut *conn)
     .await
     .map_err(db)?;
-    for table in ["user_credentials", "user_backup_codes", "account_tokens"] {
+    sqlx::query("UPDATE members SET nick = NULL, avatar = NULL, banner = NULL, bio = NULL WHERE user_id = $1")
+        .bind(user_id.as_i64())
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
+    for table in [
+        "user_credentials",
+        "user_backup_codes",
+        "account_tokens",
+        "user_passkeys",
+        "passkey_challenges",
+        "application_authorizations",
+        "user_badges",
+    ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE user_id = $1"))
             .bind(user_id.as_i64())
             .execute(&mut *conn)

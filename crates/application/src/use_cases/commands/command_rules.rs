@@ -87,7 +87,10 @@ pub fn build(
         ));
     }
     Ok(ApplicationCommand {
-        id: base.map(|b| b.id).unwrap_or_else(|| ports.ids.next_id()),
+        id: match base {
+            Some(base) => base.id,
+            None => ports.ids.next_id()?,
+        },
         application_id,
         guild_id,
         name,
@@ -102,7 +105,7 @@ pub fn build(
             .or(base.map(|b| b.dm_permission))
             .unwrap_or(true),
         nsfw: input.nsfw.or(base.map(|b| b.nsfw)).unwrap_or(false),
-        version: ports.ids.next_id(),
+        version: ports.ids.next_id()?,
     })
 }
 

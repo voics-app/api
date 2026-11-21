@@ -19,7 +19,7 @@ pub struct MfaLoginInput {
     pub client: ClientInfo,
 }
 
-fn invalid_ticket() -> AppError {
+pub(super) fn invalid_ticket() -> AppError {
     AppError::invalid(
         "ticket",
         "INVALID_MFA_TICKET",

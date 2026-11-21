@@ -208,10 +208,33 @@ pub fn instantiate(
     now: DateTime<Utc>,
     mut next_id: impl FnMut() -> Snowflake,
 ) -> Result<Instantiated, TemplateError> {
+    instantiate_with_ids(
+        source,
+        name,
+        owner_id,
+        voice_region,
+        now,
+        std::iter::from_fn(|| Some(next_id())),
+    )
+}
+
+/// Uses a finite set of IDs reserved by a fallible application port before construction.
+pub fn instantiate_with_ids(
+    source: &TemplateSource,
+    name: &str,
+    owner_id: Snowflake,
+    voice_region: Option<String>,
+    now: DateTime<Utc>,
+    mut ids: impl Iterator<Item = Snowflake>,
+) -> Result<Instantiated, TemplateError> {
+    let mut next_id = || {
+        ids.next()
+            .ok_or_else(|| bad("Insufficient allocated identifiers."))
+    };
     if source.roles.len() > MAX_ROLES || source.channels.len() > MAX_CHANNELS {
         return Err(bad("The template is too large."));
     }
-    let guild_id = next_id();
+    let guild_id = next_id()?;
     let mut role_ids: HashMap<u64, Snowflake> = HashMap::from([(0, guild_id)]);
     let everyone_permissions = source
         .roles
@@ -225,7 +248,7 @@ pub fn instantiate(
     let mut others: Vec<&TemplateRole> = source.roles.iter().filter(|r| r.id != 0).collect();
     others.sort_by_key(|r| r.id);
     for (index, role) in others.into_iter().enumerate() {
-        let id = next_id();
+        let id = next_id()?;
         if role_ids.insert(role.id, id).is_some() {
             return Err(bad("Duplicate role id in the template."));
         }
@@ -247,7 +270,7 @@ pub fn instantiate(
 
     let mut channel_ids: HashMap<u64, Snowflake> = HashMap::new();
     for channel in &source.channels {
-        if channel_ids.insert(channel.id, next_id()).is_some() {
+        if channel_ids.insert(channel.id, next_id()?).is_some() {
             return Err(bad("Duplicate channel id in the template."));
         }
     }
@@ -311,6 +334,8 @@ pub fn instantiate(
         banner: None,
         splash: None,
         prune_admin_only: false,
+        audit_policy: Default::default(),
+        community: None,
         created_at: now,
     };
     Ok(Instantiated {
@@ -919,6 +944,21 @@ mod tests {
     }
 
     #[test]
+    fn finite_id_reservation_must_cover_every_template_object() {
+        let source = gaming().source;
+        let required =
+            1 + source.roles.iter().filter(|role| role.id != 0).count() + source.channels.len();
+        let ids = (100..100 + required as u64 - 1).map(Snowflake::new);
+        assert!(
+            instantiate_with_ids(&source, "Template", Snowflake::new(7), None, now(), ids).is_err()
+        );
+        let ids = (100..100 + required as u64).map(Snowflake::new);
+        assert!(
+            instantiate_with_ids(&source, "Template", Snowflake::new(7), None, now(), ids).is_ok()
+        );
+    }
+
+    #[test]
     fn capture_maps_ids_and_drops_members_managed_roles_and_threads() {
         let guild_id = Snowflake::new(500);
         let source = builtin("builtin-gaming").unwrap().source;
@@ -954,6 +994,7 @@ mod tests {
         channels.push(thread);
 
         let captured = capture(&made.guild, &roles, &channels);
+        assert_eq!(captured, capture(&made.guild, &made.roles, &made.channels));
         assert_eq!(captured.roles.len(), source.roles.len(), "bot role dropped");
         assert_eq!(
             captured.channels.len(),

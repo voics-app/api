@@ -26,7 +26,22 @@ pub struct Guild {
     pub splash: Option<String>,
     /// Only administrators may prune inactive members while this is set.
     pub prune_admin_only: bool,
+    pub audit_policy: crate::audit_policy::AuditPolicy,
+    pub community: Option<CommunityChannels>,
     pub created_at: DateTime<Utc>,
+}
+
+/// A configured Community always has both channels; one channel may serve both purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommunityChannels {
+    pub rules_channel_id: Snowflake,
+    pub public_updates_channel_id: Snowflake,
+}
+
+impl CommunityChannels {
+    pub fn contains(self, id: Snowflake) -> bool {
+        self.rules_channel_id == id || self.public_updates_channel_id == id
+    }
 }
 
 /// `system_channel_flags` bit: do not post a message when a member joins.
@@ -113,6 +128,8 @@ pub struct Member {
     pub user_id: Snowflake,
     pub nick: Option<String>,
     pub avatar: Option<String>,
+    pub banner: Option<String>,
+    pub bio: Option<String>,
     pub role_ids: Vec<Snowflake>,
     pub joined_at: DateTime<Utc>,
     pub deaf: bool,
@@ -128,6 +145,8 @@ impl Member {
             user_id,
             nick: None,
             avatar: None,
+            banner: None,
+            bio: None,
             role_ids: Vec::new(),
             joined_at,
             deaf: false,

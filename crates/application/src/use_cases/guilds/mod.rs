@@ -1,3 +1,4 @@
+mod community;
 pub mod create_guild;
 pub mod delete_guild;
 pub mod get_guild;

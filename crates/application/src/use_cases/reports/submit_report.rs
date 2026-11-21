@@ -20,6 +20,12 @@ pub const REPORT_WINDOW: std::time::Duration = std::time::Duration::from_secs(60
 
 #[derive(Debug, Clone)]
 pub enum ReportTarget {
+    Channel {
+        channel_id: Snowflake,
+    },
+    Guild {
+        guild_id: Snowflake,
+    },
     Message {
         channel_id: Snowflake,
         message_id: Snowflake,
@@ -66,6 +72,8 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: SubmitReportInput) -> 
     )
     .await?;
     let resolved = match input.target {
+        ReportTarget::Channel { channel_id } => channel_target(ports, actor, channel_id).await?,
+        ReportTarget::Guild { guild_id } => guild_target(ports, guild_id).await?,
         ReportTarget::User { user_id } => user_target(ports, user_id).await?,
         ReportTarget::Message {
             channel_id,
@@ -74,7 +82,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: SubmitReportInput) -> 
             content,
         } => message_target(ports, actor, channel_id, message_id, author_id, content).await?,
     };
-    if resolved.reported_user_id == actor.user_id {
+    if resolved.kind != ReportKind::Channel && resolved.reported_user_id == actor.user_id {
         return Err(AppError::invalid(
             "target",
             "REPORT_SELF",
@@ -82,7 +90,7 @@ pub async fn execute(ports: &Ports, actor: &Actor, input: SubmitReportInput) -> 
         ));
     }
     let report = Report {
-        id: ports.ids.next_id(),
+        id: ports.ids.next_id()?,
         reporter_id: actor.user_id,
         reported_user_id: resolved.reported_user_id,
         kind: resolved.kind,
@@ -115,6 +123,78 @@ async fn user_target(ports: &Ports, user_id: Snowflake) -> AppResult<Resolved> {
         delivery_mode: None,
         content: None,
         content_source: None,
+    })
+}
+
+/// A content-gate report needs only current channel visibility, never message history.
+async fn channel_target(
+    ports: &Ports,
+    actor: &Actor,
+    channel_id: Snowflake,
+) -> AppResult<Resolved> {
+    let access = ChannelAccess::visible(ports, channel_id, actor.user_id).await?;
+    let guild = &access.guild()?.guild;
+    let channel = &access.channel;
+    if channel.kind.is_thread() && access.parent.is_none() {
+        return Err(AppError::NotFound(Resource::Channel));
+    }
+    let metadata = serde_json::json!({
+        "id": channel.id.to_string(),
+        "guild_id": guild.id.to_string(),
+        "parent_id": channel.parent_id.map(|id| id.to_string()),
+        "name": channel.name,
+        "type": channel.kind.code(),
+        "nsfw": channel.nsfw,
+    });
+    Ok(Resolved {
+        reported_user_id: guild.owner_id,
+        kind: ReportKind::Channel,
+        channel_id: Some(channel.id),
+        guild_id: Some(guild.id),
+        message_id: None,
+        delivery_mode: None,
+        content: Some(metadata.to_string()),
+        content_source: Some(ContentSource::Server),
+    })
+}
+
+async fn guild_target(ports: &Ports, guild_id: Snowflake) -> AppResult<Resolved> {
+    let guild = ports
+        .guilds
+        .find(guild_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Guild))?;
+    let listing = ports
+        .guilds
+        .discovery(guild_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Guild))?;
+    if !domain::discovery::ineligibilities(
+        &guild,
+        ports.guilds.member_count(guild_id).await?,
+        ports.guilds.has_nsfw_channel(guild_id).await?,
+        ports.settings.discovery_rules(),
+        ports.clock.now(),
+    )
+    .is_empty()
+    {
+        return Err(AppError::NotFound(Resource::Guild));
+    }
+    Ok(Resolved {
+        reported_user_id: guild.owner_id,
+        kind: ReportKind::Guild,
+        guild_id: Some(guild_id),
+        channel_id: None,
+        message_id: None,
+        delivery_mode: None,
+        content: Some(format!(
+            "Name: {}\nDescription: {}\nCategory: {}\nTags: {}",
+            guild.name,
+            guild.description.unwrap_or_default(),
+            listing.category,
+            listing.tags.join(", ")
+        )),
+        content_source: Some(ContentSource::Server),
     })
 }
 

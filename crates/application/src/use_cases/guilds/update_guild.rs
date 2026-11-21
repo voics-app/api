@@ -18,6 +18,9 @@ use crate::write_set::{Mutation, WriteSet};
 
 #[derive(Debug, Clone, Default)]
 pub struct UpdateGuildInput {
+    pub features: Option<Vec<String>>,
+    pub rules_channel_id: Option<Option<Snowflake>>,
+    pub public_updates_channel_id: Option<Option<Snowflake>>,
     pub name: Option<String>,
     pub icon: Option<Option<ImageUpload>>,
     pub description: Option<Option<String>>,
@@ -33,6 +36,8 @@ pub struct UpdateGuildInput {
     pub splash: Option<Option<ImageUpload>>,
     pub owner_id: Option<Snowflake>,
     pub prune_admin_only: Option<bool>,
+    pub audit_log_enabled: Option<bool>,
+    pub audit_log_retention_days: Option<u16>,
 }
 
 fn bounded(field: &str, value: u8, max: u8) -> AppResult<u8> {
@@ -57,6 +62,16 @@ pub async fn execute(
     ctx.require(Permissions::MANAGE_GUILD)?;
     let before = ctx.guild.clone();
     let mut guild = ctx.guild.clone();
+    let community_requested = super::community::apply(ports, &mut guild, &input).await?;
+    if input.audit_log_enabled.is_some() || input.audit_log_retention_days.is_some() {
+        ctx.require(Permissions::ADMINISTRATOR)?;
+    }
+    if let Some(enabled) = input.audit_log_enabled {
+        guild.audit_policy.enabled = enabled;
+    }
+    if let Some(days) = input.audit_log_retention_days {
+        guild.audit_policy.set_retention(days)?;
+    }
 
     if let Some(name) = input.name {
         validation::guild_name(&name)?;
@@ -159,6 +174,41 @@ pub async fn execute(
     }
 
     let changes: Vec<AuditChange> = [
+        AuditChange::if_changed(
+            "features",
+            json!(before
+                .community
+                .map(|_| vec!["COMMUNITY"])
+                .unwrap_or_default()),
+            json!(guild
+                .community
+                .map(|_| vec!["COMMUNITY"])
+                .unwrap_or_default()),
+        ),
+        AuditChange::if_changed(
+            "rules_channel_id",
+            json!(before.community.map(|c| c.rules_channel_id.to_string())),
+            json!(guild.community.map(|c| c.rules_channel_id.to_string())),
+        ),
+        AuditChange::if_changed(
+            "public_updates_channel_id",
+            json!(before
+                .community
+                .map(|c| c.public_updates_channel_id.to_string())),
+            json!(guild
+                .community
+                .map(|c| c.public_updates_channel_id.to_string())),
+        ),
+        AuditChange::if_changed(
+            "audit_log_enabled",
+            json!(before.audit_policy.enabled),
+            json!(guild.audit_policy.enabled),
+        ),
+        AuditChange::if_changed(
+            "audit_log_retention_days",
+            json!(before.audit_policy.retention_days),
+            json!(guild.audit_policy.retention_days),
+        ),
         AuditChange::if_changed("name", json!(before.name), json!(guild.name)),
         AuditChange::if_changed("icon_hash", json!(before.icon), json!(guild.icon)),
         AuditChange::if_changed(
@@ -219,6 +269,18 @@ pub async fn execute(
     .collect();
 
     let mut writes = WriteSet::new();
+    if community_requested {
+        writes.mutate(Mutation::SetCommunity {
+            guild_id,
+            channels: guild.community,
+        });
+    }
+    if before.audit_policy != guild.audit_policy {
+        writes.mutate(Mutation::SetAuditPolicy {
+            guild_id,
+            policy: guild.audit_policy,
+        });
+    }
     writes
         .mutate(Mutation::UpdateGuild(guild.clone()))
         .emit(DomainEvent::GuildUpdate(guild.clone()));

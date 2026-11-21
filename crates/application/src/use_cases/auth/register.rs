@@ -44,11 +44,15 @@ pub async fn execute(ports: &Ports, input: RegisterInput) -> AppResult<AuthToken
     taken.into_result()?;
 
     let user = User {
-        id: ports.ids.next_id(),
+        id: ports.ids.next_id()?,
         username,
         global_name: None,
         avatar: None,
         bio: None,
+        banner: None,
+        pronouns: None,
+        theme_colors: None,
+        accent_color: None,
         bot: false,
         system: false,
         email: Some(email),

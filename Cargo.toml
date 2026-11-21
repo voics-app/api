@@ -15,6 +15,7 @@ application = { path = "crates/application" }
 contracts = { path = "crates/contracts" }
 infrastructure = { path = "crates/infrastructure" }
 interface = { path = "crates/interface" }
+voics-snowflake = { path = "crates/snowflake" }
 
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }
@@ -26,7 +27,7 @@ hex = "0.4"
 hmac = "0.12"
 http = "1"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
-jsonwebtoken = { version = "10", default-features = false, features = ["use_pem", "rust_crypto"] }
+jsonwebtoken = { version = "12", default-features = false, features = ["use_pem", "rust_crypto"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false }
 opentelemetry = "0.27"
@@ -55,6 +56,11 @@ futures = "0.3"
 http-body-util = "0.1"
 subtle = "2"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
+# 0.6.2's crypto-glue requests rsa/sha2, removed in the stable RSA used by JWT 12.
+# The maintained 0.5 line uses OpenSSL; vendoring makes Linux and Windows builds reproducible.
+webauthn-rs = { version = "0.5.5", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
+openssl = { version = "0.10", features = ["vendored"] }
 
 [profile.release]
 lto = "thin"

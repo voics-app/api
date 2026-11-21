@@ -17,14 +17,14 @@ use super::users::{UserRow, USER_COLUMNS};
 use super::PgStore;
 
 const GUILD_COLUMNS: &str = "id, name, icon, description, owner_id, voice_region, verification_level, \
-     default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, system_channel_flags, banner, splash, prune_admin_only, created_at";
+     default_message_notifications, explicit_content_filter, afk_channel_id, afk_timeout, system_channel_id, system_channel_flags, banner, splash, prune_admin_only, audit_log_enabled, audit_log_retention_days, rules_channel_id, public_updates_channel_id, created_at";
 
-const ROLE_COLUMNS: &str =
+pub(super) const ROLE_COLUMNS: &str =
     "id, guild_id, name, color, hoist, icon, unicode_emoji, position, permissions, \
      managed, mentionable, bot_id";
 
 /// Member columns, with the role list aggregated from `member_roles`.
-const MEMBER_COLUMNS: &str = "m.guild_id, m.user_id, m.nick, m.avatar AS member_avatar, m.joined_at, m.deaf, m.mute, \
+pub(super) const MEMBER_COLUMNS: &str = "m.guild_id, m.user_id, m.nick, m.avatar AS member_avatar, m.banner AS member_banner, m.bio AS member_bio, m.joined_at, m.deaf, m.mute, \
      m.communication_disabled_until, m.pending, \
      ARRAY(SELECT role_id FROM member_roles mr WHERE mr.guild_id = m.guild_id AND mr.user_id = m.user_id \
            ORDER BY role_id) AS role_ids";
@@ -47,6 +47,10 @@ pub(super) struct GuildRow {
     banner: Option<String>,
     splash: Option<String>,
     prune_admin_only: bool,
+    audit_log_enabled: bool,
+    audit_log_retention_days: i16,
+    rules_channel_id: Option<i64>,
+    public_updates_channel_id: Option<i64>,
     created_at: DateTime<Utc>,
 }
 
@@ -69,6 +73,16 @@ impl From<GuildRow> for Guild {
             banner: row.banner,
             splash: row.splash,
             prune_admin_only: row.prune_admin_only,
+            community: row.rules_channel_id.zip(row.public_updates_channel_id).map(
+                |(rules, updates)| domain::guild::CommunityChannels {
+                    rules_channel_id: sf(rules),
+                    public_updates_channel_id: sf(updates),
+                },
+            ),
+            audit_policy: domain::audit_policy::AuditPolicy {
+                enabled: row.audit_log_enabled,
+                retention_days: row.audit_log_retention_days as u16,
+            },
             created_at: row.created_at,
         }
     }
@@ -116,6 +130,10 @@ pub(super) struct MemberRow {
     nick: Option<String>,
     #[sqlx(rename = "member_avatar")]
     avatar: Option<String>,
+    #[sqlx(rename = "member_banner")]
+    banner: Option<String>,
+    #[sqlx(rename = "member_bio")]
+    bio: Option<String>,
     joined_at: DateTime<Utc>,
     deaf: bool,
     mute: bool,
@@ -131,6 +149,8 @@ impl From<MemberRow> for Member {
             user_id: sf(row.user_id),
             nick: row.nick,
             avatar: row.avatar,
+            banner: row.banner,
+            bio: row.bio,
             role_ids: sfs(row.role_ids),
             joined_at: row.joined_at,
             deaf: row.deaf,
@@ -182,6 +202,21 @@ fn member_profile_select(filter: &str) -> String {
         "SELECT {MEMBER_COLUMNS}, {user_columns} FROM members m JOIN users u ON u.id = m.user_id {filter}",
         user_columns = prefixed_user_columns()
     )
+}
+
+pub(super) async fn committed_member(
+    conn: &mut sqlx::PgConnection,
+    member: &Member,
+) -> AppResult<MemberProfile> {
+    let row: MemberProfileRow = sqlx::query_as(&member_profile_select(
+        "WHERE m.guild_id = $1 AND m.user_id = $2",
+    ))
+    .bind(member.guild_id.as_i64())
+    .bind(member.user_id.as_i64())
+    .fetch_one(conn)
+    .await
+    .map_err(db)?;
+    Ok(row.into())
 }
 
 #[async_trait]
@@ -376,6 +411,17 @@ impl GuildRepository for PgStore {
         guild_id: Snowflake,
         listing: Option<&GuildDiscovery>,
     ) -> AppResult<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let community = super::community::lock(&mut tx, guild_id).await?;
+        if listing.is_some()
+            && !community.is_some_and(|(rules, updates)| rules.is_some() && updates.is_some())
+        {
+            return Err(application::AppError::invalid(
+                "community",
+                "COMMUNITY_REQUIRED",
+                "Enable Community before listing this server.",
+            ));
+        }
         match listing {
             Some(listing) => sqlx::query(
                 "INSERT INTO guild_discovery (guild_id, category, tags, listed_at) VALUES ($1, $2, $3, $4)                  ON CONFLICT (guild_id) DO UPDATE SET category = EXCLUDED.category, tags = EXCLUDED.tags",
@@ -384,16 +430,17 @@ impl GuildRepository for PgStore {
             .bind(&listing.category)
             .bind(&listing.tags)
             .bind(listing.listed_at)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map(|_| ()),
             None => sqlx::query("DELETE FROM guild_discovery WHERE guild_id = $1")
                 .bind(guild_id.as_i64())
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map(|_| ()),
         }
-        .map_err(db)
+        .map_err(db)?;
+        tx.commit().await.map_err(db)
     }
 
     async fn has_nsfw_channel(&self, guild_id: Snowflake) -> AppResult<bool> {
@@ -413,7 +460,7 @@ impl GuildRepository for PgStore {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
-            "SELECT {columns}, d.category, d.tags, d.listed_at, c.member_count, count(*) OVER () AS total              FROM guild_discovery d              JOIN guilds g ON g.id = d.guild_id              CROSS JOIN LATERAL (SELECT count(*) AS member_count FROM members m WHERE m.guild_id = g.id) c              WHERE c.member_count >= $1                AND g.created_at <= $2                AND g.description IS NOT NULL AND btrim(g.description) <> ''                AND NOT EXISTS (SELECT 1 FROM channels ch WHERE ch.guild_id = g.id AND ch.nsfw)                AND ($3::text IS NULL OR d.category = $3)                AND ($4::text IS NULL OR $4 = ANY (d.tags))                AND ($5::text IS NULL OR g.name ILIKE $5 OR g.description ILIKE $5 OR EXISTS (                     SELECT 1 FROM unnest(d.tags) t WHERE t ILIKE $5))              ORDER BY c.member_count DESC, g.id              LIMIT $6 OFFSET $7"
+            "SELECT {columns}, d.category, d.tags, d.listed_at, c.member_count, count(*) OVER () AS total              FROM guild_discovery d              JOIN guilds g ON g.id = d.guild_id              CROSS JOIN LATERAL (SELECT count(*) AS member_count FROM members m WHERE m.guild_id = g.id) c              WHERE c.member_count >= $1                AND g.created_at <= $2                AND g.rules_channel_id IS NOT NULL AND char_length(btrim(g.description)) >= 10                AND NOT EXISTS (SELECT 1 FROM channels ch WHERE ch.guild_id = g.id AND ch.nsfw)                AND ($3::text IS NULL OR d.category = $3)                AND ($4::text IS NULL OR $4 = ANY (d.tags))                AND ($5::text IS NULL OR g.name ILIKE $5 OR g.description ILIKE $5 OR EXISTS (                     SELECT 1 FROM unnest(d.tags) t WHERE t ILIKE $5))              ORDER BY c.member_count DESC, g.id              LIMIT $6 OFFSET $7"
         );
         let rows: Vec<DiscoveryRow> = sqlx::query_as(&sql)
             .bind(query.min_members as i64)

@@ -67,6 +67,9 @@ async fn modify(
     Body(body): Body<ModifyGuildRequest>,
 ) -> Result<Json<GuildDto>, ApiError> {
     let input = UpdateGuildInput {
+        features: body.features,
+        rules_channel_id: body.rules_channel_id.map(|id| id.map(|id| id.0)),
+        public_updates_channel_id: body.public_updates_channel_id.map(|id| id.map(|id| id.0)),
         name: body.name,
         icon: images::patch(body.icon)?,
         description: body.description,
@@ -82,6 +85,8 @@ async fn modify(
         splash: images::patch(body.splash)?,
         owner_id: body.owner_id.map(|Id(id)| id),
         prune_admin_only: body.prune_admin_only,
+        audit_log_enabled: body.audit_log_enabled,
+        audit_log_retention_days: body.audit_log_retention_days,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,

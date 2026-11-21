@@ -52,7 +52,10 @@ pub enum AppError {
     /// Login needs a second factor (Discord 60008 "MFA required"); `ticket`
     /// completes it through `POST /auth/mfa/totp`.
     #[error("two-factor code required")]
-    MfaRequired { ticket: String },
+    MfaRequired {
+        ticket: String,
+        methods: Vec<&'static str>,
+    },
     /// Too many attempts; retry after the given number of seconds.
     #[error("rate limited")]
     RateLimited { retry_after_secs: u64 },

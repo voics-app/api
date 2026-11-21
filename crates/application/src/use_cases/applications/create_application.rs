@@ -68,8 +68,8 @@ pub async fn execute(
         });
     }
     let now = ports.clock.now();
-    let application_id = ports.ids.next_id();
-    let bot_id = ports.ids.next_id();
+    let application_id = ports.ids.next_id()?;
+    let bot_id = ports.ids.next_id()?;
     let base = bot_username_base(&input.name);
     let username = if ports.users.find_by_username(&base).await?.is_some() {
         let suffix = bot_id.value() % 1_000_000;
@@ -83,6 +83,10 @@ pub async fn execute(
         global_name: Some(input.name.trim().to_owned()),
         avatar: None,
         bio: None,
+        banner: None,
+        pronouns: None,
+        theme_colors: None,
+        accent_color: None,
         bot: true,
         system: false,
         email: None,

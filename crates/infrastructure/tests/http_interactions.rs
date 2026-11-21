@@ -95,11 +95,12 @@ async fn fixture() -> Fixture {
             "client_id": application_id,
             "guild_id": guild_id,
             "permissions": "8",
+            "installation_revision": "absent:0",
             "scope": "bot applications.commands"
         })),
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT, "the owner installs the bot");
+    assert_eq!(status, StatusCode::OK, "the owner installs the bot");
 
     let (status, channels) = call(
         &app,

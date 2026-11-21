@@ -169,12 +169,10 @@ pub(super) async fn update_interaction(
     Ok(())
 }
 
-pub(super) async fn upsert_webhook(conn: &mut PgConnection, webhook: &Webhook) -> AppResult<()> {
+pub(super) async fn insert_webhook(conn: &mut PgConnection, webhook: &Webhook) -> AppResult<()> {
     sqlx::query(
         "INSERT INTO webhooks (id, kind, guild_id, channel_id, creator_id, name, avatar, application_id, token_hash) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-         ON CONFLICT (id) DO UPDATE SET channel_id = EXCLUDED.channel_id, name = EXCLUDED.name, \
-             avatar = EXCLUDED.avatar, token_hash = EXCLUDED.token_hash",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(webhook.id.as_i64())
     .bind(i16::from(webhook.kind.code()))
@@ -191,11 +189,56 @@ pub(super) async fn upsert_webhook(conn: &mut PgConnection, webhook: &Webhook) -
     Ok(())
 }
 
+pub(super) async fn update_webhook(
+    conn: &mut PgConnection,
+    id: Snowflake,
+    patch: &application::write_set::WebhookMetadataPatch,
+) -> AppResult<()> {
+    let result = sqlx::query(
+        "UPDATE webhooks SET name = COALESCE($2, name), \
+         avatar = CASE WHEN $3 THEN $4 ELSE avatar END, \
+         channel_id = COALESCE($5, channel_id) WHERE id = $1",
+    )
+    .bind(id.as_i64())
+    .bind(&patch.name)
+    .bind(patch.avatar.is_some())
+    .bind(patch.avatar.as_ref().and_then(|avatar| avatar.as_deref()))
+    .bind(patch.channel_id.map(|id| id.as_i64()))
+    .execute(conn)
+    .await
+    .map_err(db)?;
+    if result.rows_affected() == 0 {
+        return Err(application::AppError::NotFound(
+            application::Resource::Webhook,
+        ));
+    }
+    Ok(())
+}
+
 pub(super) async fn delete_webhook(conn: &mut PgConnection, id: Snowflake) -> AppResult<()> {
     sqlx::query("DELETE FROM webhooks WHERE id = $1")
         .bind(id.as_i64())
         .execute(conn)
         .await
         .map_err(db)?;
+    Ok(())
+}
+
+pub(super) async fn set_webhook_token(
+    conn: &mut PgConnection,
+    id: Snowflake,
+    hash: &str,
+) -> AppResult<()> {
+    let result = sqlx::query("UPDATE webhooks SET token_hash = $2 WHERE id = $1 AND kind = 1")
+        .bind(id.as_i64())
+        .bind(hash)
+        .execute(conn)
+        .await
+        .map_err(db)?;
+    if result.rows_affected() == 0 {
+        return Err(application::AppError::NotFound(
+            application::Resource::Webhook,
+        ));
+    }
     Ok(())
 }

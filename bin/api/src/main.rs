@@ -20,13 +20,14 @@ use infrastructure::events::kafka::KafkaPublisher;
 use infrastructure::events::relay::OutboxRelay;
 use infrastructure::mail::{LogMailer, SmtpMailer, SmtpSettings, SmtpTls};
 use infrastructure::messages_client::HttpMessages;
-use infrastructure::postgres::{connect, migrate, PgStore, PgUnitOfWork};
+use infrastructure::postgres::{connect, migrate, PgIdReservations, PgStore, PgUnitOfWork};
 use infrastructure::presence::ValkeyPresence;
 use infrastructure::ratelimit::ValkeyRateLimiter;
 use infrastructure::security::jwt::Ed25519Tokens;
 use infrastructure::security::password::Argon2Passwords;
 use infrastructure::security::secrets::OsSecrets;
 use infrastructure::security::totp::Rfc6238;
+use infrastructure::security::webauthn::PasskeyVerifier;
 use infrastructure::storage::MinioAssets;
 use infrastructure::system::clock::SystemClock;
 use infrastructure::system::ids::SnowflakeIds;
@@ -69,6 +70,8 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let region = config.default_voice_region.clone();
     let publisher = Arc::new(KafkaPublisher::connect(config.kafka_brokers.clone()).await?);
     let store = Arc::new(PgStore::new(pool.clone()));
+    let id_reservations = Arc::new(PgIdReservations::new(pool.clone()));
+    let ids = SnowflakeIds::start(id_reservations.clone(), config.worker_id).await?;
     let rate_limiter = Arc::new(FallbackRateLimiter::new(Arc::new(
         ValkeyRateLimiter::connect(&config.valkey_url).await?,
     )));
@@ -90,6 +93,16 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         })?),
     };
     let ports = Ports {
+        passkeys: store.clone(),
+        webauthn: config
+            .webauthn
+            .as_ref()
+            .map(|rp| {
+                PasskeyVerifier::new(&rp.rp_id, &rp.origin, &config.brand_name).map(|verifier| {
+                    Arc::new(verifier) as Arc<dyn application::ports::WebauthnVerifier>
+                })
+            })
+            .transpose()?,
         account_tokens: store.clone(),
         mailer,
         limiter: rate_limiter.clone(),
@@ -119,7 +132,8 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         )?),
         clock: Arc::new(SystemClock),
         presence: Arc::new(ValkeyPresence::connect(&config.valkey_url).await?),
-        ids: Arc::new(SnowflakeIds::new(config.worker_id)?),
+        ids,
+        id_reservations,
         secrets: Arc::new(OsSecrets),
         totp: Arc::new(Rfc6238),
         assets: Arc::new(MinioAssets::new(
@@ -158,11 +172,27 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         },
     };
     let prune_ports = ports.clone();
+    let audit_ports = ports.clone();
     let purge_ports = ports.clone();
     let purge_every = std::time::Duration::from_secs(config.account_purge_interval_secs);
     let prune_every = std::time::Duration::from_secs(config.device_prune_interval_secs);
 
     tokio::spawn(OutboxRelay::new(pool.clone(), publisher.clone()).run());
+    tokio::spawn(async move {
+        const AUDIT_RETENTION_INTERVAL_SECS: u64 = 3600;
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(
+            AUDIT_RETENTION_INTERVAL_SECS,
+        ));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            match application::use_cases::audit::prune_expired::execute(&audit_ports).await {
+                Ok(0) => {}
+                Ok(count) => tracing::info!(count, "pruned expired audit entries"),
+                Err(error) => tracing::warn!(%error, "audit retention prune failed"),
+            }
+        }
+    });
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(prune_every);
         loop {

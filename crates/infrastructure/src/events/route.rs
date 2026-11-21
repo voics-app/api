@@ -578,6 +578,10 @@ mod tests {
             global_name: None,
             avatar: None,
             bio: None,
+            banner: None,
+            pronouns: None,
+            theme_colors: None,
+            accent_color: None,
             bot: false,
             system: false,
             email: None,
@@ -656,6 +660,8 @@ mod tests {
             banner: None,
             splash: None,
             prune_admin_only: false,
+            audit_policy: Default::default(),
+            community: None,
             created_at: at(),
         };
         let snapshot = domain::guild::GuildSnapshot {

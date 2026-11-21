@@ -8,6 +8,7 @@ use uuid::Uuid;
 use domain::account::{AccountState, AccountToken, TokenPurpose};
 use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
+use domain::bot_authorization::{BotAuthorization, BotInstallation, BotInstallationRevision};
 use domain::channel::Channel;
 use domain::delivery_mode::DeliveryMode;
 use domain::device::Device;
@@ -36,6 +37,27 @@ pub struct UserStats {
 
 #[async_trait]
 pub trait UserRepository: Send + Sync {
+    /// Badge grants and visibility are independent of user flags.
+    async fn badges(
+        &self,
+        _user_id: Snowflake,
+        _include_hidden: bool,
+    ) -> AppResult<Vec<(String, bool)>> {
+        Err(crate::error::AppError::Unavailable(
+            "Badge storage unavailable".into(),
+        ))
+    }
+    /// Update an existing grant only; callers cannot grant themselves badges.
+    async fn set_badge_visibility(
+        &self,
+        _user_id: Snowflake,
+        _badge_id: &str,
+        _visible: bool,
+    ) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "Badge storage unavailable".into(),
+        ))
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<User>>;
     async fn find_many(&self, ids: &[Snowflake]) -> AppResult<Vec<User>>;
     async fn find_by_email(&self, email: &str) -> AppResult<Option<User>>;
@@ -113,7 +135,18 @@ pub enum RotateOutcome {
     Invalid,
 }
 
+/// Only an identical request may recover the immediate, unused successor, and
+/// only within this bounded interval. Repository implementations must not extend
+/// the successor's expiry during recovery or store either plaintext credential.
+pub struct RefreshReplay {
+    pub request_hash: String,
+    pub earliest_rotation: DateTime<Utc>,
+}
+
 #[async_trait]
+/// Session revocation, including refresh-token reuse, atomically removes the session's
+/// notification/VoIP tokens and durably queues `SESSION_REVOKE` for the gateway.
+/// A failed commit must leave all three unchanged so a retry cannot miss a disconnect.
 pub trait SessionRepository: Send + Sync {
     async fn create(
         &self,
@@ -128,6 +161,7 @@ pub trait SessionRepository: Send + Sync {
         new_hash: &str,
         expires_at: DateTime<Utc>,
         now: DateTime<Utc>,
+        replay: Option<&RefreshReplay>,
     ) -> AppResult<RotateOutcome>;
     async fn find(&self, id: Uuid) -> AppResult<Option<Session>>;
     async fn revoke(&self, id: Uuid, now: DateTime<Utc>) -> AppResult<()>;
@@ -151,6 +185,8 @@ pub trait SessionRepository: Send + Sync {
         user_id: Snowflake,
         now: DateTime<Utc>,
     ) -> AppResult<Vec<ActiveSession>>;
+    /// Binds a live session to its owner's device and moves any already registered
+    /// notification token with it, atomically with respect to token writes/removal.
     async fn bind_device(&self, id: Uuid, device_id: Snowflake) -> AppResult<()>;
     /// Devices of `user_id` that a session bound to them still holds: not
     /// revoked, and with an unrotated refresh token that has not expired.
@@ -304,6 +340,11 @@ pub struct DiscoveryPage {
 pub trait InviteRepository: Send + Sync {
     async fn find(&self, code: &str) -> AppResult<Option<Invite>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Invite>>;
+    async fn vanity_for_guild(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Option<domain::vanity::VanityInvite>>;
+    async fn vanity_by_code(&self, code: &str) -> AppResult<Option<domain::vanity::VanityInvite>>;
 }
 
 #[async_trait]
@@ -324,6 +365,7 @@ pub struct AuditLogQuery {
 
 #[async_trait]
 pub trait AuditLogRepository: Send + Sync {
+    async fn prune_expired(&self, now: DateTime<Utc>) -> AppResult<u64>;
     async fn list(
         &self,
         guild_id: Snowflake,
@@ -355,6 +397,23 @@ pub trait ApplicationRepository: Send + Sync {
     ) -> AppResult<Option<ApplicationCommand>>;
     /// Applications whose bot is a member of `guild_id`.
     async fn installed_in_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Application>>;
+    async fn installation(
+        &self,
+        guild_id: Snowflake,
+        application_id: Snowflake,
+    ) -> AppResult<Option<BotInstallation>>;
+    /// One consistent read of presence and last generation, retained after removal.
+    async fn installation_revision(
+        &self,
+        guild_id: Snowflake,
+        application_id: Snowflake,
+    ) -> AppResult<BotInstallationRevision>;
+    async fn authorizations(&self, user_id: Snowflake) -> AppResult<Vec<BotAuthorization>>;
+    async fn authorization(
+        &self,
+        user_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<BotAuthorization>>;
 }
 
 #[async_trait]
@@ -379,6 +438,8 @@ pub trait PushTokenRepository: Send + Sync {
     /// Stores the session's token. It replaces the session's previous token and any other row
     /// holding the same provider token (the installation moved to this session), and the
     /// user's least recently refreshed tokens beyond the per-user limit are dropped.
+    /// The write must revalidate/lock the live session and use its current device;
+    /// a prior authorization or device snapshot may have raced logout/rebinding.
     async fn upsert(&self, token: &PushToken) -> AppResult<()>;
     /// Removes the session's token; `false` when it had none.
     async fn delete_for_session(&self, session_id: Uuid) -> AppResult<bool>;
@@ -402,7 +463,7 @@ pub trait PushTokenRepository: Send + Sync {
     // `delete_stale` remove them too.
 
     /// Stores the session's VoIP token, replacing its previous one and any other row holding the
-    /// same token.
+    /// same token. Revalidates/locks the live session in the write transaction.
     async fn upsert_voip(&self, token: &VoipToken) -> AppResult<()>;
     /// Removes only the session's VoIP token; `false` when it had none.
     async fn delete_voip_for_session(&self, session_id: Uuid) -> AppResult<bool>;
