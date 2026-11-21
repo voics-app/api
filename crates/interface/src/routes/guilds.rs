@@ -355,9 +355,19 @@ async fn widget_public(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let widget = widget::public(&state.ports, snowflake(&id, Resource::Guild)?).await?;
-    Ok(Json(
-        json!({"id": Id(widget.id), "name": widget.name, "icon": widget.icon}),
-    ))
+    let channels: Vec<Value> = widget
+        .channels
+        .iter()
+        .map(|c| json!({"id": Id(c.id), "name": c.name, "position": c.position}))
+        .collect();
+    Ok(Json(json!({
+        "id": Id(widget.id),
+        "name": widget.name,
+        "icon": widget.icon,
+        "instant_invite": widget.instant_invite,
+        "presence_count": widget.presence_count,
+        "channels": channels,
+    })))
 }
 
 async fn widget_get(

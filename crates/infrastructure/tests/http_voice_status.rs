@@ -253,6 +253,11 @@ async fn voice_status_checks_access_and_preserves_other_channel_fields() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(public_widget["id"], guild_id);
     assert!(public_widget.get("channel_id").is_none());
+    assert_eq!(public_widget["instant_invite"], code);
+    assert!(public_widget["presence_count"].is_null() || public_widget["presence_count"].is_u64());
+    let widget_channels = public_widget["channels"].as_array().unwrap();
+    assert!(widget_channels.iter().any(|c| c["id"] == text_id));
+    assert!(widget_channels.iter().any(|c| c["id"] == voice_id));
     assert_eq!(
         call(
             &app,
