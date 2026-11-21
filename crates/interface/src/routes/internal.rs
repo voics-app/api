@@ -47,6 +47,56 @@ fn region(state: &AppState) -> &str {
     &state.ports.settings.default_voice_region
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VoiceCheckpointRequest {
+    guild_id: Id,
+    user_id: Id,
+    session_id: String,
+    generation_id: uuid::Uuid,
+    observed_at: chrono::DateTime<chrono::Utc>,
+    connected: bool,
+}
+
+async fn voice_checkpoint(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Body(body): Body<VoiceCheckpointRequest>,
+) -> Result<StatusCode, ApiError> {
+    let now = state.ports.clock.now();
+    if body.session_id.is_empty()
+        || body.session_id.chars().count() > 128
+        || body.session_id.contains('\0')
+    {
+        return Err(
+            AppError::invalid("session_id", "INVALID_STRING", "Invalid session id.").into(),
+        );
+    }
+    if body.observed_at > now + chrono::Duration::seconds(10)
+        || body.observed_at < now - chrono::Duration::hours(24)
+    {
+        return Err(AppError::invalid(
+            "observed_at",
+            "INVALID_TIMESTAMP",
+            "Checkpoint is outside the accepted time window.",
+        )
+        .into());
+    }
+    state
+        .ports
+        .guilds
+        .voice_checkpoint(application::ports::VoiceCheckpoint {
+            guild_id: body.guild_id.0,
+            user_id: body.user_id.0,
+            session_id: body.session_id,
+            generation_id: body.generation_id,
+            observed_at: body.observed_at,
+            connected: body.connected,
+        })
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn reserve_ids(
     State(state): State<AppState>,
     _internal: Internal,
@@ -677,6 +727,10 @@ async fn admin_resolve_report(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/internal/v1/voice/activity-checkpoints",
+            post(voice_checkpoint),
+        )
         .route("/internal/v1/id-reservations", post(reserve_ids))
         .route("/internal/v1/auth/introspect", post(introspect_token))
         .route("/internal/v1/users/lookup", post(users_lookup))

@@ -253,6 +253,149 @@ const APPEAL_COLUMNS: &str =
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn voice_checkpoint(
+        &self,
+        checkpoint: application::ports::VoiceCheckpoint,
+    ) -> AppResult<()> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let inserted = sqlx::query("INSERT INTO guild_voice_checkpoints (guild_id, user_id, session_id, generation_id, observed_at, connected) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING")
+            .bind(checkpoint.guild_id.as_i64()).bind(checkpoint.user_id.as_i64())
+            .bind(&checkpoint.session_id).bind(checkpoint.generation_id).bind(checkpoint.observed_at).bind(checkpoint.connected)
+            .execute(&mut *tx).await.map_err(db)?.rows_affected();
+        if inserted == 0 {
+            let (previous, connected): (DateTime<Utc>, bool) = sqlx::query_as("SELECT observed_at, connected FROM guild_voice_checkpoints WHERE guild_id=$1 AND user_id=$2 AND session_id=$3 AND generation_id=$4 FOR UPDATE")
+                .bind(checkpoint.guild_id.as_i64()).bind(checkpoint.user_id.as_i64())
+                .bind(&checkpoint.session_id).bind(checkpoint.generation_id)
+                .fetch_one(&mut *tx).await.map_err(db)?;
+            if checkpoint.observed_at > previous {
+                let elapsed = checkpoint.observed_at - previous;
+                // Long gaps have unknown state: do not invent time between samples.
+                if connected && elapsed <= chrono::Duration::seconds(60) {
+                    let mut cursor = previous;
+                    while cursor < checkpoint.observed_at {
+                        let next_date = cursor.date_naive().succ_opt().ok_or_else(|| {
+                            application::AppError::internal("voice date overflow")
+                        })?;
+                        let next_midnight = next_date
+                            .and_hms_opt(0, 0, 0)
+                            .ok_or_else(|| application::AppError::internal("invalid midnight"))?
+                            .and_utc();
+                        let end = checkpoint.observed_at.min(next_midnight);
+                        let millis = (end - cursor).num_milliseconds();
+                        sqlx::query("INSERT INTO guild_daily_activity (guild_id, day, voice_millis) VALUES ($1,$2,$3) ON CONFLICT (guild_id, day) DO UPDATE SET voice_millis = guild_daily_activity.voice_millis + EXCLUDED.voice_millis")
+                            .bind(checkpoint.guild_id.as_i64()).bind(cursor.date_naive()).bind(millis)
+                            .execute(&mut *tx).await.map_err(db)?;
+                        cursor = end;
+                    }
+                }
+                sqlx::query("UPDATE guild_voice_checkpoints SET observed_at=$5, connected=$6 WHERE guild_id=$1 AND user_id=$2 AND session_id=$3 AND generation_id=$4")
+                    .bind(checkpoint.guild_id.as_i64()).bind(checkpoint.user_id.as_i64())
+                    .bind(&checkpoint.session_id).bind(checkpoint.generation_id).bind(checkpoint.observed_at).bind(checkpoint.connected)
+                    .execute(&mut *tx).await.map_err(db)?;
+            }
+        }
+        tx.commit().await.map_err(db)
+    }
+    async fn membership_activity(
+        &self,
+        id: Snowflake,
+        since: chrono::NaiveDate,
+    ) -> AppResult<(DateTime<Utc>, Vec<application::ports::MembershipActivity>)> {
+        let started: DateTime<Utc> =
+            sqlx::query_scalar("SELECT started_at FROM guild_activity_collection WHERE singleton")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(db)?;
+        let rows: Vec<(chrono::NaiveDate, i64, i64, i64)> = sqlx::query_as("SELECT day, joins, leaves, voice_millis FROM guild_daily_activity WHERE guild_id = $1 AND day >= $2 ORDER BY day")
+            .bind(id.as_i64()).bind(since).fetch_all(&self.pool).await.map_err(db)?;
+        Ok((
+            started,
+            rows.into_iter()
+                .map(
+                    |(day, joins, leaves, voice_millis)| application::ports::MembershipActivity {
+                        day,
+                        joins,
+                        leaves,
+                        voice_millis,
+                    },
+                )
+                .collect(),
+        ))
+    }
+    async fn public_widget(
+        &self,
+        id: Snowflake,
+    ) -> AppResult<Option<application::ports::PublicWidget>> {
+        let row: Option<(i64, String, Option<String>)> =
+            sqlx::query_as("SELECT id, name, icon FROM guilds WHERE id = $1 AND widget_enabled")
+                .bind(id.as_i64())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(
+            row.map(|(id, name, icon)| application::ports::PublicWidget {
+                id: sf(id),
+                name,
+                icon,
+            }),
+        )
+    }
+    async fn widget_settings(
+        &self,
+        id: Snowflake,
+    ) -> AppResult<Option<application::ports::WidgetSettings>> {
+        let row: Option<(bool, Option<i64>)> =
+            sqlx::query_as("SELECT widget_enabled, widget_channel_id FROM guilds WHERE id = $1")
+                .bind(id.as_i64())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(
+            row.map(|(enabled, channel_id)| application::ports::WidgetSettings {
+                enabled,
+                channel_id: channel_id.map(sf),
+            }),
+        )
+    }
+
+    async fn update_widget_settings(
+        &self,
+        id: Snowflake,
+        enabled: Option<bool>,
+        channel: Option<Option<Snowflake>>,
+    ) -> AppResult<application::ports::WidgetSettings> {
+        let mut tx = self.pool.begin().await.map_err(db)?;
+        let exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM guilds WHERE id = $1 FOR UPDATE")
+                .bind(id.as_i64())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(db)?;
+        if exists.is_none() {
+            return Err(application::AppError::NotFound(
+                application::Resource::Guild,
+            ));
+        }
+        if let Some(Some(channel_id)) = channel {
+            let channel_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM channels WHERE id = $1 AND guild_id = $2 AND kind IN (0, 2, 5, 13))")
+                .bind(channel_id.as_i64()).bind(id.as_i64()).fetch_one(&mut *tx).await.map_err(db)?;
+            if !channel_exists {
+                return Err(application::AppError::invalid(
+                    "channel_id",
+                    "CHANNEL_INVALID",
+                    "Channel must be a text or voice channel in this guild.",
+                ));
+            }
+        }
+        let (enabled, channel_id): (bool, Option<i64>) = sqlx::query_as("UPDATE guilds SET widget_enabled = COALESCE($2, widget_enabled), widget_channel_id = CASE WHEN $3 THEN $4 ELSE widget_channel_id END WHERE id = $1 RETURNING widget_enabled, widget_channel_id")
+            .bind(id.as_i64()).bind(enabled).bind(channel.is_some()).bind(channel.flatten().map(|v| v.as_i64()))
+            .fetch_one(&mut *tx).await.map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(application::ports::WidgetSettings {
+            enabled,
+            channel_id: channel_id.map(sf),
+        })
+    }
     async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>> {
         sqlx::query_scalar("SELECT question FROM ban_appeal_forms WHERE guild_id = $1")
             .bind(guild_id.as_i64())

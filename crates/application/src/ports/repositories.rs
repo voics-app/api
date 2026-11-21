@@ -394,6 +394,20 @@ pub trait GuildRepository: Send + Sync {
         rules: &[String],
     ) -> AppResult<ScreeningConfig>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
+    async fn widget_settings(&self, id: Snowflake) -> AppResult<Option<WidgetSettings>>;
+    async fn public_widget(&self, id: Snowflake) -> AppResult<Option<PublicWidget>>;
+    async fn membership_activity(
+        &self,
+        id: Snowflake,
+        since: chrono::NaiveDate,
+    ) -> AppResult<(DateTime<Utc>, Vec<MembershipActivity>)>;
+    async fn voice_checkpoint(&self, checkpoint: VoiceCheckpoint) -> AppResult<()>;
+    async fn update_widget_settings(
+        &self,
+        id: Snowflake,
+        enabled: Option<bool>,
+        channel: Option<Option<Snowflake>>,
+    ) -> AppResult<WidgetSettings>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>>;
     async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>>;
     async fn member(&self, guild_id: Snowflake, user_id: Snowflake) -> AppResult<Option<Member>>;
@@ -438,6 +452,37 @@ pub trait GuildRepository: Send + Sync {
     async fn update_template(&self, template: &GuildTemplate) -> AppResult<()>;
     async fn delete_template(&self, code: &str) -> AppResult<()>;
     async fn bump_template_usage(&self, code: &str) -> AppResult<()>;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WidgetSettings {
+    pub enabled: bool,
+    pub channel_id: Option<Snowflake>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicWidget {
+    pub id: Snowflake,
+    pub name: String,
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MembershipActivity {
+    pub day: chrono::NaiveDate,
+    pub joins: i64,
+    pub leaves: i64,
+    pub voice_millis: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoiceCheckpoint {
+    pub guild_id: Snowflake,
+    pub user_id: Snowflake,
+    pub session_id: String,
+    pub generation_id: Uuid,
+    pub observed_at: DateTime<Utc>,
+    pub connected: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

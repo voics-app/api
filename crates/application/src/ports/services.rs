@@ -105,6 +105,16 @@ pub trait MessageService: Send + Sync {
     async fn sign_media(&self, _urls: Vec<String>) -> AppResult<Vec<String>> {
         Err(AppError::Unavailable("media signing unavailable".into()))
     }
+    /// Observed message markers and whether this UTC day has verified coverage.
+    async fn guild_message_count(
+        &self,
+        _guild_id: Snowflake,
+        _utc_day: i64,
+    ) -> AppResult<(u64, bool, Option<u64>)> {
+        Err(AppError::Unavailable(
+            "guild message activity is not configured".into(),
+        ))
+    }
     /// Server-stored forum summaries for already authorized channels.
     async fn forum_summaries(&self, _channel_ids: &[Snowflake]) -> AppResult<Vec<Value>> {
         Err(AppError::Unavailable("forum summaries unavailable".into()))
@@ -175,6 +185,17 @@ pub trait PresenceDirectory: Send + Sync {
     async fn online_count(&self, user_ids: &[Snowflake]) -> AppResult<u64>;
     /// Which of `user_ids` hold at least one live gateway session, whatever their status.
     async fn live_ids(&self, user_ids: &[Snowflake]) -> AppResult<Vec<Snowflake>>;
+    /// The gateway owns voice state; inability to check never grants permission.
+    async fn in_voice_channel(
+        &self,
+        _guild_id: Snowflake,
+        _channel_id: Snowflake,
+        _user_id: Snowflake,
+    ) -> AppResult<bool> {
+        Err(AppError::Unavailable(
+            "voice state lookup is not configured".into(),
+        ))
+    }
 }
 
 #[async_trait]

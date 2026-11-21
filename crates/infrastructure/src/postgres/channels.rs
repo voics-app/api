@@ -17,7 +17,7 @@ use super::convert::{mode, permissions, sf, sf_opt, sfs, thread_metadata_from_js
 use super::error::db;
 use super::PgStore;
 
-pub(super) const CHANNEL_COLUMNS: &str = "id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
+pub(super) const CHANNEL_COLUMNS: &str = "id, kind, guild_id, position, name, topic, status, nsfw, text_chat_enabled, bitrate, user_limit, \
      rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, thread_membership_version, forum_settings, applied_tags, created_at";
 
 #[derive(FromRow)]
@@ -28,6 +28,7 @@ pub(super) struct ChannelRow {
     position: i32,
     name: Option<String>,
     topic: Option<String>,
+    status: Option<String>,
     nsfw: bool,
     text_chat_enabled: bool,
     bitrate: Option<i32>,
@@ -60,6 +61,7 @@ pub(super) fn assemble(
         position: row.position,
         name: row.name,
         topic: row.topic,
+        status: row.status,
         nsfw: row.nsfw,
         text_chat_enabled: row.text_chat_enabled,
         bitrate: row.bitrate.map(|v| v as u32),
@@ -88,6 +90,30 @@ pub(super) fn assemble(
         applied_tags: row.applied_tags,
         created_at: row.created_at,
     }
+}
+
+/// Load the committed guild channel and overwrites inside the current transaction.
+pub(super) async fn committed_channel(
+    conn: &mut sqlx::PgConnection,
+    id: Snowflake,
+) -> AppResult<Channel> {
+    let row: ChannelRow = sqlx::query_as(&format!(
+        "SELECT {CHANNEL_COLUMNS} FROM channels WHERE id = $1"
+    ))
+    .bind(id.as_i64())
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(db)?;
+    let rows: Vec<OverwriteRow> = sqlx::query_as(
+        "SELECT channel_id, target_id, kind, allow_bits, deny_bits FROM permission_overwrites WHERE channel_id = $1 ORDER BY kind, target_id",
+    )
+    .bind(id.as_i64())
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(db)?;
+    let mut overwrites = HashMap::new();
+    overwrites.insert(id.as_i64(), rows);
+    Ok(assemble(row, &HashMap::new(), &HashMap::new(), &overwrites))
 }
 
 #[derive(FromRow, Clone)]
