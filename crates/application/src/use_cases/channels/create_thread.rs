@@ -105,6 +105,7 @@ pub async fn execute(
     thread.applied_tags = input.applied_tags;
     thread.parent_id = Some(parent.id);
     thread.owner_id = Some(actor.user_id);
+    thread.thread_member_ids.push(actor.user_id);
     thread.nsfw = parent.nsfw;
     if parent.kind == ChannelType::GuildForum {
         thread.delivery_mode = parent.delivery_mode;
@@ -121,6 +122,12 @@ pub async fn execute(
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::InsertChannel(thread.clone()))
+        .mutate(Mutation::SetThreadMember {
+            thread_id: thread.id,
+            guild_id: ctx.guild.id,
+            user_id: actor.user_id,
+            joined_at: Some(now),
+        })
         .emit(DomainEvent::ThreadCreate(thread.clone()))
         .audit(audit.entry(
             ports,

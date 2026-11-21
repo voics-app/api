@@ -100,6 +100,12 @@ pub enum Mutation {
     /// Replaces every column, overwrites and recipients included.
     UpdateChannel(Channel),
     DeleteChannel(Snowflake),
+    SetThreadMember {
+        thread_id: Snowflake,
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        joined_at: Option<DateTime<Utc>>,
+    },
     /// `mode: None` clears the override.
     SetDeliveryOverride {
         user_id: Snowflake,

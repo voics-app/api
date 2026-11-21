@@ -1,10 +1,11 @@
 //! Channels, threads, permission overwrites and typing (P9).
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 
+use application::context::Actor;
 use application::events::ChannelView;
 use application::support::audit::AuditContext;
 use application::use_cases::channels::create_guild_channel::CreateChannelInput;
@@ -13,8 +14,8 @@ use application::use_cases::channels::reorder_channels::ChannelPosition;
 use application::use_cases::channels::update_channel::UpdateChannelInput;
 use application::use_cases::channels::{
     add_recipient, create_guild_channel, create_thread, delete_channel, delete_overwrite,
-    get_channel, list_forum_posts, list_guild_channels, put_overwrite, remove_recipient,
-    reorder_channels, trigger_typing, update_channel,
+    get_channel, list_forum_posts, list_guild_channels, list_threads, put_overwrite,
+    remove_recipient, reorder_channels, thread_members, trigger_typing, update_channel,
 };
 use application::{AppError, Resource};
 use contracts::objects::ChannelDto;
@@ -80,7 +81,7 @@ fn overwrite_kind(code: u8) -> Result<OverwriteKind, AppError> {
 
 fn view_dto(view: &ChannelView, viewer: Snowflake) -> ChannelDto {
     match view {
-        ChannelView::Guild(channel) => ChannelDto::guild(channel),
+        ChannelView::Guild(channel) => ChannelDto::guild_for_viewer(channel, viewer),
         ChannelView::Private(private) => ChannelDto::private(
             &private.channel,
             &private.recipients,
@@ -139,7 +140,10 @@ async fn create(
         audit,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(ChannelDto::guild(&channel))))
+    Ok((
+        StatusCode::CREATED,
+        Json(ChannelDto::guild_for_viewer(&channel, actor.user_id)),
+    ))
 }
 
 async fn reorder(
@@ -343,11 +347,10 @@ async fn remove_permission(
 }
 
 async fn forum_posts(
-    State(state): State<AppState>,
-    Caller(actor): Caller,
-    Path(parent): Path<String>,
+    state: AppState,
+    actor: Actor,
+    parent_id: Snowflake,
 ) -> Result<Json<Vec<ChannelDto>>, ApiError> {
-    let parent_id = snowflake(&parent, Resource::Channel)?;
     let posts = list_forum_posts::execute(&state.ports, &actor, parent_id).await?;
     let forum = state
         .ports
@@ -374,7 +377,7 @@ async fn forum_posts(
     let result = posts
         .iter()
         .map(|post| {
-            let mut dto = ChannelDto::guild(post);
+            let mut dto = ChannelDto::guild_for_viewer(post, actor.user_id);
             if let Some(summary) = summaries.iter().find(|value| {
                 value.get("channel_id").and_then(serde_json::Value::as_str)
                     == Some(post.id.to_string().as_str())
@@ -437,7 +440,41 @@ async fn thread(
     } else {
         StatusCode::CREATED
     };
-    Ok((status, Json(ChannelDto::guild(&channel))))
+    Ok((
+        status,
+        Json(ChannelDto::guild_for_viewer(&channel, actor.user_id)),
+    ))
+}
+
+#[derive(serde::Deserialize)]
+struct ThreadListQuery {
+    #[serde(default)]
+    archived: bool,
+}
+
+async fn list_channel_threads(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(parent): Path<String>,
+    Query(query): Query<ThreadListQuery>,
+) -> Result<Json<Vec<ChannelDto>>, ApiError> {
+    let parent_id = snowflake(&parent, Resource::Channel)?;
+    let is_forum = state
+        .ports
+        .channels
+        .find(parent_id)
+        .await?
+        .is_some_and(|channel| channel.kind == domain::channel::ChannelType::GuildForum);
+    if is_forum && !query.archived {
+        return forum_posts(state, actor, parent_id).await;
+    }
+    let threads = list_threads::execute(&state.ports, &actor, parent_id, query.archived).await?;
+    Ok(Json(
+        threads
+            .iter()
+            .map(|thread| ChannelDto::guild_for_viewer(thread, actor.user_id))
+            .collect(),
+    ))
 }
 
 async fn typing(
@@ -446,6 +483,46 @@ async fn typing(
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     trigger_typing::execute(&state.ports, &actor, snowflake(&id, Resource::Channel)?).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn join_thread(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((thread, user)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let user_id = if user == "@me" {
+        actor.user_id
+    } else {
+        snowflake(&user, Resource::User)?
+    };
+    thread_members::join(
+        &state.ports,
+        &actor,
+        snowflake(&thread, Resource::Channel)?,
+        user_id,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn leave_thread(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((thread, user)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let user_id = if user == "@me" {
+        actor.user_id
+    } else {
+        snowflake(&user, Resource::User)?
+    };
+    thread_members::leave(
+        &state.ports,
+        &actor,
+        snowflake(&thread, Resource::Channel)?,
+        user_id,
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -464,6 +541,13 @@ pub fn routes() -> Router<AppState> {
             "/channels/{id}/recipients/{user_id}",
             put(add_group_recipient).delete(remove_group_recipient),
         )
-        .route("/channels/{id}/threads", get(forum_posts).post(thread))
+        .route(
+            "/channels/{id}/threads",
+            get(list_channel_threads).post(thread),
+        )
+        .route(
+            "/channels/{id}/thread-members/{user_id}",
+            put(join_thread).delete(leave_thread),
+        )
         .route("/channels/{id}/typing", post(typing))
 }

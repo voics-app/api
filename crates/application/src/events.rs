@@ -102,6 +102,15 @@ pub enum DomainEvent {
     ThreadCreate(Channel),
     ThreadUpdate(Channel),
     ThreadDelete(Channel),
+    ThreadMembersUpdate {
+        guild_id: Snowflake,
+        thread_id: Snowflake,
+        user_id: Snowflake,
+        joined_at: Option<DateTime<Utc>>,
+        member_count: usize,
+        version: u64,
+        member_ids: Vec<Snowflake>,
+    },
 
     // discordy.user.v1
     UserUpdate(User),

@@ -107,6 +107,40 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
         DomainEvent::ThreadCreate(channel) => guild_channel(&mut emit, "THREAD_CREATE", channel),
         DomainEvent::ThreadUpdate(channel) => guild_channel(&mut emit, "THREAD_UPDATE", channel),
         DomainEvent::ThreadDelete(channel) => guild_channel(&mut emit, "THREAD_DELETE", channel),
+        DomainEvent::ThreadMembersUpdate {
+            guild_id,
+            thread_id,
+            user_id,
+            joined_at,
+            member_count,
+            version,
+            member_ids,
+        } => {
+            let added = joined_at
+                .map(|at| {
+                    vec![json!({
+                        "id": thread_id.to_string(),
+                        "user_id": user_id.to_string(),
+                        "join_timestamp": contracts::wire::timestamp(at),
+                        "flags": 0
+                    })]
+                })
+                .unwrap_or_default();
+            let removed = if joined_at.is_none() {
+                vec![user_id.to_string()]
+            } else {
+                Vec::new()
+            };
+            emit(
+                TOPIC_GUILD,
+                *guild_id,
+                "THREAD_MEMBERS_UPDATE",
+                Some(*guild_id),
+                Some(*thread_id),
+                None,
+                json!({"id": thread_id.to_string(), "guild_id": guild_id.to_string(), "member_count": member_count, "added_members": added, "removed_member_ids": removed, "_membership_version": version, "_member_ids": member_ids.iter().map(ToString::to_string).collect::<Vec<_>>()}),
+            );
+        }
         DomainEvent::RoleCreate(role) => emit(
             TOPIC_GUILD,
             role.guild_id,
