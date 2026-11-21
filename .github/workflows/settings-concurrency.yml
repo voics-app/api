@@ -14,7 +14,7 @@ jobs:
   settings-concurrency:
     # Only trusted same-repository code runs on the persistent VM.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: vm-runner
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     env:
       CARGO_INCREMENTAL: 0
