@@ -21,7 +21,7 @@ make dev
 make test     # unit and integration tests; integration tests start containers
 make lint     # rustfmt check and clippy with -D warnings
 make build    # release binary
-make docker   # OCI image, ghcr.io/discordy-voics/api:<version>
+make docker   # OCI image, ghcr.io/voics-app/api:<version>
 ```
 
 Integration tests start throwaway containers with testcontainers (Postgres 16, Redpanda v24.2.7, Valkey 8). Docker must be running.
@@ -67,7 +67,7 @@ Endpoints: `GET /healthz`, `GET /readyz`, `GET /metrics`. Metrics: `http_request
 
 ## Pending owner actions
 
-- The reusable workflows `discordy-voics/.github/.github/workflows/rust.yml` and `docker.yml` must exist on `main` before `ci.yml` can run.
+- The reusable workflows `voics-app/.github/.github/workflows/rust.yml` and `docker.yml` must exist on `main` before `ci.yml` can run.
 - The messages service must expose `POST|PATCH|DELETE /internal/v1/channels/{id}/messages[/{mid}]`. P4 does not pin these routes, so api calls them for bot, webhook and interaction messages. Until they exist, those calls return 503.
 - Interaction creation and callbacks are routed but have no HTTP contract test yet.
 - Redpanda topics listed in `contracts::envelope::API_TOPICS` are created by the compose init container and the cluster, not by api.
