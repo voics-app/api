@@ -1,6 +1,6 @@
 //! Channels, threads, permission overwrites and typing (P9).
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -13,8 +13,8 @@ use application::use_cases::channels::reorder_channels::ChannelPosition;
 use application::use_cases::channels::update_channel::UpdateChannelInput;
 use application::use_cases::channels::{
     add_recipient, create_guild_channel, create_thread, delete_channel, delete_overwrite,
-    get_channel, list_guild_channels, put_overwrite, remove_recipient, reorder_channels,
-    set_voice_status, trigger_typing, update_channel,
+    get_channel, list_guild_channels, list_threads, put_overwrite, remove_recipient,
+    reorder_channels, set_voice_status, thread_members, trigger_typing, update_channel,
 };
 use application::{AppError, Resource};
 use contracts::objects::ChannelDto;
@@ -80,7 +80,7 @@ fn overwrite_kind(code: u8) -> Result<OverwriteKind, AppError> {
 
 fn view_dto(view: &ChannelView, viewer: Snowflake) -> ChannelDto {
     match view {
-        ChannelView::Guild(channel) => ChannelDto::guild(channel),
+        ChannelView::Guild(channel) => ChannelDto::guild_for_viewer(channel, viewer),
         ChannelView::Private(private) => ChannelDto::private(
             &private.channel,
             &private.recipients,
@@ -139,7 +139,10 @@ async fn create(
         audit,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(ChannelDto::guild(&channel))))
+    Ok((
+        StatusCode::CREATED,
+        Json(ChannelDto::guild_for_viewer(&channel, actor.user_id)),
+    ))
 }
 
 async fn reorder(
@@ -362,7 +365,37 @@ async fn thread(
         audit,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(ChannelDto::guild(&channel))))
+    Ok((
+        StatusCode::CREATED,
+        Json(ChannelDto::guild_for_viewer(&channel, actor.user_id)),
+    ))
+}
+
+#[derive(serde::Deserialize)]
+struct ThreadListQuery {
+    #[serde(default)]
+    archived: bool,
+}
+
+async fn list_channel_threads(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(parent): Path<String>,
+    Query(query): Query<ThreadListQuery>,
+) -> Result<Json<Vec<ChannelDto>>, ApiError> {
+    let threads = list_threads::execute(
+        &state.ports,
+        &actor,
+        snowflake(&parent, Resource::Channel)?,
+        query.archived,
+    )
+    .await?;
+    Ok(Json(
+        threads
+            .iter()
+            .map(|thread| ChannelDto::guild_for_viewer(thread, actor.user_id))
+            .collect(),
+    ))
 }
 
 async fn typing(
@@ -390,6 +423,46 @@ async fn voice_status(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn join_thread(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((thread, user)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let user_id = if user == "@me" {
+        actor.user_id
+    } else {
+        snowflake(&user, Resource::User)?
+    };
+    thread_members::join(
+        &state.ports,
+        &actor,
+        snowflake(&thread, Resource::Channel)?,
+        user_id,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn leave_thread(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path((thread, user)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let user_id = if user == "@me" {
+        actor.user_id
+    } else {
+        snowflake(&user, Resource::User)?
+    };
+    thread_members::leave(
+        &state.ports,
+        &actor,
+        snowflake(&thread, Resource::Channel)?,
+        user_id,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -406,6 +479,13 @@ pub fn routes() -> Router<AppState> {
             "/channels/{id}/recipients/{user_id}",
             put(add_group_recipient).delete(remove_group_recipient),
         )
-        .route("/channels/{id}/threads", post(thread))
+        .route(
+            "/channels/{id}/threads",
+            get(list_channel_threads).post(thread),
+        )
+        .route(
+            "/channels/{id}/thread-members/{user_id}",
+            put(join_thread).delete(leave_thread),
+        )
         .route("/channels/{id}/typing", post(typing))
 }
