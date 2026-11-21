@@ -6,6 +6,9 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+The internal channel-access endpoint returns 403 when the caller lacks VIEW_CHANNEL, before
+returning encrypted relay recipient IDs. Eligible viewers retain the existing permission response.
+
 Scheduled events (api#49, draft): guild members can list visible events and inspect their
 own interest. Creators with `CREATE_EVENTS` and managers with `MANAGE_EVENTS` can create,
 modify and delete events; channel events require a visible matching voice or stage channel.

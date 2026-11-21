@@ -18,7 +18,7 @@ pub struct ChannelAccessInfo {
 }
 
 /// `GET /internal/v1/channels/{id}/access/{user}`: 403 unless the user is a
-/// member of the guild or a recipient of the DM.
+/// member of the guild with VIEW_CHANNEL or a recipient of the DM.
 ///
 /// `recipient_ids` are the users an end-to-end encrypted or P2P envelope may be addressed to: the
 /// DM recipients, or for a non-Standard guild channel the members that can view it (the gateway
@@ -46,6 +46,9 @@ pub async fn execute(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     if pending && access.channel.owner_id != Some(user_id) {
+        return Err(AppError::missing_access());
+    }
+    if !access.permissions.contains(Permissions::VIEW_CHANNEL) {
         return Err(AppError::missing_access());
     }
     let delivery_mode = effective_mode(ports, &access.channel).await?;
