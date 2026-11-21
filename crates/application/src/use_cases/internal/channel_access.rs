@@ -15,6 +15,7 @@ pub struct ChannelAccessInfo {
     pub channel_type: ChannelType,
     pub delivery_mode: DeliveryMode,
     pub recipient_ids: Vec<Snowflake>,
+    pub thread_locked: bool,
 }
 
 /// `GET /internal/v1/channels/{id}/access/{user}`: 403 unless the user is a
@@ -73,6 +74,12 @@ pub async fn execute(
         },
         guild_id: access.channel.guild_id,
         channel_type: access.channel.kind,
+        thread_locked: access.channel.kind.is_thread()
+            && access
+                .channel
+                .thread_metadata
+                .as_ref()
+                .is_none_or(|meta| meta.locked),
         delivery_mode,
         recipient_ids,
     })

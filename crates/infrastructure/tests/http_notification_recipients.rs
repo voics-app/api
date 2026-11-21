@@ -609,6 +609,46 @@ async fn an_unavailable_dependency_does_not_fall_back_to_unfiltered_recipients()
 }
 
 #[tokio::test]
+async fn thread_lock_is_reported_to_message_access_and_webhook_routes() {
+    let database = start_database().await;
+    let app = app(&database);
+    let (owner, owner_id) = account(&app, "lockowner").await;
+    let (_, parent) = guild(&app, &owner, &[]).await;
+    let created = ok_call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{parent}/threads"),
+        &owner,
+        Some(json!({"name":"Locked", "type":11})),
+    )
+    .await;
+    let thread = created["id"].as_str().unwrap();
+    for locked in [false, true, false] {
+        if locked || !created["thread_metadata"]["locked"].as_bool().unwrap() {
+            ok_call(
+                &app,
+                Method::PATCH,
+                &format!("/api/v1/channels/{thread}"),
+                &owner,
+                Some(json!({"locked":locked})),
+            )
+            .await;
+        }
+        for suffix in [format!("access/{owner_id}"), "delivery".to_owned()] {
+            let req = axum::http::Request::builder()
+                .method("GET")
+                .uri(format!("/internal/v1/channels/{thread}/{suffix}"))
+                .header("x-internal-token", INTERNAL_TOKEN)
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let (status, body) = send(&app, req).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["thread_locked"], locked);
+        }
+    }
+}
+
+#[tokio::test]
 async fn thread_lifecycle_uses_injected_time_and_publishes_transitions() {
     use application::ports::ThreadLifecycleStore;
     use chrono::Duration;
