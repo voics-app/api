@@ -300,6 +300,103 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertGuild(guild) | Mutation::UpdateGuild(guild) => {
             guilds::upsert_guild(conn, guild).await
         }
+        Mutation::ApplyOnboarding {
+            guild_id,
+            user_id,
+            revision,
+            role_ids,
+        } => {
+            // Channel overwrite writers take this same guild lock. Inspecting
+            // them under it prevents a role from granting moderation via an
+            // overwrite while a member selects it.
+            super::community::lock(conn, *guild_id).await?;
+            let (current,): (i64,) = sqlx::query_as("SELECT onboarding_revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE")
+                .bind(guild_id.as_i64()).fetch_one(&mut *conn).await.map_err(db)?;
+            if current != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding changed; review it again.".into(),
+                });
+            }
+            let (pending,): (bool,) = sqlx::query_as(
+                "SELECT pending FROM members WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+            )
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(db)?;
+            if pending {
+                return Err(application::AppError::missing_permissions());
+            }
+            let result = sqlx::query("INSERT INTO guild_onboarding_completions (guild_id, user_id, revision) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(revision).execute(&mut *conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding has already been completed.".into(),
+                });
+            }
+            for role_id in role_ids {
+                let row: Option<(i64, bool)> = sqlx::query_as("SELECT permissions, managed FROM roles WHERE guild_id = $1 AND id = $2 FOR SHARE")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).fetch_optional(&mut *conn).await.map_err(db)?;
+                let Some((permissions, managed)) = row else {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role no longer exists.".into(),
+                    });
+                };
+                if managed
+                    || *role_id == *guild_id
+                    || (permissions as u64
+                        & !application::use_cases::guilds::onboarding::SAFE_ROLE_BITS)
+                        != 0
+                {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role is no longer eligible.".into(),
+                    });
+                }
+                let unsafe_overwrite: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM permission_overwrites p JOIN channels c ON c.id = p.channel_id WHERE c.guild_id = $1 AND p.kind = 0 AND p.target_id = $2 AND (p.allow_bits & $3) <> 0)")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).bind(!(application::use_cases::guilds::onboarding::SAFE_ROLE_BITS as i64)).fetch_one(&mut *conn).await.map_err(db)?;
+                if unsafe_overwrite {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role has a privileged channel overwrite.".into(),
+                    });
+                }
+                sqlx::query("INSERT INTO member_roles (guild_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                    .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(role_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+            }
+            Ok(())
+        }
+        Mutation::CheckScreeningRevision { guild_id, revision } => {
+            let current: (i64,) = sqlx::query_as(
+                "SELECT revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE",
+            )
+            .bind(guild_id.as_i64())
+            .fetch_one(conn)
+            .await
+            .map_err(db)?;
+            if current.0 != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Rules changed; review them again.".into(),
+                });
+            }
+            Ok(())
+        }
+        Mutation::AcceptScreening { guild_id, user_id } => {
+            let result = sqlx::query("UPDATE members SET pending = false WHERE guild_id = $1 AND user_id = $2 AND pending = true")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).execute(conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Membership changed; reload and try again.".into(),
+                });
+            }
+            Ok(())
+        }
         Mutation::DeleteGuild(guild_id) => guilds::delete_guild(conn, *guild_id).await,
         Mutation::InsertRole(role) | Mutation::UpdateRole(role) => {
             guilds::upsert_role(conn, role).await

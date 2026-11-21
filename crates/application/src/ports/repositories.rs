@@ -297,6 +297,25 @@ pub trait ChannelRepository: Send + Sync {
 
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn onboarding(&self, guild_id: Snowflake) -> AppResult<(serde_json::Value, i64)>;
+    async fn set_onboarding(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<i64>;
+    async fn welcome_screen(&self, guild_id: Snowflake) -> AppResult<serde_json::Value>;
+    async fn set_welcome_screen(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<()>;
+    async fn screening(&self, guild_id: Snowflake) -> AppResult<ScreeningConfig>;
+    async fn set_screening(
+        &self,
+        guild_id: Snowflake,
+        enabled: bool,
+        rules: &[String],
+    ) -> AppResult<ScreeningConfig>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>>;
     async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>>;
@@ -342,6 +361,13 @@ pub trait GuildRepository: Send + Sync {
     async fn update_template(&self, template: &GuildTemplate) -> AppResult<()>;
     async fn delete_template(&self, code: &str) -> AppResult<()>;
     async fn bump_template_usage(&self, code: &str) -> AppResult<()>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreeningConfig {
+    pub enabled: bool,
+    pub rules: Vec<String>,
+    pub revision: i64,
 }
 
 /// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,
