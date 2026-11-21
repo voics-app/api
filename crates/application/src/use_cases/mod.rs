@@ -21,6 +21,7 @@ pub mod reports;
 pub mod roles;
 pub mod scheduled_events;
 pub mod sessions;
+pub mod stage_instances;
 pub mod templates;
 pub mod users;
 pub mod voice;

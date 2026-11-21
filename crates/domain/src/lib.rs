@@ -26,6 +26,7 @@ pub mod report;
 pub mod scheduled_event;
 pub mod session;
 pub mod snowflake;
+pub mod stage_instance;
 pub mod template;
 pub mod thread_lifecycle;
 pub mod user;

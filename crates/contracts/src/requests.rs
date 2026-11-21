@@ -476,6 +476,9 @@ pub struct ModifyMemberRequest {
     /// A voice channel to move the member to; `null` disconnects them from voice.
     #[serde(default, deserialize_with = "double_option")]
     pub channel_id: Option<Option<Id>>,
+    /// Stage audience status: false promotes the member, true moves them to the audience.
+    #[serde(default)]
+    pub suppress: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]

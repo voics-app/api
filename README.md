@@ -372,6 +372,10 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
 
+## Stage instances
+
+Guild stage-channel metadata is managed through `POST /stage-instances` and `GET`, `PATCH`, or `DELETE /stage-instances/{channel_id}`. Reading requires channel visibility; starting, changing the topic and ending require `MANAGE_CHANNELS`. Each mutation is committed with its `STAGE_INSTANCE_*` event through the transactional outbox. A channel can have at most one active instance. This metadata lifecycle does not itself enable stage audio; see the stage enforcement design in the docs repository.
+
 ## Ban appeals
 
 A server can configure a single short appeal question with `PUT /guilds/{guild_id}/ban-appeals/form`. A currently banned, authenticated user can read that question and submit an answer to `POST /guilds/{guild_id}/ban-appeals`. Only one appeal may be open per user and server. Moderators need `MANAGE_BAN_APPEALS` to configure the question, list appeals and accept or deny them. Acceptance removes the current ban; decisions record an audit action when guild audit logging is enabled. A decision against a superseded ban is rejected rather than removing a newer ban. Unbanned users need a valid invite to rejoin.

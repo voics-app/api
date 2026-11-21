@@ -292,6 +292,44 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             kind,
             since,
         } => identity::set_relationship(conn, *user_id, *target_id, *kind, *since).await,
+        Mutation::InsertStageInstance(stage) => {
+            sqlx::query("INSERT INTO stage_instances (id, guild_id, channel_id, topic) VALUES ($1, $2, $3, $4)")
+                .bind(stage.id.as_i64()).bind(stage.guild_id.as_i64()).bind(stage.channel_id.as_i64())
+                .bind(&stage.topic).execute(conn).await.map_err(db)?;
+            Ok(())
+        }
+        Mutation::UpdateStageInstance(stage) => {
+            let result = sqlx::query(
+                "UPDATE stage_instances SET topic = $1 WHERE channel_id = $2 AND id = $3",
+            )
+            .bind(&stage.topic)
+            .bind(stage.channel_id.as_i64())
+            .bind(stage.id.as_i64())
+            .execute(conn)
+            .await
+            .map_err(db)?;
+            if result.rows_affected() == 0 {
+                return Err(application::AppError::NotFound(
+                    application::Resource::Channel,
+                ));
+            }
+            Ok(())
+        }
+        Mutation::DeleteStageInstance { channel_id, id } => {
+            let result =
+                sqlx::query("DELETE FROM stage_instances WHERE channel_id = $1 AND id = $2")
+                    .bind(channel_id.as_i64())
+                    .bind(id.as_i64())
+                    .execute(conn)
+                    .await
+                    .map_err(db)?;
+            if result.rows_affected() == 0 {
+                return Err(application::AppError::NotFound(
+                    application::Resource::Channel,
+                ));
+            }
+            Ok(())
+        }
         Mutation::InsertChannel(channel) | Mutation::UpdateChannel(channel) => {
             identity::upsert_channel(conn, channel).await
         }
