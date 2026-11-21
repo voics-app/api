@@ -48,6 +48,7 @@ fn unknown_code(resource: Resource) -> u32 {
         Resource::Channel | Resource::Overwrite => UNKNOWN_CHANNEL,
         Resource::Command => UNKNOWN_APPLICATION_COMMAND,
         Resource::Emoji => UNKNOWN_EMOJI,
+        Resource::Sticker => GENERAL_ERROR,
         Resource::Guild => UNKNOWN_GUILD,
         Resource::GuildTemplate => UNKNOWN_GUILD_TEMPLATE,
         Resource::Interaction => UNKNOWN_INTERACTION,

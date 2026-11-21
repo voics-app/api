@@ -38,7 +38,7 @@ async fn guild_administration_follows_the_contract() {
         rate_limiter: std::sync::Arc::new(support::AllowAll),
         rate_policy: interface::state::RatePolicy::default(),
     });
-    let (owner, _owner_id) = register(&app, "owner@example.com", "owner").await;
+    let (owner, owner_id) = register(&app, "owner@example.com", "owner").await;
     let (guest, guest_id) = register(&app, "guest@example.com", "guest").await;
 
     let (status, guild) = call(
@@ -131,6 +131,78 @@ async fn guild_administration_follows_the_contract() {
         "accepting the invite joins the guild"
     );
     assert_eq!(joined["guild"]["id"], guild_id);
+
+    let (status, builtins) = call(&app, Method::GET, "/api/v1/stickers/packs", &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(builtins.as_array().unwrap().len(), 3);
+    let builtin_path = format!(
+        "/api/v1/stickers/{}/asset",
+        builtins[0]["id"].as_str().unwrap()
+    );
+    let (status, asset) = send(&app, request(Method::GET, &builtin_path, None, None)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(asset["w"], 320);
+    let resolve_builtin = format!("/internal/v1/channels/{channel_id}/users/{owner_id}/stickers/1");
+    let internal_request = axum::http::Request::builder()
+        .method(Method::GET)
+        .uri(&resolve_builtin)
+        .header("x-internal-token", support::http::INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, resolved) = send(&app, internal_request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resolved["id"], "1");
+
+    // A server manager can create, edit and remove a sticker; an ordinary member cannot.
+    let path = format!("/api/v1/guilds/{guild_id}/stickers");
+    let sticker_request = json!({"name": "wave", "tags": "wave", "image": "data:application/json;base64,eyJ2IjoiNS4wIiwidyI6MzIwLCJoIjozMjAsImZyIjozMCwiaXAiOjAsIm9wIjo2MCwibGF5ZXJzIjpbXX0="});
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &path,
+        &guest,
+        Some(sticker_request.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, sticker) = call(&app, Method::POST, &path, &owner, Some(sticker_request)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(sticker["format_type"], 3);
+    let sticker_path = format!("{path}/{}", sticker["id"].as_str().unwrap());
+    let resolve_path = format!(
+        "/internal/v1/channels/{channel_id}/users/{owner_id}/stickers/{}",
+        sticker["id"].as_str().unwrap()
+    );
+    let (status, _) = send(&app, request(Method::GET, &resolve_path, None, None)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let internal_request = axum::http::Request::builder()
+        .method(Method::GET)
+        .uri(&resolve_path)
+        .header("x-internal-token", support::http::INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, resolved) = send(&app, internal_request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resolved["id"], sticker["id"]);
+
+    let (status, edited) = call(
+        &app,
+        Method::PATCH,
+        &sticker_path,
+        &owner,
+        Some(json!({"name":"hello"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(edited["name"], "hello");
+    let (status, listed) = call(&app, Method::GET, &path, &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    let (status, _) = call(&app, Method::DELETE, &sticker_path, &owner, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, listed) = call(&app, Method::GET, &path, &owner, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(listed.as_array().unwrap().is_empty());
 
     let (status, members) = call(
         &app,

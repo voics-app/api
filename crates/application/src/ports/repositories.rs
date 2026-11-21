@@ -22,6 +22,7 @@ use domain::push_token::{PushPlatform, PushToken, VoipToken};
 use domain::relationship::Relationship;
 use domain::report::{Report, ReportStatus};
 use domain::session::ClientInfo;
+use domain::sticker::Sticker;
 use domain::template::GuildTemplate;
 use domain::user::{Credentials, User, UserSettings};
 use domain::Snowflake;
@@ -351,6 +352,12 @@ pub trait InviteRepository: Send + Sync {
 pub trait EmojiRepository: Send + Sync {
     async fn list(&self, guild_id: Snowflake) -> AppResult<Vec<Emoji>>;
     async fn find(&self, guild_id: Snowflake, emoji_id: Snowflake) -> AppResult<Option<Emoji>>;
+}
+
+#[async_trait]
+pub trait StickerRepository: Send + Sync {
+    async fn list(&self, guild_id: Snowflake) -> AppResult<Vec<Sticker>>;
+    async fn find(&self, guild_id: Snowflake, sticker_id: Snowflake) -> AppResult<Option<Sticker>>;
 }
 
 #[derive(Debug, Clone, Copy, Default)]

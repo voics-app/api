@@ -39,6 +39,15 @@ jobs:
       # `bundled`. sqlx 0.8 pins libsqlite3-sys 0.30, so the patched 0.39 cannot be used until sqlx moves; drop this then.
       audit-args: --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
 
+  sticker-http-integration:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Exercise sticker HTTP routes against Postgres
+        run: cargo test --locked -p infrastructure --test http_guilds guild_administration_follows_the_contract -- --nocapture
+
   badge-http-integration:
     # PR CI otherwise runs only library and binary tests. Exercise badge privacy over HTTP
     # against a disposable Postgres container before merging.

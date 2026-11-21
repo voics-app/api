@@ -24,3 +24,5 @@ pub mod templates;
 pub mod users;
 pub mod voice;
 pub mod webhooks;
+
+pub mod stickers;

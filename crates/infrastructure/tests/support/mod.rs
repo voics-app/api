@@ -256,6 +256,7 @@ pub fn ports_with_messages(
         guilds: store.clone(),
         invites: store.clone(),
         emojis: store.clone(),
+        stickers: store.clone(),
         audit_log: store.clone(),
         applications: store.clone(),
         interactions: store.clone(),

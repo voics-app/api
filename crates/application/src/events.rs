@@ -16,6 +16,7 @@ use domain::invite::Invite;
 use domain::notification::GuildNotificationSettings;
 use domain::permissions::Permissions;
 use domain::relationship::RelationshipType;
+use domain::sticker::Sticker;
 use domain::user::{User, UserSettings};
 use domain::Snowflake;
 
@@ -79,6 +80,10 @@ pub enum DomainEvent {
         channel_ids: Vec<Snowflake>,
         since_ms: u64,
         delete_message_seconds: u32,
+    },
+    StickersUpdate {
+        guild_id: Snowflake,
+        stickers: Vec<Sticker>,
     },
     EmojisUpdate {
         guild_id: Snowflake,

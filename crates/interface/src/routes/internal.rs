@@ -533,9 +533,28 @@ async fn admin_resolve_report(
     Ok(Json(report_dto(&report, None, None)))
 }
 
+async fn resolve_message_sticker(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path((channel, user, sticker)): Path<(String, String, String)>,
+) -> Result<Json<contracts::objects::StickerDto>, ApiError> {
+    let found = application::use_cases::stickers::resolve_for_message(
+        &state.ports,
+        parse_id(&channel)?,
+        parse_id(&user)?,
+        parse_id(&sticker)?,
+    )
+    .await?;
+    Ok(Json(contracts::objects::StickerDto::from(&found)))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/internal/v1/id-reservations", post(reserve_ids))
+        .route(
+            "/internal/v1/channels/{channel}/users/{user}/stickers/{sticker}",
+            get(resolve_message_sticker),
+        )
         .route("/internal/v1/auth/introspect", post(introspect_token))
         .route("/internal/v1/users/lookup", post(users_lookup))
         .route("/internal/v1/users/{id}/ready", get(user_ready_state))
