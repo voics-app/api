@@ -211,6 +211,20 @@ pub(super) async fn set_relationship(
     kind: Option<RelationshipType>,
     since: chrono::DateTime<chrono::Utc>,
 ) -> AppResult<()> {
+    if kind != Some(RelationshipType::Friend) {
+        sqlx::query("SELECT 1 FROM relationships WHERE user_id = $1 AND target_id = $2 FOR UPDATE")
+            .bind(user_id.as_i64())
+            .bind(target_id.as_i64())
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(db)?;
+        sqlx::query("DELETE FROM friend_favourites WHERE user_id = $1 AND target_id = $2")
+            .bind(user_id.as_i64())
+            .bind(target_id.as_i64())
+            .execute(&mut *conn)
+            .await
+            .map_err(db)?;
+    }
     match kind {
         Some(kind) => {
             sqlx::query(
@@ -525,6 +539,7 @@ pub(super) async fn anonymize_user(
         "user_passkeys",
         "passkey_challenges",
         "application_authorizations",
+        "ban_appeals",
         "user_badges",
     ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE user_id = $1"))

@@ -240,6 +240,25 @@ pub trait DeviceRepository: Send + Sync {
 #[async_trait]
 pub trait RelationshipRepository: Send + Sync {
     async fn list(&self, user_id: Snowflake) -> AppResult<Vec<Relationship>>;
+    async fn favourites(&self, user_id: Snowflake) -> AppResult<Vec<Snowflake>>;
+    async fn set_favourite(
+        &self,
+        user_id: Snowflake,
+        target_id: Snowflake,
+        favourite: bool,
+    ) -> AppResult<bool>;
+    async fn create_friend_invite(
+        &self,
+        owner: Snowflake,
+        hash: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<()>;
+    async fn friend_invite_owner(
+        &self,
+        hash: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<Snowflake>>;
+    async fn revoke_friend_invites(&self, owner: Snowflake) -> AppResult<()>;
     async fn get(
         &self,
         user_id: Snowflake,
@@ -299,8 +318,81 @@ pub trait ChannelRepository: Send + Sync {
     async fn count(&self) -> AppResult<u64>;
 }
 
+#[derive(Debug, Clone)]
+pub struct ScheduledEventDelivery {
+    pub id: uuid::Uuid,
+    pub lease_id: uuid::Uuid,
+    pub guild_id: Snowflake,
+    pub event_id: Snowflake,
+    pub user_id: Snowflake,
+    pub session_id: uuid::Uuid,
+    pub start: DateTime<Utc>,
+    pub schedule_revision: i64,
+}
+
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>>;
+    async fn set_appeal_form(&self, guild_id: Snowflake, question: &str) -> AppResult<()>;
+    async fn submit_appeal(
+        &self,
+        id: Snowflake,
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        answer: &str,
+        question: &str,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeal(
+        &self,
+        guild_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeals(&self, guild_id: Snowflake) -> AppResult<Vec<domain::ban_appeal::BanAppeal>>;
+    async fn claim_scheduled_event_delivery(&self) -> AppResult<Option<ScheduledEventDelivery>>;
+    async fn scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+    ) -> AppResult<Option<ScheduledEventDelivery>>;
+    async fn finish_scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+        retry_after_secs: Option<u32>,
+    ) -> AppResult<bool>;
+    async fn scheduled_events(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<domain::scheduled_event::ScheduledEvent>>;
+    async fn scheduled_event(
+        &self,
+        guild_id: Snowflake,
+        event_id: Snowflake,
+    ) -> AppResult<Option<domain::scheduled_event::ScheduledEvent>>;
+    async fn scheduled_event_interested(
+        &self,
+        event_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<bool>;
+    async fn onboarding(&self, guild_id: Snowflake) -> AppResult<(serde_json::Value, i64)>;
+    async fn set_onboarding(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<i64>;
+    async fn welcome_screen(&self, guild_id: Snowflake) -> AppResult<serde_json::Value>;
+    async fn set_welcome_screen(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<()>;
+    async fn screening(&self, guild_id: Snowflake) -> AppResult<ScreeningConfig>;
+    async fn set_screening(
+        &self,
+        guild_id: Snowflake,
+        enabled: bool,
+        rules: &[String],
+    ) -> AppResult<ScreeningConfig>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>>;
     async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>>;
@@ -346,6 +438,13 @@ pub trait GuildRepository: Send + Sync {
     async fn update_template(&self, template: &GuildTemplate) -> AppResult<()>;
     async fn delete_template(&self, code: &str) -> AppResult<()>;
     async fn bump_template_usage(&self, code: &str) -> AppResult<()>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreeningConfig {
+    pub enabled: bool,
+    pub rules: Vec<String>,
+    pub revision: i64,
 }
 
 /// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,

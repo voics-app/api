@@ -4,7 +4,9 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::{json, Value};
 
 use application::use_cases::admin::{
     list_guilds, list_reports, list_users, resolve_report, stats, suspend_user,
@@ -179,6 +181,29 @@ async fn channel_access_info(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThreadActivityRequest {
+    occurred_at: DateTime<Utc>,
+}
+
+async fn record_thread_activity(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(thread_id): Path<String>,
+    Body(body): Body<ThreadActivityRequest>,
+) -> Result<StatusCode, ApiError> {
+    let thread_id = thread_id
+        .parse()
+        .map_err(|_| AppError::NotFound(Resource::Channel))?;
+    state
+        .ports
+        .thread_lifecycle
+        .record_message(thread_id, body.occurred_at, state.ports.clock.now())
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
 struct PushTargetsQuery {
     author_id: String,
 }
@@ -342,6 +367,121 @@ async fn user_push_tokens(
 ) -> Result<Json<ManualPushTargetsDto>, ApiError> {
     let found = manual_targets::for_user(&state.ports, parse_id(&user_id)?).await?;
     Ok(Json(manual_targets_dto(found)))
+}
+
+#[derive(Deserialize)]
+struct EventReminderTargetsQuery {
+    user_id: String,
+    scheduled_start_time: chrono::DateTime<chrono::Utc>,
+    revision: i64,
+}
+
+async fn event_reminder_targets(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path((guild_id, event_id)): Path<(String, String)>,
+    Query(query): Query<EventReminderTargetsQuery>,
+) -> Result<Json<ManualPushTargetsDto>, ApiError> {
+    let user_id = parse_id(&query.user_id)?;
+    let tokens = application::use_cases::scheduled_events::reminder_targets(
+        &state.ports,
+        parse_id(&guild_id)?,
+        parse_id(&event_id)?,
+        user_id,
+        query.scheduled_start_time,
+        query.revision,
+    )
+    .await?;
+    let users = if tokens.is_empty() {
+        Vec::new()
+    } else {
+        vec![(user_id, tokens)]
+    };
+    Ok(Json(manual_targets_dto(manual_targets::ManualTargets {
+        users,
+        next_after: None,
+    })))
+}
+
+#[derive(Deserialize)]
+struct DeliveryLeaseRequest {
+    lease_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+struct FinishDeliveryRequest {
+    lease_id: uuid::Uuid,
+    retry_after_secs: Option<u32>,
+}
+
+async fn claim_event_delivery(
+    State(state): State<AppState>,
+    _internal: Internal,
+) -> Result<Json<Value>, ApiError> {
+    let delivery = state.ports.guilds.claim_scheduled_event_delivery().await?;
+    Ok(Json(match delivery {
+        None => Value::Null,
+        Some(delivery) => json!({
+            "delivery_id": delivery.id, "lease_id": delivery.lease_id,
+            "guild_id": delivery.guild_id.to_string(), "event_id": delivery.event_id.to_string(),
+            "user_id": delivery.user_id.to_string(), "scheduled_start_time": timestamp(delivery.start),
+            "revision": delivery.schedule_revision
+        }),
+    }))
+}
+
+async fn resolve_event_delivery(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(id): Path<uuid::Uuid>,
+    Body(body): Body<DeliveryLeaseRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let delivery = state
+        .ports
+        .guilds
+        .scheduled_event_delivery(id, body.lease_id)
+        .await?
+        .ok_or(AppError::Conflict {
+            code: 0,
+            message: "Reminder lease expired.".into(),
+        })?;
+    let tokens = application::use_cases::scheduled_events::reminder_targets(
+        &state.ports,
+        delivery.guild_id,
+        delivery.event_id,
+        delivery.user_id,
+        delivery.start,
+        delivery.schedule_revision,
+    )
+    .await?;
+    let token = tokens
+        .into_iter()
+        .find(|token| token.session_id == delivery.session_id);
+    Ok(Json(match token {
+        Some(token) => serde_json::to_value(push_token_dto(token)).map_err(AppError::internal)?,
+        None => Value::Null,
+    }))
+}
+
+async fn finish_event_delivery(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(id): Path<uuid::Uuid>,
+    Body(body): Body<FinishDeliveryRequest>,
+) -> Result<StatusCode, ApiError> {
+    if !state
+        .ports
+        .guilds
+        .finish_scheduled_event_delivery(id, body.lease_id, body.retry_after_secs)
+        .await?
+    {
+        return Err(AppError::Conflict {
+            code: 0,
+            message: "Reminder lease expired.".into(),
+        }
+        .into());
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -545,6 +685,10 @@ pub fn routes() -> Router<AppState> {
             get(channel_access_info),
         )
         .route("/internal/v1/channels/{id}/delivery", get(channel_delivery))
+        .route(
+            "/internal/v1/threads/{id}/activity",
+            post(record_thread_activity),
+        )
         .route("/internal/v1/channels/{id}/push-targets", get(push_targets))
         .route(
             "/internal/v1/channels/{id}/notification-recipients",
@@ -555,6 +699,22 @@ pub fn routes() -> Router<AppState> {
             delete(forget_push_token).get(push_token_page),
         )
         .route("/internal/v1/users/{id}/push-tokens", get(user_push_tokens))
+        .route(
+            "/internal/v1/guilds/{guild_id}/scheduled-events/{event_id}/push-targets",
+            get(event_reminder_targets),
+        )
+        .route(
+            "/internal/v1/scheduled-event-deliveries/claim",
+            post(claim_event_delivery),
+        )
+        .route(
+            "/internal/v1/scheduled-event-deliveries/{id}/resolve",
+            post(resolve_event_delivery),
+        )
+        .route(
+            "/internal/v1/scheduled-event-deliveries/{id}/finish",
+            post(finish_event_delivery),
+        )
         .route("/internal/v1/admin/stats", get(admin_stats))
         .route("/internal/v1/admin/users", get(admin_users))
         .route("/internal/v1/admin/users/{id}/suspend", post(admin_suspend))

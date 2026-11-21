@@ -6,6 +6,18 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+The internal channel-access endpoint returns 403 when the caller lacks VIEW_CHANNEL, before
+returning encrypted relay recipient IDs. Eligible viewers retain the existing permission response.
+
+Scheduled events (api#49, draft): guild members can list visible events and inspect their
+own interest. Creators with `CREATE_EVENTS` and managers with `MANAGE_EVENTS` can create,
+modify and delete events; channel events require a visible matching voice or stage channel.
+Interest writes are idempotent. Changes and their gateway dispatches share the Postgres
+transaction. Migration `0087` also records start-reminder claims; a bounded worker writes
+user-targeted outbox records and the desktop rechecks access and interest before displaying.
+The proposed notifier consumer sends generic mobile pushes after a second eligibility check,
+but its restart and overload delivery guarantees are limited. These paths need integrated
+verification before release; see `http_scheduled_events` and `postgres_scheduled_events` tests.
 Announcement follows and publication (api#36) are gated by
 `ANNOUNCEMENT_DELIVERY_ENABLED`, default `false`. A follower is a non-executable
 type-2 webhook; publication reserves one delivery per source message and target
@@ -106,8 +118,27 @@ The admin queue receives public name/description/category/tags, guild ID and the
 owner at filing. No private channel/member/message data is copied. Resolving a
 report does not automatically delist the server. See the central
 [discovery specification](https://github.com/voics-app/docs/blob/develop/specs/2026-11-03-server-discovery.md).
-No new configuration or infrastructure is needed. Membership screening remains
-a separate feature; Community setup does not implement api#40.
+No new configuration or infrastructure is needed. Community setup and rules
+screening are configured separately.
+
+`GET /guilds/{id}/member-verification` returns the current rules, revision and
+the caller's pending status. `PUT` requires `MANAGE_GUILD`; enable screening
+with one to twenty rules. New invite and discovery members become pending and
+cannot send until they `POST /guilds/{id}/member-verification/accept` with the
+revision they reviewed. If rules change concurrently the request returns 409;
+fetch and display the new version before another acceptance. Migration 0092
+stores the configuration and serializes configuration changes with joins and
+acceptance. Pending members also cannot create threads, which generate a system
+message. Existing members are not made pending when screening is enabled.
+
+`GET|PUT /guilds/{id}/onboarding` reads or replaces up to five optional
+questions; options can suggest a channel and grant an eligible role. Managers
+configuring role options also need `MANAGE_ROLES` and must outrank the role.
+`POST /guilds/{id}/onboarding/complete` takes the reviewed revision and one
+option index per question, once per membership and after accepting rules. Roles
+with privileged base permissions or channel overwrites cannot be self-assigned.
+`GET|PUT /guilds/{id}/welcome-screen` configures a description and up to five
+suggested text channels. GET omits channels the caller cannot view.
 
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or
@@ -345,6 +376,8 @@ Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians
 
 Guild stage-channel metadata is managed through `POST /stage-instances` and `GET`, `PATCH`, or `DELETE /stage-instances/{channel_id}`. Reading requires channel visibility; starting, changing the topic and ending require `MANAGE_CHANNELS`. Each mutation is committed with its `STAGE_INSTANCE_*` event through the transactional outbox. A channel can have at most one active instance. This metadata lifecycle does not itself enable stage audio; see the stage enforcement design in the docs repository.
 
-## Profile badges
+## Ban appeals
+
+A server can configure a single short appeal question with `PUT /guilds/{guild_id}/ban-appeals/form`. A currently banned, authenticated user can read that question and submit an answer to `POST /guilds/{guild_id}/ban-appeals`. Only one appeal may be open per user and server. Moderators need `MANAGE_BAN_APPEALS` to configure the question, list appeals and accept or deny them. Acceptance removes the current ban; decisions record an audit action when guild audit logging is enabled. A decision against a superseded ban is rejected rather than removing a newer ban. Unbanned users need a valid invite to rejoin.
 
 Profile badges are separate from user flags. `GET /api/v1/users/@me/badges` lists the authenticated account's granted badge IDs and visibility; `PUT /api/v1/users/@me/badges/{id}` with `{"visible":false}` or `true` changes an existing grant only. `GET /api/v1/users/{id}/badges` returns only visible badge IDs. Grants are provisioned by trusted operators in `user_badges`; this API does not grant badges. No production badge catalog is defined yet.

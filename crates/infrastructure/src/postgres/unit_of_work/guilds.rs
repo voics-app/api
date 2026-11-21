@@ -106,13 +106,16 @@ pub(super) async fn delete_role(
 }
 
 pub(super) async fn insert_member(conn: &mut PgConnection, member: &Member) -> AppResult<()> {
-    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) VALUES ($1, $2, $3)")
-        .bind(member.guild_id.as_i64())
-        .bind(member.user_id.as_i64())
-        .bind(member.joined_at)
-        .execute(&mut *conn)
-        .await
-        .map_err(db)?;
+    sqlx::query(
+        "INSERT INTO members (guild_id, user_id, joined_at, pending) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(member.guild_id.as_i64())
+    .bind(member.user_id.as_i64())
+    .bind(member.joined_at)
+    .bind(member.pending)
+    .execute(&mut *conn)
+    .await
+    .map_err(db)?;
     upsert_member(conn, member).await
 }
 
@@ -123,7 +126,7 @@ pub(super) async fn upsert_member(conn: &mut PgConnection, member: &Member) -> A
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
          ON CONFLICT (guild_id, user_id) DO UPDATE SET nick = EXCLUDED.nick, \
              deaf = EXCLUDED.deaf, mute = EXCLUDED.mute, \
-             communication_disabled_until = EXCLUDED.communication_disabled_until, pending = EXCLUDED.pending",
+             communication_disabled_until = EXCLUDED.communication_disabled_until",
     )
     .bind(member.guild_id.as_i64())
     .bind(member.user_id.as_i64())
@@ -196,6 +199,13 @@ pub(super) async fn delete_ban(
     user_id: Snowflake,
 ) -> AppResult<()> {
     sqlx::query("DELETE FROM bans WHERE guild_id = $1 AND user_id = $2")
+        .bind(guild_id.as_i64())
+        .bind(user_id.as_i64())
+        .execute(&mut *conn)
+        .await
+        .map_err(db)?;
+    // A manual unban supersedes any outstanding appeal for this ban.
+    sqlx::query("UPDATE ban_appeals SET status='closed', resolved_at=now() WHERE guild_id=$1 AND user_id=$2 AND status='open'")
         .bind(guild_id.as_i64())
         .bind(user_id.as_i64())
         .execute(conn)

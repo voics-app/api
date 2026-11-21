@@ -448,8 +448,116 @@ async fn unban(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+struct AppealForm {
+    question: String,
+}
+#[derive(Deserialize)]
+struct AppealAnswer {
+    answer: String,
+    question: String,
+}
+fn appeal_json(a: &domain::ban_appeal::BanAppeal) -> serde_json::Value {
+    serde_json::json!({"id": a.id.to_string(), "user_id": a.user_id.to_string(), "question": a.question, "answer": a.answer, "status": a.status, "created_at": a.created_at, "resolved_at": a.resolved_at, "resolved_by": a.resolved_by.map(|id| id.to_string())})
+}
+async fn appeal_form(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let question = application::use_cases::bans::appeals::form(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({"question": question})))
+}
+async fn set_appeal_form(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+    Body(body): Body<AppealForm>,
+) -> Result<StatusCode, ApiError> {
+    application::use_cases::bans::appeals::configure(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        &body.question,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+async fn submit_appeal(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+    Body(body): Body<AppealAnswer>,
+) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
+    let a = application::use_cases::bans::appeals::submit(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        &body.answer,
+        &body.question,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(appeal_json(&a))))
+}
+async fn list_appeals(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(guild): Path<String>,
+) -> Result<Json<Vec<serde_json::Value>>, ApiError> {
+    let a = application::use_cases::bans::appeals::list(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+    )
+    .await?;
+    Ok(Json(a.iter().map(appeal_json).collect()))
+}
+async fn resolve_appeal(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    AuditReason(reason): AuditReason,
+    Path((guild, id, decision)): Path<(String, String, String)>,
+) -> Result<StatusCode, ApiError> {
+    let accept = match decision.as_str() {
+        "accept" => true,
+        "deny" => false,
+        _ => return Err(AppError::NotFound(Resource::Ban).into()),
+    };
+    let audit = AuditContext {
+        actor_id: actor.user_id,
+        reason: reason.as_deref(),
+    };
+    application::use_cases::bans::appeals::resolve(
+        &state.ports,
+        &actor,
+        snowflake(&guild, Resource::Guild)?,
+        snowflake(&id, Resource::Ban)?,
+        accept,
+        audit,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/guilds/{id}/ban-appeals/form",
+            get(appeal_form).put(set_appeal_form),
+        )
+        .route(
+            "/guilds/{id}/ban-appeals",
+            get(list_appeals).post(submit_appeal),
+        )
+        .route(
+            "/guilds/{id}/ban-appeals/{appeal_id}/{decision}",
+            axum::routing::post(resolve_appeal),
+        )
         .route("/guilds/{id}/members", get(list_all))
         .route(
             "/guilds/{id}/members/{user_id}",

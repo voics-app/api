@@ -44,6 +44,7 @@ impl UnitOfWork for PgUnitOfWork {
         }
         let mut tx = self.pool.begin().await.map_err(db)?;
         let conn = &mut *tx;
+        let mut conditional_events = Vec::new();
         let mut membership_events = Vec::new();
         if let Some((id, token)) = &writes.forum_guard {
             let valid: Option<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE id = $1 AND forum_settings->>'pending' = 'true' AND forum_settings->>'status' = 'publishing' AND forum_settings->>'lease_token' = $2 FOR UPDATE")
@@ -56,6 +57,33 @@ impl UnitOfWork for PgUnitOfWork {
             }
         }
         for mutation in &writes.mutations {
+            if let Mutation::SetScheduledEventInterest {
+                guild_id,
+                event_id,
+                user_id,
+                channel_id,
+                interested,
+            } = mutation
+            {
+                if super::scheduled_events::set_interest(
+                    conn,
+                    *guild_id,
+                    *event_id,
+                    *user_id,
+                    *interested,
+                )
+                .await?
+                {
+                    conditional_events.push(DomainEvent::ScheduledEventInterest {
+                        guild_id: *guild_id,
+                        event_id: *event_id,
+                        user_id: *user_id,
+                        channel_id: *channel_id,
+                        interested: *interested,
+                    });
+                }
+                continue;
+            }
             if !matches!(mutation, Mutation::InsertAudit(_)) {
                 let removed_threads: Vec<i64> = if let Mutation::DeleteMember {
                     guild_id,
@@ -102,7 +130,12 @@ impl UnitOfWork for PgUnitOfWork {
             }
         }
         let now = Utc::now();
-        for event in writes.events.iter().chain(&membership_events) {
+        for event in writes
+            .events
+            .iter()
+            .chain(&membership_events)
+            .chain(&conditional_events)
+        {
             if matches!(event, DomainEvent::AuditLogEntryCreate(entry) if !recorded.contains(&entry.id))
             {
                 continue;
@@ -191,6 +224,17 @@ impl UnitOfWork for PgUnitOfWork {
 
 async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<()> {
     match mutation {
+        Mutation::UpdateScheduledEvent {
+            event,
+            expected_revision,
+        } => super::scheduled_events::update(conn, event, *expected_revision).await,
+        Mutation::DeleteScheduledEvent {
+            guild_id,
+            event_id,
+            expected_revision,
+        } => super::scheduled_events::delete(conn, *guild_id, *event_id, *expected_revision).await,
+        Mutation::SetScheduledEventInterest { .. } => unreachable!("interest handled in commit"),
+        Mutation::InsertScheduledEvent(event) => super::scheduled_events::insert(conn, event).await,
         Mutation::InsertUser {
             user,
             credentials,
@@ -338,6 +382,103 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertGuild(guild) | Mutation::UpdateGuild(guild) => {
             guilds::upsert_guild(conn, guild).await
         }
+        Mutation::ApplyOnboarding {
+            guild_id,
+            user_id,
+            revision,
+            role_ids,
+        } => {
+            // Channel overwrite writers take this same guild lock. Inspecting
+            // them under it prevents a role from granting moderation via an
+            // overwrite while a member selects it.
+            super::community::lock(conn, *guild_id).await?;
+            let (current,): (i64,) = sqlx::query_as("SELECT onboarding_revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE")
+                .bind(guild_id.as_i64()).fetch_one(&mut *conn).await.map_err(db)?;
+            if current != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding changed; review it again.".into(),
+                });
+            }
+            let (pending,): (bool,) = sqlx::query_as(
+                "SELECT pending FROM members WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+            )
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(db)?;
+            if pending {
+                return Err(application::AppError::missing_permissions());
+            }
+            let result = sqlx::query("INSERT INTO guild_onboarding_completions (guild_id, user_id, revision) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(revision).execute(&mut *conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding has already been completed.".into(),
+                });
+            }
+            for role_id in role_ids {
+                let row: Option<(i64, bool)> = sqlx::query_as("SELECT permissions, managed FROM roles WHERE guild_id = $1 AND id = $2 FOR SHARE")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).fetch_optional(&mut *conn).await.map_err(db)?;
+                let Some((permissions, managed)) = row else {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role no longer exists.".into(),
+                    });
+                };
+                if managed
+                    || *role_id == *guild_id
+                    || (permissions as u64
+                        & !application::use_cases::guilds::onboarding::SAFE_ROLE_BITS)
+                        != 0
+                {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role is no longer eligible.".into(),
+                    });
+                }
+                let unsafe_overwrite: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM permission_overwrites p JOIN channels c ON c.id = p.channel_id WHERE c.guild_id = $1 AND p.kind = 0 AND p.target_id = $2 AND (p.allow_bits & $3) <> 0)")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).bind(!(application::use_cases::guilds::onboarding::SAFE_ROLE_BITS as i64)).fetch_one(&mut *conn).await.map_err(db)?;
+                if unsafe_overwrite {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role has a privileged channel overwrite.".into(),
+                    });
+                }
+                sqlx::query("INSERT INTO member_roles (guild_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                    .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(role_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+            }
+            Ok(())
+        }
+        Mutation::CheckScreeningRevision { guild_id, revision } => {
+            let current: (i64,) = sqlx::query_as(
+                "SELECT revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE",
+            )
+            .bind(guild_id.as_i64())
+            .fetch_one(conn)
+            .await
+            .map_err(db)?;
+            if current.0 != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Rules changed; review them again.".into(),
+                });
+            }
+            Ok(())
+        }
+        Mutation::AcceptScreening { guild_id, user_id } => {
+            let result = sqlx::query("UPDATE members SET pending = false WHERE guild_id = $1 AND user_id = $2 AND pending = true")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).execute(conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Membership changed; reload and try again.".into(),
+                });
+            }
+            Ok(())
+        }
         Mutation::DeleteGuild(guild_id) => guilds::delete_guild(conn, *guild_id).await,
         Mutation::InsertRole(role) | Mutation::UpdateRole(role) => {
             guilds::upsert_role(conn, role).await
@@ -365,6 +506,36 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             user_id,
             reason,
         } => guilds::insert_ban(conn, *guild_id, *user_id, reason.as_deref()).await,
+        Mutation::ResolveBanAppeal {
+            guild_id,
+            appeal_id,
+            user_id,
+            reviewer_id,
+            accept,
+        } => {
+            let ban_time: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
+                "SELECT created_at FROM bans WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+            )
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(db)?;
+            let updated = sqlx::query("UPDATE ban_appeals SET status=$4, resolved_at=now(), resolved_by=$5 WHERE id=$1 AND guild_id=$2 AND user_id=$3 AND status='open' AND ban_created_at=$6")
+                .bind(appeal_id.as_i64()).bind(guild_id.as_i64()).bind(user_id.as_i64())
+                .bind(if *accept { "accepted" } else { "denied" }).bind(reviewer_id.as_i64()).bind(ban_time)
+                .execute(&mut *conn).await.map_err(db)?;
+            if updated.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 0,
+                    message: "Appeal is no longer open for the current ban".into(),
+                });
+            }
+            if *accept {
+                guilds::delete_ban(conn, *guild_id, *user_id).await?;
+            }
+            Ok(())
+        }
         Mutation::DeleteBan { guild_id, user_id } => {
             guilds::delete_ban(conn, *guild_id, *user_id).await
         }

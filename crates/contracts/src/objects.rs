@@ -31,6 +31,25 @@ fn base64(bytes: &[u8]) -> String {
     STANDARD.encode(bytes)
 }
 
+/// Wire representation shared by HTTP responses and gateway dispatches.
+pub fn scheduled_event(event: &domain::scheduled_event::ScheduledEvent) -> Value {
+    use domain::scheduled_event::EventKind;
+    let (entity_type, channel_id, metadata) = match &event.details.kind {
+        EventKind::Stage { channel_id } => (1, Some(channel_id.to_string()), None),
+        EventKind::Voice { channel_id } => (2, Some(channel_id.to_string()), None),
+        EventKind::External { location } => (3, None, Some(json!({ "location": location }))),
+    };
+    json!({
+        "id": event.id.to_string(), "guild_id": event.guild_id.to_string(),
+        "creator_id": event.creator_id.map(|id| id.to_string()), "channel_id": channel_id,
+        "name": event.details.name, "description": event.details.description,
+        "scheduled_start_time": timestamp(event.details.start),
+        "scheduled_end_time": event.details.end.map(timestamp),
+        "status": event.details.status.code(), "entity_type": entity_type,
+        "entity_metadata": metadata, "image": event.image, "user_count": event.user_count,
+    })
+}
+
 // --- users -----------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
@@ -542,6 +561,11 @@ impl ChannelDto {
             .is_thread()
             .then(|| channel.thread_member_ids.contains(&viewer));
         dto
+    }
+
+    pub fn with_message_count(mut self, message_count: u64) -> Self {
+        self.message_count = Some(message_count);
+        self
     }
 
     /// A DM or group DM as seen by `viewer`, who is left out of `recipients`.
