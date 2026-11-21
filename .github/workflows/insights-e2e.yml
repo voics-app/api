@@ -12,7 +12,7 @@ jobs:
     # Explicitly armed only after the separate checks pass and the coordinator
     # reserves a VM window. Removing the marker prevents automatic heavy runs.
     if: github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.title, '[insights-e2e]')
-    runs-on: vm-runner
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
