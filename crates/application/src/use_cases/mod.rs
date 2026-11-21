@@ -19,6 +19,7 @@ pub mod push;
 pub mod relationships;
 pub mod reports;
 pub mod roles;
+pub mod scheduled_events;
 pub mod sessions;
 pub mod templates;
 pub mod users;
