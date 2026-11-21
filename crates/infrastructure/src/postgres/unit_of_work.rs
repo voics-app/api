@@ -384,7 +384,45 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             state,
             original_message_id,
         } => applications::update_interaction(conn, *id, *state, *original_message_id).await,
+        Mutation::MarkAnnouncementPublished {
+            source_channel_id,
+            source_message_id,
+        } => {
+            sqlx::query("UPDATE announcement_publications SET marked=true WHERE source_channel_id=$1 AND source_message_id=$2")
+                .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).execute(conn).await.map_err(db)?;
+            Ok(())
+        }
+        Mutation::EnqueueAnnouncement {
+            source_channel_id,
+            source_message_id,
+            payload,
+            deliveries,
+        } => {
+            sqlx::query("INSERT INTO announcement_publications (source_channel_id, source_message_id, payload) VALUES ($1, $2, $3)")
+                .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).bind(payload)
+                .execute(&mut *conn).await.map_err(db)?;
+            for (target, webhook, destination_id) in deliveries {
+                sqlx::query("INSERT INTO announcement_deliveries (source_channel_id, source_message_id, target_channel_id, webhook_id, destination_message_id) SELECT $1, $2, $3, $4, $5 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$3 AND webhook_id=$4 FOR KEY SHARE")
+                    .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).bind(target.as_i64())
+                    .bind(webhook.as_i64()).bind(destination_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+            }
+            Ok(())
+        }
         Mutation::InsertWebhook(webhook) => applications::insert_webhook(conn, webhook).await,
+        Mutation::InsertAnnouncementFollower {
+            source_channel_id,
+            target_channel_id,
+            webhook_id,
+        } => {
+            sqlx::query("INSERT INTO announcement_followers (source_channel_id, target_channel_id, webhook_id) VALUES ($1, $2, $3)")
+                .bind(source_channel_id.as_i64())
+                .bind(target_channel_id.as_i64())
+                .bind(webhook_id.as_i64())
+                .execute(conn)
+                .await
+                .map_err(db)?;
+            Ok(())
+        }
         Mutation::GuardApplicationInstallation {
             guild_id,
             application_id,
