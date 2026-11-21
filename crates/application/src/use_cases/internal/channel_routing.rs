@@ -44,7 +44,7 @@ pub async fn execute(ports: &Ports, channel_id: Snowflake) -> AppResult<ChannelR
             && channel
                 .thread_metadata
                 .as_ref()
-                .map_or(true, |meta| meta.locked),
+                .is_none_or(|meta| meta.locked),
         delivery_mode,
         recipient_ids: channel.recipient_ids.clone(),
     })
