@@ -44,6 +44,7 @@ pub struct SmtpConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
+    pub announcement_delivery_enabled: bool,
     pub environment: Environment,
     pub log_level: String,
     pub bind_addr: SocketAddr,
@@ -252,6 +253,9 @@ impl Config {
         ));
 
         Ok(Self {
+            announcement_delivery_enabled: optional(&get, "ANNOUNCEMENT_DELIVERY_ENABLED", "false")
+                .parse::<bool>()
+                .map_err(|_| invalid("ANNOUNCEMENT_DELIVERY_ENABLED", "expected true or false"))?,
             environment,
             log_level: optional(&get, "LOG_LEVEL", "info"),
             bind_addr,
@@ -367,6 +371,27 @@ mod tests {
         assert_eq!(config.object_store.assets_bucket, "discordy-assets");
         assert_eq!(config.default_voice_region, "nl-home");
         assert_eq!(config.kafka_brokers, vec!["localhost:19092".to_owned()]);
+        assert!(!config.announcement_delivery_enabled);
+    }
+
+    #[test]
+    fn announcement_delivery_requires_an_explicit_valid_switch() {
+        let mut values = complete();
+        values.insert("ANNOUNCEMENT_DELIVERY_ENABLED", "true".into());
+        assert!(
+            Config::from_lookup(lookup(values))
+                .unwrap()
+                .announcement_delivery_enabled
+        );
+        let mut values = complete();
+        values.insert("ANNOUNCEMENT_DELIVERY_ENABLED", "yes".into());
+        assert!(matches!(
+            Config::from_lookup(lookup(values)),
+            Err(ConfigError::Invalid {
+                name: "ANNOUNCEMENT_DELIVERY_ENABLED",
+                ..
+            })
+        ));
     }
 
     #[test]

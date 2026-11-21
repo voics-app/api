@@ -221,6 +221,126 @@ pub(super) async fn committed_member(
 
 #[async_trait]
 impl GuildRepository for PgStore {
+    async fn claim_scheduled_event_delivery(
+        &self,
+    ) -> AppResult<Option<application::ports::ScheduledEventDelivery>> {
+        super::scheduled_events::claim_delivery(&self.pool).await
+    }
+
+    async fn scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+    ) -> AppResult<Option<application::ports::ScheduledEventDelivery>> {
+        super::scheduled_events::leased_delivery(&self.pool, delivery_id, lease_id).await
+    }
+
+    async fn finish_scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+        retry_after_secs: Option<u32>,
+    ) -> AppResult<bool> {
+        super::scheduled_events::finish_delivery(
+            &self.pool,
+            delivery_id,
+            lease_id,
+            retry_after_secs,
+        )
+        .await
+    }
+    async fn scheduled_events(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<domain::scheduled_event::ScheduledEvent>> {
+        super::scheduled_events::list(&self.pool, guild_id).await
+    }
+
+    async fn scheduled_event(
+        &self,
+        guild_id: Snowflake,
+        event_id: Snowflake,
+    ) -> AppResult<Option<domain::scheduled_event::ScheduledEvent>> {
+        super::scheduled_events::find(&self.pool, guild_id, event_id).await
+    }
+
+    async fn scheduled_event_interested(
+        &self,
+        event_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<bool> {
+        super::scheduled_events::interested(&self.pool, event_id, user_id).await
+    }
+
+    async fn onboarding(&self, guild_id: Snowflake) -> AppResult<(serde_json::Value, i64)> {
+        sqlx::query_as("SELECT onboarding, onboarding_revision FROM guild_member_screening WHERE guild_id = $1")
+            .bind(guild_id.as_i64()).fetch_one(&self.pool).await.map_err(db)
+    }
+
+    async fn set_onboarding(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<i64> {
+        let (revision,): (i64,) = sqlx::query_as("UPDATE guild_member_screening SET onboarding = $2, onboarding_revision = onboarding_revision + 1 WHERE guild_id = $1 RETURNING onboarding_revision")
+            .bind(guild_id.as_i64()).bind(value).fetch_one(&self.pool).await.map_err(db)?;
+        Ok(revision)
+    }
+    async fn welcome_screen(&self, guild_id: Snowflake) -> AppResult<serde_json::Value> {
+        let (value,): (serde_json::Value,) =
+            sqlx::query_as("SELECT welcome_screen FROM guild_member_screening WHERE guild_id = $1")
+                .bind(guild_id.as_i64())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(db)?;
+        Ok(value)
+    }
+
+    async fn set_welcome_screen(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<()> {
+        sqlx::query("UPDATE guild_member_screening SET welcome_screen = $2 WHERE guild_id = $1")
+            .bind(guild_id.as_i64())
+            .bind(value)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
+    async fn screening(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<application::ports::ScreeningConfig> {
+        let (enabled, rules, revision): (bool, Vec<String>, i64) = sqlx::query_as(
+            "SELECT enabled, rules, revision FROM guild_member_screening WHERE guild_id = $1",
+        )
+        .bind(guild_id.as_i64())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(application::ports::ScreeningConfig {
+            enabled,
+            rules,
+            revision,
+        })
+    }
+
+    async fn set_screening(
+        &self,
+        guild_id: Snowflake,
+        enabled: bool,
+        rules: &[String],
+    ) -> AppResult<application::ports::ScreeningConfig> {
+        let (enabled, rules, revision): (bool, Vec<String>, i64) = sqlx::query_as("UPDATE guild_member_screening SET enabled = $2, rules = $3, revision = revision + 1 WHERE guild_id = $1 RETURNING enabled, rules, revision")
+            .bind(guild_id.as_i64()).bind(enabled).bind(rules).fetch_one(&self.pool).await.map_err(db)?;
+        Ok(application::ports::ScreeningConfig {
+            enabled,
+            rules,
+            revision,
+        })
+    }
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>> {
         let sql = format!("SELECT {GUILD_COLUMNS} FROM guilds WHERE id = $1");
         let row: Option<GuildRow> = sqlx::query_as(&sql)

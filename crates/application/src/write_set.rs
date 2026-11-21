@@ -31,6 +31,23 @@ pub struct WebhookMetadataPatch {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mutation {
+    InsertScheduledEvent(domain::scheduled_event::ScheduledEvent),
+    UpdateScheduledEvent {
+        event: domain::scheduled_event::ScheduledEvent,
+        expected_revision: i64,
+    },
+    DeleteScheduledEvent {
+        guild_id: Snowflake,
+        event_id: Snowflake,
+        expected_revision: i64,
+    },
+    SetScheduledEventInterest {
+        guild_id: Snowflake,
+        event_id: Snowflake,
+        user_id: Snowflake,
+        channel_id: Option<Snowflake>,
+        interested: bool,
+    },
     InsertUser {
         user: User,
         credentials: Option<Credentials>,
@@ -114,6 +131,20 @@ pub enum Mutation {
     },
 
     InsertGuild(Guild),
+    ApplyOnboarding {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        revision: i64,
+        role_ids: Vec<Snowflake>,
+    },
+    CheckScreeningRevision {
+        guild_id: Snowflake,
+        revision: i64,
+    },
+    AcceptScreening {
+        guild_id: Snowflake,
+        user_id: Snowflake,
+    },
     UpdateGuild(Guild),
     DeleteGuild(Snowflake),
     InsertRole(Role),
@@ -208,6 +239,22 @@ pub enum Mutation {
     },
 
     InsertWebhook(Webhook),
+    InsertAnnouncementFollower {
+        source_channel_id: Snowflake,
+        target_channel_id: Snowflake,
+        webhook_id: Snowflake,
+    },
+    EnqueueAnnouncement {
+        source_channel_id: Snowflake,
+        source_message_id: Snowflake,
+        payload: serde_json::Value,
+        /// (target channel, follower webhook, reserved destination message id).
+        deliveries: Vec<(Snowflake, Snowflake, Snowflake)>,
+    },
+    MarkAnnouncementPublished {
+        source_channel_id: Snowflake,
+        source_message_id: Snowflake,
+    },
     /// Serializes lifecycle changes and rejects actions based on a replaced installation.
     GuardApplicationInstallation {
         guild_id: Snowflake,
