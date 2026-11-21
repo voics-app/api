@@ -43,7 +43,7 @@ jobs:
     # PR CI otherwise runs only library and binary tests. Exercise badge privacy over HTTP
     # against a disposable Postgres container before merging.
     if: github.event_name == 'pull_request'
-    runs-on: vm-runner
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
