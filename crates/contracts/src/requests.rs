@@ -145,7 +145,17 @@ pub struct GuildFolderRequest {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FriendSourceFlagsRequest {
+    pub all: Option<bool>,
+    pub mutual_friends: Option<bool>,
+    pub mutual_guilds: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
 pub struct ModifyUserSettingsRequest {
+    #[serde(default)]
+    pub friend_source_flags: Option<FriendSourceFlagsRequest>,
     #[serde(default)]
     pub locale: Option<String>,
     #[serde(default)]

@@ -151,6 +151,13 @@ async fn update_settings_handler(
     Body(body): Body<ModifyUserSettingsRequest>,
 ) -> Result<Json<UserSettingsDto>, ApiError> {
     let input = UpdateSettingsInput {
+        friend_source_flags: body.friend_source_flags.map(|flags| {
+            domain::user::FriendSourceFlagsPatch {
+                all: flags.all,
+                mutual_friends: flags.mutual_friends,
+                mutual_guilds: flags.mutual_guilds,
+            }
+        }),
         default_delivery_mode: body.default_delivery_mode,
         e2ee_calls_default: body.e2ee_calls_default,
         theme: body.theme,

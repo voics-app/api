@@ -369,6 +369,9 @@ The interface is specified in contracts#49 and docs#178. Run
 for real PostgreSQL HTTP coverage, including forced stale-edit, concurrent-install,
 remove/reinstall, removal-after-absent-read and transaction-rollback interleavings.
 
+## Friend request sources
+`friend_source_flags` in user settings accepts partial updates to `all`, `mutual_friends`, and `mutual_guilds`. Existing and new accounts default to `all: true`; when `all` is false a new request is accepted if either enabled source applies. A mutual friend must be a friend of both users; a mutual guild requires current membership by both. The username and ID request routes use the same policy. Existing friendships, pending requests and accepting a request remain usable when preferences change; blocking takes precedence. The settings are stored with account settings and synchronize through the existing settings event.
+
 ## Git hooks
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
@@ -385,3 +388,7 @@ A server can configure a single short appeal question with `PUT /guilds/{guild_i
 GIF search is disabled unless `GIF_PROVIDER_URL`, `GIF_PROVIDER_KEY` and comma-separated exact `GIF_MEDIA_HOSTS` are set. The URL is the base of a Tenor v2-compatible service exposing `featured`, `search` and `categories`. The API calls it server-side with the key, limits public requests through the existing rate limiter, and keeps up to 128 filtered JSON responses in memory for 60 seconds. The key is never returned to clients. Preview links are signed by messages and served by its existing media proxy. Enable only after confirming the provider permits proxy requests and response caching; these assumptions do not apply to GIPHY or standard KLIPY integrations. No provider or credentials are shipped. A provider agreement, key provisioning, and a live end-to-end check remain prerequisites before enabling this feature.
 
 Profile badges are separate from user flags. `GET /api/v1/users/@me/badges` lists the authenticated account's granted badge IDs and visibility; `PUT /api/v1/users/@me/badges/{id}` with `{"visible":false}` or `true` changes an existing grant only. `GET /api/v1/users/{id}/badges` returns only visible badge IDs. Grants are provisioned by trusted operators in `user_badges`; this API does not grant badges. No production badge catalog is defined yet.
+
+### Concurrent user settings
+
+Settings PATCH applies a bounded optimistic retry against a database revision, so concurrent changes to different fields or preference keys merge instead of silently restoring a stale snapshot. Exhausted contention returns 409 for a caller retry; rejected attempts do not publish settings events. Migration 0122 adds the revision and an update trigger. Roll out the migration first, then fence every older API writer before enabling privacy controls: older binaries do not compare revisions and can still overwrite newer settings.
