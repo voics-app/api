@@ -140,6 +140,8 @@ pub struct Channel {
     pub delivery_mode: DeliveryMode,
     pub voice_region: Option<String>,
     pub thread_metadata: Option<ThreadMetadata>,
+    pub forum_settings: serde_json::Value,
+    pub applied_tags: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -173,6 +175,8 @@ impl Channel {
             delivery_mode: DeliveryMode::Standard,
             voice_region: None,
             thread_metadata: None,
+            forum_settings: serde_json::json!({}),
+            applied_tags: Vec::new(),
             created_at,
         }
     }

@@ -259,11 +259,18 @@ pub enum Mutation {
 pub struct WriteSet {
     pub mutations: Vec<Mutation>,
     pub events: Vec<DomainEvent>,
+    /// A publication must still own this forum lease at commit time.
+    pub forum_guard: Option<(Snowflake, String)>,
 }
 
 impl WriteSet {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn guard_forum_publication(&mut self, id: Snowflake, token: String) -> &mut Self {
+        self.forum_guard = Some((id, token));
+        self
     }
 
     pub fn mutate(&mut self, mutation: Mutation) -> &mut Self {

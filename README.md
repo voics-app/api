@@ -1,5 +1,7 @@
 # api
 
+Forum post creation uses an author-scoped request UUID and reserved thread and message IDs. Standard-mode requests return a pending status until the opening message is confirmed; retry the same request to recover an expired lease. Published forum feeds include message summaries from the messages service. Private-mode forum creation is not yet supported.
+
 The Voics REST API: accounts, users and settings, DMs, relationships, devices, guilds and their channels, roles, members, bans, invites, emojis, audit log, applications and bots, commands, interactions and webhooks. It also serves the internal P4 endpoints used by gateway and admin-bff.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
