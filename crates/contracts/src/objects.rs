@@ -398,8 +398,6 @@ pub struct ChannelDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub member_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_count: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_thread_member: Option<bool>,
     pub delivery_mode: &'static str,
     pub voice_region: Option<String>,
@@ -463,7 +461,6 @@ impl ChannelDto {
                 .kind
                 .is_thread()
                 .then_some(channel.thread_member_ids.len()),
-            message_count: None,
             is_thread_member: None,
             delivery_mode: delivery_mode.as_str(),
             voice_region: channel.voice_region.clone(),
