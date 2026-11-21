@@ -118,10 +118,14 @@ impl SessionRepository for PgStore {
             return Ok(RotateOutcome::Invalid);
         }
         if let Some(rotated_at) = token.rotated_at {
+            // `now` is taken before this request waited for the row lock, so a concurrent identical retry
+            // that rotated the token while we waited can carry a slightly later timestamp. Allow that skew;
+            // anything further in the future is still treated as reuse.
+            let lock_skew = chrono::Duration::seconds(30);
             if replay
                 .filter(|replay| {
                     rotated_at >= replay.earliest_rotation
-                        && rotated_at <= now
+                        && rotated_at <= now + lock_skew
                         && token.expires_at > now
                         && token.rotation_request_hash.as_deref()
                             == Some(replay.request_hash.as_str())
