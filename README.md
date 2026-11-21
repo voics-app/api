@@ -6,6 +6,18 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+The internal channel-access endpoint returns 403 when the caller lacks VIEW_CHANNEL, before
+returning encrypted relay recipient IDs. Eligible viewers retain the existing permission response.
+
+Scheduled events (api#49, draft): guild members can list visible events and inspect their
+own interest. Creators with `CREATE_EVENTS` and managers with `MANAGE_EVENTS` can create,
+modify and delete events; channel events require a visible matching voice or stage channel.
+Interest writes are idempotent. Changes and their gateway dispatches share the Postgres
+transaction. Migration `0087` also records start-reminder claims; a bounded worker writes
+user-targeted outbox records and the desktop rechecks access and interest before displaying.
+The proposed notifier consumer sends generic mobile pushes after a second eligibility check,
+but its restart and overload delivery guarantees are limited. These paths need integrated
+verification before release; see `http_scheduled_events` and `postgres_scheduled_events` tests.
 Announcement follows and publication (api#36) are gated by
 `ANNOUNCEMENT_DELIVERY_ENABLED`, default `false`. A follower is a non-executable
 type-2 webhook; publication reserves one delivery per source message and target

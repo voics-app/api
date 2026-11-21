@@ -17,6 +17,7 @@ pub mod members;
 pub mod mfa;
 pub mod passkeys;
 pub mod reports;
+pub mod scheduled_events;
 pub mod sessions;
 pub mod templates;
 pub mod users;

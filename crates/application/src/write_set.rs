@@ -31,6 +31,23 @@ pub struct WebhookMetadataPatch {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mutation {
+    InsertScheduledEvent(domain::scheduled_event::ScheduledEvent),
+    UpdateScheduledEvent {
+        event: domain::scheduled_event::ScheduledEvent,
+        expected_revision: i64,
+    },
+    DeleteScheduledEvent {
+        guild_id: Snowflake,
+        event_id: Snowflake,
+        expected_revision: i64,
+    },
+    SetScheduledEventInterest {
+        guild_id: Snowflake,
+        event_id: Snowflake,
+        user_id: Snowflake,
+        channel_id: Option<Snowflake>,
+        interested: bool,
+    },
     InsertUser {
         user: User,
         credentials: Option<Credentials>,
