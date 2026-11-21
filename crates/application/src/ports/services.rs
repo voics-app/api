@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use domain::Snowflake;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::DomainEvent;
 use crate::write_set::WriteSet;
 
@@ -102,6 +102,19 @@ pub struct StoredMessage {
 /// Messages are owned by the `messages` service.
 #[async_trait]
 pub trait MessageService: Send + Sync {
+    /// Server-stored forum summaries for already authorized channels.
+    async fn forum_summaries(&self, _channel_ids: &[Snowflake]) -> AppResult<Vec<Value>> {
+        Err(AppError::Unavailable("forum summaries unavailable".into()))
+    }
+    /// One invocation only after the caller durably claims the reserved forum message.
+    async fn create_forum_start(
+        &self,
+        _channel_id: Snowflake,
+        _message: Value,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable("forum start is unavailable".into()))
+    }
+
     /// Creates a message on behalf of a bot, webhook or interaction.
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage>;
     async fn edit(
@@ -118,6 +131,25 @@ pub trait MessageService: Send + Sync {
         channel_id: Snowflake,
         message_id: Snowflake,
     ) -> AppResult<Option<StoredMessage>>;
+    async fn mark_crossposted(
+        &self,
+        _channel_id: Snowflake,
+        _message_id: Snowflake,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable(
+            "message publication marker unavailable".into(),
+        ))
+    }
+    /// Sends a journalled follower delivery. Errors after dispatch may be ambiguous.
+    async fn deliver_crosspost(
+        &self,
+        _channel_id: Snowflake,
+        _body: Value,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable(
+            "crosspost delivery unavailable".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

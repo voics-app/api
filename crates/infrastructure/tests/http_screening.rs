@@ -1,0 +1,260 @@
+//! Screening through public HTTP and the internal message authorization boundary.
+mod support;
+
+use axum::http::{Method, StatusCode};
+use serde_json::json;
+use support::http::{call, request, send, INTERNAL_TOKEN};
+use support::{jwt_keys, ports, start_database};
+
+async fn register(app: &axum::Router, name: &str) -> (String, String) {
+    let (status, body) = send(app, request(Method::POST, "/api/v1/auth/register", None,
+        Some(json!({"email": format!("{name}@example.com"), "username": name, "password": "a-long-enough-passphrase"})))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    (
+        body["access_token"].as_str().unwrap().into(),
+        body["user"]["id"].as_str().unwrap().into(),
+    )
+}
+
+async fn permissions(app: &axum::Router, channel: &str, user: &str) -> u64 {
+    let req = axum::http::Request::builder()
+        .uri(format!("/internal/v1/channels/{channel}/access/{user}"))
+        .header("x-internal-token", INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, body) = send(app, req).await;
+    assert_eq!(status, StatusCode::OK);
+    body["permissions"].as_str().unwrap().parse().unwrap()
+}
+
+#[tokio::test]
+async fn join_and_accept_current_rules_before_sending() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let app = interface::router(interface::state::AppState {
+        ports: ports(&database.pool, &public, &private),
+        internal_token: INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: Default::default(),
+    });
+    let (owner, _) = register(&app, "screen_owner").await;
+    let (guest, guest_id) = register(&app, "screen_guest").await;
+    let (status, guild) = call(
+        &app,
+        Method::POST,
+        "/api/v1/guilds",
+        &owner,
+        Some(json!({"name":"Rules"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let guild_id = guild["id"].as_str().unwrap();
+    let path = format!("/api/v1/guilds/{guild_id}/member-verification");
+    let (status, first) = call(
+        &app,
+        Method::PUT,
+        &path,
+        &owner,
+        Some(json!({"enabled":true,"rules":["Be kind"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, channels) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{guild_id}/channels"),
+        &owner,
+        None,
+    )
+    .await;
+    let channel = channels
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["type"] == 0)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let (_, role) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild_id}/roles"),
+        &owner,
+        Some(json!({"name":"Explorer","permissions":"0"})),
+    )
+    .await;
+    let role_id = role["id"].as_str().unwrap();
+    let onboarding_path = format!("/api/v1/guilds/{guild_id}/onboarding");
+    let (status, onboarding) = call(&app, Method::PUT, &onboarding_path, &owner, Some(json!({"enabled":true,"questions":[{"title":"What interests you?","options":[{"label":"Chat","role_id":role_id,"channel_id":channel}]}]}))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, privileged) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{guild_id}/roles"),
+        &owner,
+        Some(json!({"name":"Administrator","permissions":"8"})),
+    )
+    .await;
+    let (status, _) = call(&app, Method::PUT, &onboarding_path, &owner, Some(json!({"enabled":true,"questions":[{"title":"Escalate?","options":[{"label":"Admin","role_id":privileged["id"],"channel_id":null}]}]}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let welcome_path = format!("/api/v1/guilds/{guild_id}/welcome-screen");
+    let (status, _) = call(&app, Method::PUT, &welcome_path, &owner, Some(json!({"enabled":true,"description":"Welcome!","channels":[{"channel_id":channel,"description":"Say hello"}]}))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, invite) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{channel}/invites"),
+        &owner,
+        Some(json!({})),
+    )
+    .await;
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/invites/{}", invite["code"].as_str().unwrap()),
+        &guest,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{channel}/threads"),
+        &guest,
+        Some(json!({"name":"Before rules"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (_, shown) = call(&app, Method::GET, &path, &guest, None).await;
+    assert_eq!(shown["pending"], true);
+    // A reconnect to a large server still carries the caller's pending state,
+    // even when earlier member IDs fill the ordinary snapshot limit.
+    sqlx::query("INSERT INTO users (id, username, created_at) SELECT n, 'screen_seed_' || n, now() FROM generate_series(1, 1000) n")
+        .execute(&database.pool).await.unwrap();
+    sqlx::query("INSERT INTO members (guild_id, user_id, joined_at) SELECT $1, n, now() FROM generate_series(1, 1000) n")
+        .bind(guild_id.parse::<i64>().unwrap()).execute(&database.pool).await.unwrap();
+    let ready_request = axum::http::Request::builder()
+        .uri(format!("/internal/v1/users/{guest_id}/ready"))
+        .header("x-internal-token", INTERNAL_TOKEN)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (status, ready) = send(&app, ready_request).await;
+    assert_eq!(status, StatusCode::OK);
+    let own = ready["guilds"][0]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["user"]["id"] == guest_id)
+        .unwrap();
+    assert_eq!(own["pending"], true);
+    let complete = format!("{onboarding_path}/complete");
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, welcome) = call(&app, Method::GET, &welcome_path, &guest, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(welcome["channels"][0]["channel_id"], channel);
+    assert_eq!(shown["revision"], first["revision"]);
+    let (status, _) = call(
+        &app,
+        Method::PUT,
+        &path,
+        &guest,
+        Some(json!({"enabled":false,"rules":[]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (_, changed) = call(
+        &app,
+        Method::PUT,
+        &path,
+        &owner,
+        Some(json!({"enabled":true,"rules":["Be kind", "No spam"]})),
+    )
+    .await;
+    let accept = format!("{path}/accept");
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &accept,
+        &guest,
+        Some(json!({"revision": first["revision"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &accept,
+        &guest,
+        Some(json!({"revision": changed["revision"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_ne!(permissions(&app, channel, &guest_id).await & (1 << 11), 0);
+    let overwrite = format!("/api/v1/channels/{channel}/permissions/{role_id}");
+    let (status, _) = call(
+        &app,
+        Method::PUT,
+        &overwrite,
+        &owner,
+        Some(json!({"type":0,"allow":"8192","deny":"0"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(&app, Method::PUT, &onboarding_path, &owner, Some(json!({"enabled":true,"questions":[{"title":"What interests you?","options":[{"label":"Chat","role_id":role_id,"channel_id":channel}]}]}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = call(&app, Method::DELETE, &overwrite, &owner, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, result) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(result["channel_ids"], json!([channel]));
+    let (status, member) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{guild_id}/members/{guest_id}"),
+        &owner,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(member["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|id| id == role_id));
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &complete,
+        &guest,
+        Some(json!({"revision":onboarding["revision"],"choices":[0]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}

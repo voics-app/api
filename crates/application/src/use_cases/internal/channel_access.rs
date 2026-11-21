@@ -30,6 +30,24 @@ pub async fn execute(
 ) -> AppResult<ChannelAccessInfo> {
     ensure_current_account_access(ports, user_id).await?;
     let access = ChannelAccess::resolve(ports, channel_id, user_id).await?;
+    if access
+        .channel
+        .forum_settings
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        == Some("deleted")
+    {
+        return Err(AppError::missing_access());
+    }
+    let pending = access
+        .channel
+        .forum_settings
+        .get("pending")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if pending && access.channel.owner_id != Some(user_id) {
+        return Err(AppError::missing_access());
+    }
     let delivery_mode = effective_mode(ports, &access.channel).await?;
     let recipient_ids = match (&access.guild, delivery_mode) {
         (Some(guild), mode) if mode != DeliveryMode::Standard => {
@@ -45,7 +63,11 @@ pub async fn execute(
         _ => access.channel.recipient_ids.clone(),
     };
     Ok(ChannelAccessInfo {
-        permissions: access.permissions,
+        permissions: if pending {
+            Permissions::from_bits(0)
+        } else {
+            access.permissions
+        },
         guild_id: access.channel.guild_id,
         channel_type: access.channel.kind,
         delivery_mode,
