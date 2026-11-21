@@ -607,3 +607,166 @@ async fn an_unavailable_dependency_does_not_fall_back_to_unfiltered_recipients()
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(body.get("recipients").is_none());
 }
+
+#[tokio::test]
+async fn thread_lock_is_reported_to_message_access_and_webhook_routes() {
+    let database = start_database().await;
+    let app = app(&database);
+    let (owner, owner_id) = account(&app, "lockowner").await;
+    let (_, parent) = guild(&app, &owner, &[]).await;
+    let created = ok_call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{parent}/threads"),
+        &owner,
+        Some(json!({"name":"Locked", "type":11})),
+    )
+    .await;
+    let thread = created["id"].as_str().unwrap();
+    for locked in [false, true, false] {
+        if locked || !created["thread_metadata"]["locked"].as_bool().unwrap() {
+            ok_call(
+                &app,
+                Method::PATCH,
+                &format!("/api/v1/channels/{thread}"),
+                &owner,
+                Some(json!({"locked":locked})),
+            )
+            .await;
+        }
+        for suffix in [format!("access/{owner_id}"), "delivery".to_owned()] {
+            let req = axum::http::Request::builder()
+                .method("GET")
+                .uri(format!("/internal/v1/channels/{thread}/{suffix}"))
+                .header("x-internal-token", INTERNAL_TOKEN)
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let (status, body) = send(&app, req).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(body["thread_locked"], locked);
+        }
+    }
+}
+
+#[tokio::test]
+async fn thread_lifecycle_uses_injected_time_and_publishes_transitions() {
+    use application::ports::ThreadLifecycleStore;
+    use chrono::Duration;
+    use infrastructure::postgres::PgThreadLifecycle;
+
+    let database = start_database().await;
+    let app = app(&database);
+    let (owner, _) = account(&app, "lifecycleowner").await;
+    let (_, parent) = guild(&app, &owner, &[]).await;
+    let created = ok_call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{parent}/threads"),
+        &owner,
+        Some(json!({"name":"Lifecycle", "type":11, "auto_archive_duration":60})),
+    )
+    .await;
+    let thread = created["id"].as_str().unwrap();
+    let id = domain::Snowflake::new(thread.parse().unwrap());
+    let initial: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT last_activity_at FROM thread_activity WHERE thread_id = $1")
+            .bind(id.as_i64())
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+    let lifecycle = PgThreadLifecycle::new(database.pool.clone(), "nl-home".into());
+    assert_eq!(
+        lifecycle
+            .archive_due(initial + Duration::minutes(59), 10)
+            .await
+            .unwrap(),
+        0
+    );
+    sqlx::query("ALTER TABLE outbox ADD CONSTRAINT reject_thread_update CHECK (payload->>'type' <> 'THREAD_UPDATE')")
+        .execute(&database.pool).await.unwrap();
+    assert!(lifecycle
+        .archive_due(initial + Duration::minutes(60), 10)
+        .await
+        .is_err());
+    let archived: bool = sqlx::query_scalar(
+        "SELECT (thread_metadata->>'archived')::boolean FROM channels WHERE id = $1",
+    )
+    .bind(id.as_i64())
+    .fetch_one(&database.pool)
+    .await
+    .unwrap();
+    assert!(!archived, "outbox failure rolls back the archive");
+    sqlx::query("ALTER TABLE outbox DROP CONSTRAINT reject_thread_update")
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        lifecycle
+            .archive_due(initial + Duration::minutes(60), 10)
+            .await
+            .unwrap(),
+        1
+    );
+    let path = format!("/api/v1/channels/{thread}");
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        true
+    );
+    let activity = axum::http::Request::builder()
+        .method(Method::POST)
+        .uri(format!("/internal/v1/threads/{thread}/activity"))
+        .header("x-internal-token", INTERNAL_TOKEN)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(
+            json!({"occurred_at": initial + Duration::minutes(59)}).to_string(),
+        ))
+        .unwrap();
+    let (status, _) = send(&app, activity).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        false
+    );
+    assert_eq!(
+        lifecycle
+            .archive_due(initial + Duration::minutes(119), 10)
+            .await
+            .unwrap(),
+        1
+    );
+    lifecycle
+        .record_message(
+            id,
+            initial + Duration::minutes(59),
+            initial + Duration::minutes(120),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        true
+    );
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE payload->>'type' = 'THREAD_UPDATE' AND payload->>'channel_id' = $1")
+        .bind(thread).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(events, 3);
+    ok_call(
+        &app,
+        Method::PATCH,
+        &path,
+        &owner,
+        Some(json!({"locked":true})),
+    )
+    .await;
+    lifecycle
+        .record_message(
+            id,
+            initial + Duration::minutes(120),
+            initial + Duration::minutes(120),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ok_call(&app, Method::GET, &path, &owner, None).await["thread_metadata"]["archived"],
+        true
+    );
+}

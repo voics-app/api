@@ -303,6 +303,10 @@ pub trait ChannelRepository: Send + Sync {
     }
 
     async fn find(&self, id: Snowflake) -> AppResult<Option<Channel>>;
+    async fn stage_instance(
+        &self,
+        channel_id: Snowflake,
+    ) -> AppResult<Option<domain::stage_instance::StageInstance>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Channel>>;
     async fn list_private(&self, user_id: Snowflake) -> AppResult<Vec<Channel>>;
     async fn find_dm(&self, a: Snowflake, b: Snowflake) -> AppResult<Option<Channel>>;
@@ -328,6 +332,22 @@ pub struct ScheduledEventDelivery {
 
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>>;
+    async fn set_appeal_form(&self, guild_id: Snowflake, question: &str) -> AppResult<()>;
+    async fn submit_appeal(
+        &self,
+        id: Snowflake,
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        answer: &str,
+        question: &str,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeal(
+        &self,
+        guild_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeals(&self, guild_id: Snowflake) -> AppResult<Vec<domain::ban_appeal::BanAppeal>>;
     async fn claim_scheduled_event_delivery(&self) -> AppResult<Option<ScheduledEventDelivery>>;
     async fn scheduled_event_delivery(
         &self,

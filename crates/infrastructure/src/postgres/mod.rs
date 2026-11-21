@@ -25,6 +25,7 @@ mod scheduled_events;
 mod session_revocation;
 mod sessions;
 mod snowflake;
+mod thread_lifecycle;
 mod unit_of_work;
 mod users;
 mod vanity;
@@ -37,6 +38,7 @@ use sqlx::PgPool;
 
 pub use scheduled_events::enqueue_due_reminders;
 pub use snowflake::PgIdReservations;
+pub use thread_lifecycle::PgThreadLifecycle;
 pub use unit_of_work::PgUnitOfWork;
 
 /// Opens the connection pool.

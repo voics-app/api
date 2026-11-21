@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool};
 
 use application::ports::ChannelRepository;
 use application::AppResult;
@@ -115,6 +115,14 @@ pub(super) async fn hydrate(
     pool: &PgPool,
     rows: Vec<ChannelRow>,
 ) -> Result<Vec<Channel>, sqlx::Error> {
+    let mut conn = pool.acquire().await?;
+    hydrate_on(&mut conn, rows).await
+}
+
+pub(super) async fn hydrate_on(
+    conn: &mut PgConnection,
+    rows: Vec<ChannelRow>,
+) -> Result<Vec<Channel>, sqlx::Error> {
     let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -122,20 +130,20 @@ pub(super) async fn hydrate(
     let recipient_rows: Vec<(i64, i64)> =
         sqlx::query_as("SELECT channel_id, user_id FROM channel_recipients WHERE channel_id = ANY($1) ORDER BY user_id")
             .bind(&ids)
-            .fetch_all(pool)
+            .fetch_all(&mut *conn)
             .await?;
     let thread_member_rows: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT thread_id, user_id FROM thread_members WHERE thread_id = ANY($1) ORDER BY user_id",
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
     let overwrite_rows: Vec<OverwriteRow> = sqlx::query_as(
         "SELECT channel_id, target_id, kind, allow_bits, deny_bits FROM permission_overwrites \
          WHERE channel_id = ANY($1) ORDER BY channel_id, kind, target_id",
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
 
     let mut recipients: HashMap<i64, Vec<i64>> = HashMap::new();
@@ -171,6 +179,26 @@ impl PgStore {
 
 #[async_trait]
 impl ChannelRepository for PgStore {
+    async fn stage_instance(
+        &self,
+        channel_id: Snowflake,
+    ) -> AppResult<Option<domain::stage_instance::StageInstance>> {
+        let row: Option<(i64, i64, i64, String)> = sqlx::query_as(
+            "SELECT id, guild_id, channel_id, topic FROM stage_instances WHERE channel_id = $1",
+        )
+        .bind(channel_id.as_i64())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(
+            |(id, guild_id, channel_id, topic)| domain::stage_instance::StageInstance {
+                id: sf(id),
+                guild_id: sf(guild_id),
+                channel_id: sf(channel_id),
+                topic,
+            },
+        ))
+    }
     async fn find_forum_request(
         &self,
         _guild_id: Snowflake,

@@ -99,6 +99,7 @@ pub struct Ports {
     pub relationships: Arc<dyn RelationshipRepository>,
     pub reports: Arc<dyn ReportRepository>,
     pub channels: Arc<dyn ChannelRepository>,
+    pub thread_lifecycle: Arc<dyn ThreadLifecycleStore>,
     pub guilds: Arc<dyn GuildRepository>,
     pub invites: Arc<dyn InviteRepository>,
     pub emojis: Arc<dyn EmojiRepository>,

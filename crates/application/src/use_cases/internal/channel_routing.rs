@@ -16,6 +16,7 @@ pub struct ChannelRouting {
     pub channel_type: ChannelType,
     pub delivery_mode: DeliveryMode,
     pub recipient_ids: Vec<Snowflake>,
+    pub thread_locked: bool,
 }
 
 pub async fn execute(ports: &Ports, channel_id: Snowflake) -> AppResult<ChannelRouting> {
@@ -39,6 +40,11 @@ pub async fn execute(ports: &Ports, channel_id: Snowflake) -> AppResult<ChannelR
     Ok(ChannelRouting {
         guild_id: channel.guild_id,
         channel_type: channel.kind,
+        thread_locked: channel.kind.is_thread()
+            && channel
+                .thread_metadata
+                .as_ref()
+                .is_none_or(|meta| meta.locked),
         delivery_mode,
         recipient_ids: channel.recipient_ids.clone(),
     })

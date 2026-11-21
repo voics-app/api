@@ -292,6 +292,44 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             kind,
             since,
         } => identity::set_relationship(conn, *user_id, *target_id, *kind, *since).await,
+        Mutation::InsertStageInstance(stage) => {
+            sqlx::query("INSERT INTO stage_instances (id, guild_id, channel_id, topic) VALUES ($1, $2, $3, $4)")
+                .bind(stage.id.as_i64()).bind(stage.guild_id.as_i64()).bind(stage.channel_id.as_i64())
+                .bind(&stage.topic).execute(conn).await.map_err(db)?;
+            Ok(())
+        }
+        Mutation::UpdateStageInstance(stage) => {
+            let result = sqlx::query(
+                "UPDATE stage_instances SET topic = $1 WHERE channel_id = $2 AND id = $3",
+            )
+            .bind(&stage.topic)
+            .bind(stage.channel_id.as_i64())
+            .bind(stage.id.as_i64())
+            .execute(conn)
+            .await
+            .map_err(db)?;
+            if result.rows_affected() == 0 {
+                return Err(application::AppError::NotFound(
+                    application::Resource::Channel,
+                ));
+            }
+            Ok(())
+        }
+        Mutation::DeleteStageInstance { channel_id, id } => {
+            let result =
+                sqlx::query("DELETE FROM stage_instances WHERE channel_id = $1 AND id = $2")
+                    .bind(channel_id.as_i64())
+                    .bind(id.as_i64())
+                    .execute(conn)
+                    .await
+                    .map_err(db)?;
+            if result.rows_affected() == 0 {
+                return Err(application::AppError::NotFound(
+                    application::Resource::Channel,
+                ));
+            }
+            Ok(())
+        }
         Mutation::InsertChannel(channel) | Mutation::UpdateChannel(channel) => {
             identity::upsert_channel(conn, channel).await
         }
@@ -468,6 +506,36 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             user_id,
             reason,
         } => guilds::insert_ban(conn, *guild_id, *user_id, reason.as_deref()).await,
+        Mutation::ResolveBanAppeal {
+            guild_id,
+            appeal_id,
+            user_id,
+            reviewer_id,
+            accept,
+        } => {
+            let ban_time: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
+                "SELECT created_at FROM bans WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+            )
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(db)?;
+            let updated = sqlx::query("UPDATE ban_appeals SET status=$4, resolved_at=now(), resolved_by=$5 WHERE id=$1 AND guild_id=$2 AND user_id=$3 AND status='open' AND ban_created_at=$6")
+                .bind(appeal_id.as_i64()).bind(guild_id.as_i64()).bind(user_id.as_i64())
+                .bind(if *accept { "accepted" } else { "denied" }).bind(reviewer_id.as_i64()).bind(ban_time)
+                .execute(&mut *conn).await.map_err(db)?;
+            if updated.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 0,
+                    message: "Appeal is no longer open for the current ban".into(),
+                });
+            }
+            if *accept {
+                guilds::delete_ban(conn, *guild_id, *user_id).await?;
+            }
+            Ok(())
+        }
         Mutation::DeleteBan { guild_id, user_id } => {
             guilds::delete_ban(conn, *guild_id, *user_id).await
         }

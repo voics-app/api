@@ -113,6 +113,12 @@ pub enum Mutation {
         since: DateTime<Utc>,
     },
 
+    InsertStageInstance(domain::stage_instance::StageInstance),
+    UpdateStageInstance(domain::stage_instance::StageInstance),
+    DeleteStageInstance {
+        channel_id: Snowflake,
+        id: Snowflake,
+    },
     InsertChannel(Channel),
     /// Replaces every column, overwrites and recipients included.
     UpdateChannel(Channel),
@@ -173,6 +179,13 @@ pub enum Mutation {
     DeleteBan {
         guild_id: Snowflake,
         user_id: Snowflake,
+    },
+    ResolveBanAppeal {
+        guild_id: Snowflake,
+        appeal_id: Snowflake,
+        user_id: Snowflake,
+        reviewer_id: Snowflake,
+        accept: bool,
     },
 
     InsertInvite(Invite),

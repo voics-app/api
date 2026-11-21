@@ -85,6 +85,7 @@ pub struct ChannelAccessDto {
     pub channel_type: u8,
     pub delivery_mode: String,
     pub recipient_ids: Vec<Id>,
+    pub thread_locked: bool,
 }
 
 /// `GET /internal/v1/channels/{id}/delivery`: the channel without a user.
@@ -94,6 +95,7 @@ pub struct ChannelRoutingDto {
     pub channel_type: u8,
     pub delivery_mode: String,
     pub recipient_ids: Vec<Id>,
+    pub thread_locked: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

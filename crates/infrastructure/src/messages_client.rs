@@ -3,6 +3,7 @@
 
 use async_trait::async_trait;
 use reqwest::{Client, Method, Url};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use application::ports::{MessageService, StoredMessage};
@@ -81,6 +82,17 @@ fn stored(body: Value) -> AppResult<StoredMessage> {
         .and_then(|raw| raw.parse::<Snowflake>().ok())
         .ok_or_else(|| AppError::Unavailable("messages returned no message id".into()))?;
     Ok(StoredMessage { id, body })
+}
+
+#[derive(Serialize)]
+struct MessageCountsRequest {
+    channel_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct MessageCountDto {
+    channel_id: String,
+    message_count: u64,
 }
 
 #[async_trait]
@@ -199,5 +211,30 @@ impl MessageService for HttpMessages {
     async fn delete(&self, channel_id: Snowflake, message_id: Snowflake) -> AppResult<()> {
         let path = format!("internal/v1/channels/{channel_id}/messages/{message_id}");
         self.send(Method::DELETE, &path, None).await.map(|_| ())
+    }
+
+    async fn message_counts(&self, channel_ids: &[Snowflake]) -> AppResult<Vec<(Snowflake, u64)>> {
+        let body = serde_json::to_value(MessageCountsRequest {
+            channel_ids: channel_ids.iter().map(ToString::to_string).collect(),
+        })
+        .map_err(AppError::internal)?;
+        let response = self
+            .send(
+                Method::POST,
+                "internal/v1/channels/message-counts",
+                Some(body),
+            )
+            .await?;
+        let counts: Vec<MessageCountDto> = serde_json::from_value(response)
+            .map_err(|error| AppError::Unavailable(format!("messages count body: {error}")))?;
+        counts
+            .into_iter()
+            .map(|count| {
+                let channel_id = count.channel_id.parse().map_err(|_| {
+                    AppError::Unavailable("messages returned an invalid channel id".into())
+                })?;
+                Ok((channel_id, count.message_count))
+            })
+            .collect()
     }
 }

@@ -113,6 +113,10 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         relationships: store.clone(),
         reports: store.clone(),
         channels: store.clone(),
+        thread_lifecycle: Arc::new(infrastructure::postgres::PgThreadLifecycle::new(
+            pool.clone(),
+            region.clone(),
+        )),
         guilds: store.clone(),
         invites: store.clone(),
         emojis: store.clone(),
@@ -173,6 +177,7 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
         },
     };
     let prune_ports = ports.clone();
+    let lifecycle_ports = ports.clone();
     if config.announcement_delivery_enabled {
         tokio::spawn(
             infrastructure::announcement_relay::AnnouncementRelay::new(
@@ -198,6 +203,22 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
                 infrastructure::postgres::enqueue_due_reminders(&reminder_pool).await
             {
                 tracing::warn!(%error, "scheduled event reminder enqueue failed");
+            }
+        }
+    });
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            match lifecycle_ports
+                .thread_lifecycle
+                .archive_due(lifecycle_ports.clock.now(), 100)
+                .await
+            {
+                Ok(0) => {}
+                Ok(count) => tracing::info!(count, "auto-archived inactive threads"),
+                Err(error) => tracing::warn!(%error, "thread auto-archive pass failed"),
             }
         }
     });
