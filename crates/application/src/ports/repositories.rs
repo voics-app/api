@@ -495,3 +495,17 @@ pub trait ReportRepository: Send + Sync {
         at: DateTime<Utc>,
     ) -> AppResult<bool>;
 }
+
+/// Soundboard reads. Mutations are committed with the guild outbox.
+#[async_trait]
+pub trait SoundboardRepository: Send + Sync {
+    async fn list_sounds(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<domain::soundboard::SoundboardSound>>;
+    async fn find_sound(
+        &self,
+        guild_id: Snowflake,
+        sound_id: Snowflake,
+    ) -> AppResult<Option<domain::soundboard::SoundboardSound>>;
+}

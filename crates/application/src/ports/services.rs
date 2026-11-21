@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use domain::Snowflake;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::DomainEvent;
 use crate::write_set::WriteSet;
 
@@ -133,6 +133,28 @@ pub struct RateLimitDecision {
 /// Live presence, owned by the gateway. Read-only here: the api only counts.
 #[async_trait]
 pub trait PresenceDirectory: Send + Sync {
+    /// The gateway owns live voice state; lack of a trusted response never grants access.
+    async fn in_voice_channel(
+        &self,
+        _guild_id: Snowflake,
+        _channel_id: Snowflake,
+        _user_id: Snowflake,
+    ) -> AppResult<bool> {
+        Err(AppError::Unavailable(
+            "voice state lookup is not configured".into(),
+        ))
+    }
+    /// True only if both voice and soundboard publication are currently granted by the authoritative control plane.
+    async fn can_publish_soundboard(
+        &self,
+        _guild_id: Snowflake,
+        _channel_id: Snowflake,
+        _user_id: Snowflake,
+    ) -> AppResult<bool> {
+        Err(AppError::Unavailable(
+            "soundboard publication authorization is not configured".into(),
+        ))
+    }
     /// How many of `user_ids` are currently online (any status but offline/invisible).
     async fn online_count(&self, user_ids: &[Snowflake]) -> AppResult<u64>;
     /// Which of `user_ids` hold at least one live gateway session, whatever their status.

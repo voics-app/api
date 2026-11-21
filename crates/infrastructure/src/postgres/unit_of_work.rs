@@ -6,6 +6,7 @@ mod authorizations;
 mod devices;
 mod guilds;
 mod identity;
+mod soundboard;
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -216,6 +217,11 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         }
         Mutation::ConsumeVanityInvite { guild_id, code } => {
             super::vanity::consume(conn, *guild_id, code).await
+        }
+        Mutation::InsertSoundboardSound(sound) => soundboard::insert(conn, sound).await,
+        Mutation::UpdateSoundboardSound(sound) => soundboard::update(conn, sound).await,
+        Mutation::DeleteSoundboardSound { guild_id, sound_id } => {
+            soundboard::delete(conn, *guild_id, *sound_id).await
         }
         Mutation::InsertEmoji(emoji) | Mutation::UpdateEmoji(emoji) => {
             guilds::upsert_emoji(conn, emoji).await

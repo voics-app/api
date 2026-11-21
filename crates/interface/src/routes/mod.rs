@@ -17,6 +17,7 @@ pub mod mfa;
 pub mod passkeys;
 pub mod reports;
 pub mod sessions;
+pub mod soundboard;
 pub mod templates;
 pub mod users;
 pub mod webhooks;

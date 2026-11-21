@@ -24,6 +24,7 @@ pub mod relationship;
 pub mod report;
 pub mod session;
 pub mod snowflake;
+pub mod soundboard;
 pub mod template;
 pub mod user;
 pub mod user_preferences;

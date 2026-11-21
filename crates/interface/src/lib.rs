@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::members::routes())
         .merge(routes::invites::routes())
         .merge(routes::emojis::routes())
+        .merge(routes::soundboard::routes())
         .merge(routes::applications::routes())
         .merge(routes::integrations::routes())
         .merge(routes::reports::routes())

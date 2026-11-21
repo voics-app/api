@@ -33,6 +33,9 @@ pub enum AuditAction {
     EmojiCreate,
     EmojiUpdate,
     EmojiDelete,
+    SoundboardCreate,
+    SoundboardUpdate,
+    SoundboardDelete,
     ThreadCreate,
     ThreadUpdate,
     ThreadDelete,
@@ -69,13 +72,16 @@ impl AuditAction {
             EmojiCreate => 60,
             EmojiUpdate => 61,
             EmojiDelete => 62,
+            SoundboardCreate => 130,
+            SoundboardUpdate => 131,
+            SoundboardDelete => 132,
             ThreadCreate => 110,
             ThreadUpdate => 111,
             ThreadDelete => 112,
         }
     }
 
-    pub const ALL: [AuditAction; 30] = {
+    pub const ALL: [AuditAction; 33] = {
         use AuditAction::*;
         [
             GuildUpdate,
@@ -105,6 +111,9 @@ impl AuditAction {
             EmojiCreate,
             EmojiUpdate,
             EmojiDelete,
+            SoundboardCreate,
+            SoundboardUpdate,
+            SoundboardDelete,
             ThreadCreate,
             ThreadUpdate,
             ThreadDelete,
