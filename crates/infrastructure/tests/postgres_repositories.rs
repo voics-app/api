@@ -249,4 +249,63 @@ async fn guild_lifecycle_round_trips_through_postgres() {
             .map(|i| i.uses),
         Some(1)
     );
+
+    let mut forum = Channel::new(
+        Snowflake::new(102),
+        ChannelType::GuildForum,
+        Some(guild_id),
+        now,
+    );
+    forum.name = Some("ideas".into());
+    let mut forum_write = WriteSet::new();
+    forum_write.mutate(Mutation::InsertChannel(forum.clone()));
+    uow.commit(forum_write).await.expect("forum committed");
+
+    let forum_post = |id| {
+        let mut post = Channel::new(id, ChannelType::PublicThread, Some(guild_id), now);
+        post.name = Some(format!("post-{id}"));
+        post.parent_id = Some(forum.id);
+        post.owner_id = Some(alice);
+        post.forum_settings = serde_json::json!({
+            "pending": true,
+            "status": "pending",
+            "request_key": "request-1",
+            "request_hash": "same-body",
+            "message_id": "105"
+        });
+        post
+    };
+    let first_post = forum_post(Snowflake::new(103));
+    let second_post = forum_post(Snowflake::new(104));
+    let mut first_write = WriteSet::new();
+    first_write.mutate(Mutation::InsertChannel(first_post.clone()));
+    let mut second_write = WriteSet::new();
+    second_write.mutate(Mutation::InsertChannel(second_post.clone()));
+    let first_writer = PgUnitOfWork::new(pool.clone(), "nl-home".into());
+    let second_writer = PgUnitOfWork::new(pool.clone(), "nl-home".into());
+    let (first_result, second_result) = tokio::join!(
+        first_writer.commit(first_write),
+        second_writer.commit(second_write)
+    );
+    assert_ne!(
+        first_result.is_ok(),
+        second_result.is_ok(),
+        "exactly one independent writer may reserve an actor/request pair"
+    );
+    let reserved =
+        ChannelRepository::find_forum_request(&store, guild_id, forum.id, alice, "request-1")
+            .await
+            .expect("forum reservation query")
+            .expect("one reservation survives");
+    assert!(reserved.id == first_post.id || reserved.id == second_post.id);
+    let reservation_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM channels WHERE parent_id = $1 AND owner_id = $2 AND forum_settings->>'request_key' = $3",
+    )
+    .bind(forum.id.as_i64())
+    .bind(alice.as_i64())
+    .bind("request-1")
+    .fetch_one(&pool)
+    .await
+    .expect("reservation count");
+    assert_eq!(reservation_count, 1);
 }

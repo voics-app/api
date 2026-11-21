@@ -1,11 +1,18 @@
 # api
 
+Forum post creation uses an author-scoped request UUID and reserved thread and message IDs. Standard-mode requests return a pending status until the opening message is confirmed; retry the same request to recover an expired lease. Published forum feeds include message summaries from the messages service. Private-mode forum creation is not yet supported.
+
 The Voics REST API: accounts, users and settings, DMs, relationships, devices, guilds and their channels, roles, members, bans, invites, emojis, audit log, applications and bots, commands, interactions and webhooks. It also serves the internal P4 endpoints used by gateway and admin-bff.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
 The internal channel-access endpoint returns 403 when the caller lacks VIEW_CHANNEL, before
 returning encrypted relay recipient IDs. Eligible viewers retain the existing permission response.
+
+Thread members and browse routes use migration `0084_thread_members.sql`. The gateway must
+support and strip versioned internal membership state before this API change is deployed;
+otherwise private membership data could reach clients. A private thread inherits its parent
+permissions and is visible to its creator, joined members and thread managers.
 
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts

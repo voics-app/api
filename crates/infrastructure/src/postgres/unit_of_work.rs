@@ -44,9 +44,52 @@ impl UnitOfWork for PgUnitOfWork {
         }
         let mut tx = self.pool.begin().await.map_err(db)?;
         let conn = &mut *tx;
+        let mut membership_events = Vec::new();
+        if let Some((id, token)) = &writes.forum_guard {
+            let valid: Option<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE id = $1 AND forum_settings->>'pending' = 'true' AND forum_settings->>'status' = 'publishing' AND forum_settings->>'lease_token' = $2 FOR UPDATE")
+                .bind(id.as_i64()).bind(token).fetch_optional(&mut *conn).await.map_err(db)?;
+            if valid.is_none() {
+                return Err(application::AppError::Conflict {
+                    code: 0,
+                    message: "Forum publication lease was superseded.".into(),
+                });
+            }
+        }
         for mutation in &writes.mutations {
             if !matches!(mutation, Mutation::InsertAudit(_)) {
+                let removed_threads: Vec<i64> = if let Mutation::DeleteMember {
+                    guild_id,
+                    user_id,
+                } = mutation
+                {
+                    sqlx::query_scalar("SELECT c.id FROM channels c JOIN thread_members tm ON tm.thread_id = c.id WHERE tm.guild_id = $1 AND tm.user_id = $2 ORDER BY c.id FOR UPDATE OF c")
+                        .bind(guild_id.as_i64())
+                        .bind(user_id.as_i64())
+                        .fetch_all(&mut *conn)
+                        .await
+                        .map_err(db)?
+                } else {
+                    Vec::new()
+                };
                 apply(conn, mutation).await?;
+                if let Mutation::DeleteMember { guild_id, user_id } = mutation {
+                    for id in removed_threads {
+                        sqlx::query("UPDATE channels SET thread_membership_version = thread_membership_version + 1 WHERE id = $1")
+                            .bind(id)
+                            .execute(&mut *conn)
+                            .await
+                            .map_err(db)?;
+                        membership_events.push(DomainEvent::ThreadMembersUpdate {
+                            guild_id: *guild_id,
+                            thread_id: domain::Snowflake::new(id as u64),
+                            user_id: *user_id,
+                            joined_at: None,
+                            member_count: 0,
+                            version: 0,
+                            member_ids: Vec::new(),
+                        });
+                    }
+                }
             }
         }
         let mut recorded = std::collections::HashSet::new();
@@ -59,7 +102,7 @@ impl UnitOfWork for PgUnitOfWork {
             }
         }
         let now = Utc::now();
-        for event in &writes.events {
+        for event in writes.events.iter().chain(&membership_events) {
             if matches!(event, DomainEvent::AuditLogEntryCreate(entry) if !recorded.contains(&entry.id))
             {
                 continue;
@@ -94,6 +137,46 @@ impl UnitOfWork for PgUnitOfWork {
                 .map_err(db)?;
                 let Some(row) = row else { continue };
                 committed = DomainEvent::RoleUpdate(row.into());
+                &committed
+            } else if let DomainEvent::ThreadMembersUpdate {
+                guild_id,
+                thread_id,
+                user_id,
+                joined_at,
+                ..
+            } = event
+            {
+                let (count,): (i64,) =
+                    sqlx::query_as("SELECT count(*) FROM thread_members WHERE thread_id = $1")
+                        .bind(thread_id.as_i64())
+                        .fetch_one(&mut *conn)
+                        .await
+                        .map_err(db)?;
+                let (version,): (i64,) =
+                    sqlx::query_as("SELECT thread_membership_version FROM channels WHERE id = $1")
+                        .bind(thread_id.as_i64())
+                        .fetch_one(&mut *conn)
+                        .await
+                        .map_err(db)?;
+                let ids: Vec<i64> = sqlx::query_scalar(
+                    "SELECT user_id FROM thread_members WHERE thread_id = $1 ORDER BY user_id",
+                )
+                .bind(thread_id.as_i64())
+                .fetch_all(&mut *conn)
+                .await
+                .map_err(db)?;
+                committed = DomainEvent::ThreadMembersUpdate {
+                    guild_id: *guild_id,
+                    thread_id: *thread_id,
+                    user_id: *user_id,
+                    joined_at: *joined_at,
+                    member_count: count as usize,
+                    version: version as u64,
+                    member_ids: ids
+                        .into_iter()
+                        .map(|id| domain::Snowflake::new(id as u64))
+                        .collect(),
+                };
                 &committed
             } else {
                 event
@@ -169,6 +252,45 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             identity::upsert_channel(conn, channel).await
         }
         Mutation::DeleteChannel(channel_id) => identity::delete_channel(conn, *channel_id).await,
+        Mutation::SetThreadMember {
+            thread_id,
+            guild_id,
+            user_id,
+            joined_at,
+        } => {
+            sqlx::query("SELECT id FROM channels WHERE id = $1 FOR UPDATE")
+                .bind(thread_id.as_i64())
+                .execute(&mut *conn)
+                .await
+                .map_err(db)?;
+            match joined_at {
+                Some(joined_at) => {
+                    sqlx::query("INSERT INTO thread_members (thread_id, guild_id, user_id, joined_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
+                        .bind(thread_id.as_i64())
+                        .bind(guild_id.as_i64())
+                        .bind(user_id.as_i64())
+                        .bind(joined_at)
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(db)?;
+                }
+                None => {
+                    sqlx::query("DELETE FROM thread_members WHERE thread_id = $1 AND guild_id = $2 AND user_id = $3")
+                        .bind(thread_id.as_i64())
+                        .bind(guild_id.as_i64())
+                        .bind(user_id.as_i64())
+                        .execute(&mut *conn)
+                        .await
+                        .map_err(db)?;
+                }
+            }
+            sqlx::query("UPDATE channels SET thread_membership_version = thread_membership_version + 1 WHERE id = $1")
+                .bind(thread_id.as_i64())
+                .execute(conn)
+                .await
+                .map_err(db)?;
+            Ok(())
+        }
         Mutation::SetDeliveryOverride {
             user_id,
             channel_id,
