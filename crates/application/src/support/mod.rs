@@ -3,6 +3,7 @@ pub mod audit;
 pub mod channel_access;
 pub mod credentials;
 pub mod delivery;
+pub mod dm_privacy;
 pub mod fallback_limiter;
 pub mod guild_context;
 pub mod images;
