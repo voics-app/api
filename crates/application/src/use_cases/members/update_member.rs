@@ -26,6 +26,8 @@ pub struct UpdateMemberInput {
     pub communication_disabled_until: Option<Option<DateTime<Utc>>>,
     /// `Some(Some(channel))` moves the member to a voice channel, `Some(None)` disconnects them.
     pub voice_channel: Option<Option<Snowflake>>,
+    /// `false` promotes a current stage audience member; `true` moves them back to the audience.
+    pub voice_suppress: Option<bool>,
 }
 
 pub async fn execute(
@@ -102,6 +104,9 @@ pub async fn execute(
         Some(target) => Some(voice_move(ports, &ctx, guild_id, target).await?),
         None => None,
     };
+    if input.voice_suppress.is_some() {
+        ctx.require(Permissions::MUTE_MEMBERS)?;
+    }
     let profile = super::profile::apply(
         ports,
         &mut member,
@@ -113,7 +118,16 @@ pub async fn execute(
         },
     )
     .await?;
-    commit_member_update(ports, &before, member, profile, voice, audit).await
+    commit_member_update(
+        ports,
+        &before,
+        member,
+        profile,
+        voice,
+        input.voice_suppress,
+        audit,
+    )
+    .await
 }
 
 /// Checks that the caller may move members to `target` (or disconnect them for `None`).

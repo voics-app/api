@@ -220,13 +220,9 @@ pub async fn authorize_send(
         .find_sound(source_guild_id, sound_id)
         .await?
         .ok_or(AppError::NotFound(Resource::SoundboardSound))?;
-    if !ports
-        .presence
-        .in_voice_channel(guild_id, channel_id, actor.user_id)
-        .await?
-    {
-        return Err(AppError::missing_access());
-    }
+    // The publication snapshot is also the authoritative voice-membership check. Keeping both
+    // checks in one gateway read prevents a leave/rejoin (or another socket for the same user)
+    // from changing the owning session between a membership lookup and the capability lookup.
     if !ports
         .presence
         .can_publish_soundboard(guild_id, channel_id, actor.user_id)

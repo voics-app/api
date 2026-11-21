@@ -20,7 +20,7 @@ impl application::ports::PresenceDirectory for ConnectedVoice {
     ) -> application::AppResult<Vec<domain::Snowflake>> {
         Ok(vec![])
     }
-    async fn in_voice_channel(
+    async fn can_publish_soundboard(
         &self,
         _: domain::Snowflake,
         _: domain::Snowflake,
@@ -107,12 +107,13 @@ async fn soundboard_crud_enforces_membership_and_validates_audio() {
     let channel = voice["id"].as_str().unwrap();
     let send_path = format!("/api/v1/channels/{channel}/send-soundboard-sound");
     let request_body = json!({"sound_id":id,"source_guild_id":guild});
-    // Membership is confirmed, but publication capability is unavailable and must fail closed.
+    // The current gateway session owns one acknowledged audio + soundboard grant; membership and
+    // capability are deliberately represented by this one atomic snapshot.
     assert_eq!(
         call(&app, Method::POST, &send_path, &owner, Some(request_body))
             .await
             .0,
-        StatusCode::SERVICE_UNAVAILABLE
+        StatusCode::NO_CONTENT
     );
     let (status, stage) = call(
         &app,

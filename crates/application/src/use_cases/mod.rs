@@ -21,6 +21,7 @@ pub mod reports;
 pub mod roles;
 pub mod sessions;
 pub mod soundboard;
+pub mod stage_instances;
 pub mod templates;
 pub mod users;
 pub mod voice;

@@ -133,18 +133,8 @@ pub struct RateLimitDecision {
 /// Live presence, owned by the gateway. Read-only here: the api only counts.
 #[async_trait]
 pub trait PresenceDirectory: Send + Sync {
-    /// The gateway owns live voice state; lack of a trusted response never grants access.
-    async fn in_voice_channel(
-        &self,
-        _guild_id: Snowflake,
-        _channel_id: Snowflake,
-        _user_id: Snowflake,
-    ) -> AppResult<bool> {
-        Err(AppError::Unavailable(
-            "voice state lookup is not configured".into(),
-        ))
-    }
-    /// True only if both voice and soundboard publication are currently granted by the authoritative control plane.
+    /// True only if the same current gateway voice session owns this user/channel and has an
+    /// acknowledged, live audio + soundboard publication grant.
     async fn can_publish_soundboard(
         &self,
         _guild_id: Snowflake,
