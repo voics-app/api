@@ -109,7 +109,7 @@ pub(super) async fn committed_channel(
     .map_err(db)?;
     let mut overwrites = HashMap::new();
     overwrites.insert(id.as_i64(), rows);
-    Ok(assemble(row, &HashMap::new(), &overwrites))
+    Ok(assemble(row, &HashMap::new(), &HashMap::new(), &overwrites))
 }
 
 #[derive(FromRow, Clone)]

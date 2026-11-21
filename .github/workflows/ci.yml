@@ -16,7 +16,7 @@ concurrency:
 jobs:
   voice-status-integration:
     if: github.event_name == 'pull_request' && github.head_ref == 'feature/api-53-insights'
-    runs-on: vm-runner
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
