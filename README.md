@@ -18,6 +18,10 @@ It starts one disposable PostgreSQL container and a loopback messages fixture;
 it exercises a lost response after the destination was stored. The regular PR
 job cannot check out the private messages repository with its repository-scoped
 token, so it does not run this cross-repository test.
+Thread members and browse routes use migration `0084_thread_members.sql`. The gateway must
+support and strip versioned internal membership state before this API change is deployed;
+otherwise private membership data could reach clients. A private thread inherits its parent
+permissions and is visible to its creator, joined members and thread managers.
 
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts

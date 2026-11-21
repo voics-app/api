@@ -19,14 +19,13 @@ use application::{AppError, Resource};
 use contracts::internal::{
     AdminGuildDto, AdminReportDto, AdminReportPageDto, AdminReportUserDto, AdminUserDto,
     AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto, ChannelRoutingDto,
-    ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse, ManualPushTargetsDto,
-    ManualPushUserDto, NotificationRecipientDto, NotificationRecipientPageDto, PushTargetDto,
-    PushTargetsDto, PushTokenDto, ResolveReportRequest, SuspendUserRequest, UserReadyDto,
-    UsersLookupRequest, VoipTokenDto,
+    ForgetPushTokenRequest, InternalGuildFullDto, IntrospectRequest, IntrospectResponse,
+    ManualPushTargetsDto, ManualPushUserDto, NotificationRecipientDto,
+    NotificationRecipientPageDto, PushTargetDto, PushTargetsDto, PushTokenDto,
+    ResolveReportRequest, SuspendUserRequest, UserReadyDto, UsersLookupRequest, VoipTokenDto,
 };
 use contracts::objects::{
-    ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
-    UserSettingsDto,
+    ChannelDto, GuildNotificationSettingsDto, RelationshipDto, UserDto, UserSettingsDto,
 };
 use contracts::wire::{timestamp, Id, Perm};
 use domain::push_token::PushPlatform;
@@ -107,7 +106,7 @@ async fn user_ready_state(
         guilds: ready
             .guilds
             .iter()
-            .map(|snapshot| GuildFullDto::new(snapshot, region))
+            .map(|snapshot| InternalGuildFullDto::new(snapshot, region))
             .collect(),
         private_channels: ready
             .private_channels
@@ -144,9 +143,9 @@ async fn guild_full_state(
     State(state): State<AppState>,
     _internal: Internal,
     Path(guild_id): Path<String>,
-) -> Result<Json<GuildFullDto>, ApiError> {
+) -> Result<Json<InternalGuildFullDto>, ApiError> {
     let snapshot = guild_state::execute(&state.ports, parse_id(&guild_id)?).await?;
-    Ok(Json(GuildFullDto::new(&snapshot, region(&state))))
+    Ok(Json(InternalGuildFullDto::new(&snapshot, region(&state))))
 }
 
 async fn channel_delivery(
