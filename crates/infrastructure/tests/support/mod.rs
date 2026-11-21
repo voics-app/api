@@ -70,7 +70,10 @@ pub async fn start_database() -> Database {
         .get_host_port_ipv4(5432)
         .await
         .expect("mapped postgres port");
-    let url = format!("postgres://postgres:postgres@127.0.0.1:{port}/discordy");
+    // Not 127.0.0.1: on the containerised CI runner the database is a sibling container, reachable
+    // through TESTCONTAINERS_HOST_OVERRIDE (host.docker.internal), not through the runner's loopback.
+    let host = container.get_host().await.expect("container host");
+    let url = format!("postgres://postgres:postgres@{host}:{port}/discordy");
     let mut pool = None;
     for _ in 0..60 {
         if let Ok(candidate) = connect(&url, 4).await {
