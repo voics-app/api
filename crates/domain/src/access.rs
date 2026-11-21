@@ -274,7 +274,8 @@ mod tests {
         roles.push(role(23, 4, Permissions::ADMINISTRATOR));
         let access = GuildAccess::new(&guild, &roles, Utc::now());
         let parent = channel(100, ChannelType::GuildText);
-        let thread = channel(101, ChannelType::PublicThread);
+        let mut thread = channel(101, ChannelType::PublicThread);
+        thread.parent_id = Some(parent.id);
         for role_ids in [&[][..], &[23][..]] {
             let mut user = member(2, role_ids);
             user.pending = true;
