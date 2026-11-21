@@ -6,6 +6,7 @@ pub mod account;
 pub mod application;
 pub mod audit;
 pub mod audit_policy;
+pub mod ban_appeal;
 pub mod bot_authorization;
 pub mod channel;
 pub mod delivery_mode;

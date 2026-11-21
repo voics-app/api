@@ -17,6 +17,8 @@ pub enum AuditAction {
     MemberPrune,
     MemberBanAdd,
     MemberBanRemove,
+    BanAppealAccept,
+    BanAppealDeny,
     MemberUpdate,
     MemberRoleUpdate,
     MemberMove,
@@ -53,6 +55,8 @@ impl AuditAction {
             MemberPrune => 21,
             MemberBanAdd => 22,
             MemberBanRemove => 23,
+            BanAppealAccept => 200,
+            BanAppealDeny => 201,
             MemberUpdate => 24,
             MemberRoleUpdate => 25,
             MemberMove => 26,
@@ -75,7 +79,7 @@ impl AuditAction {
         }
     }
 
-    pub const ALL: [AuditAction; 30] = {
+    pub const ALL: [AuditAction; 32] = {
         use AuditAction::*;
         [
             GuildUpdate,
@@ -89,6 +93,8 @@ impl AuditAction {
             MemberPrune,
             MemberBanAdd,
             MemberBanRemove,
+            BanAppealAccept,
+            BanAppealDeny,
             MemberUpdate,
             MemberRoleUpdate,
             MemberMove,

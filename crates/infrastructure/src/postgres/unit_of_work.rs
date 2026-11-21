@@ -468,6 +468,36 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             user_id,
             reason,
         } => guilds::insert_ban(conn, *guild_id, *user_id, reason.as_deref()).await,
+        Mutation::ResolveBanAppeal {
+            guild_id,
+            appeal_id,
+            user_id,
+            reviewer_id,
+            accept,
+        } => {
+            let ban_time: Option<chrono::DateTime<Utc>> = sqlx::query_scalar(
+                "SELECT created_at FROM bans WHERE guild_id=$1 AND user_id=$2 FOR UPDATE",
+            )
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(db)?;
+            let updated = sqlx::query("UPDATE ban_appeals SET status=$4, resolved_at=now(), resolved_by=$5 WHERE id=$1 AND guild_id=$2 AND user_id=$3 AND status='open' AND ban_created_at=$6")
+                .bind(appeal_id.as_i64()).bind(guild_id.as_i64()).bind(user_id.as_i64())
+                .bind(if *accept { "accepted" } else { "denied" }).bind(reviewer_id.as_i64()).bind(ban_time)
+                .execute(&mut *conn).await.map_err(db)?;
+            if updated.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 0,
+                    message: "Appeal is no longer open for the current ban".into(),
+                });
+            }
+            if *accept {
+                guilds::delete_ban(conn, *guild_id, *user_id).await?;
+            }
+            Ok(())
+        }
         Mutation::DeleteBan { guild_id, user_id } => {
             guilds::delete_ban(conn, *guild_id, *user_id).await
         }
