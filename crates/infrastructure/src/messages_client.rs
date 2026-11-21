@@ -97,6 +97,17 @@ struct MessageCountDto {
 
 #[async_trait]
 impl MessageService for HttpMessages {
+    async fn sign_media(&self, urls: Vec<String>) -> AppResult<Vec<String>> {
+        let body = self
+            .send(
+                Method::POST,
+                "internal/v1/media/sign",
+                Some(serde_json::json!({"urls": urls})),
+            )
+            .await?;
+        serde_json::from_value(body.get("urls").cloned().unwrap_or(Value::Null))
+            .map_err(|_| AppError::Unavailable("invalid media signing response".into()))
+    }
     async fn guild_message_count(
         &self,
         guild_id: Snowflake,

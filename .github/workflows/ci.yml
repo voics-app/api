@@ -52,7 +52,7 @@ jobs:
     # PR CI otherwise runs only library and binary tests. Exercise badge and appeal privacy
     # over HTTP against disposable Postgres containers before merging.
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

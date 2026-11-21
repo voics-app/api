@@ -6,6 +6,7 @@ pub mod channels;
 pub mod devices;
 pub mod discovery;
 pub mod emojis;
+pub mod gifs;
 pub mod guilds;
 pub mod health;
 pub mod ids;

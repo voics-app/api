@@ -82,6 +82,13 @@ fn validate(key: &str, value: &Value) -> Result<(), PreferenceError> {
         "recent_reactions" => value.as_array().is_some_and(|a| {
             a.len() <= MAX_RECENT_REACTIONS && a.iter().all(validate_recent_reaction)
         }),
+        "favorite_gifs" => value.as_array().is_some_and(|a| {
+            a.len() <= 100
+                && a.iter().all(|v| {
+                    v.as_str()
+                        .is_some_and(|s| s.starts_with("https://") && s.len() <= 2048)
+                })
+        }),
         _ => return Err(err(key, "Unknown preference.")),
     };
     if ok {
@@ -179,5 +186,25 @@ mod tests {
             "sound_toggles": {"message": false}
         });
         assert!(merge(&Preferences::new(), &ok).is_ok());
+    }
+
+    #[test]
+    fn validates_favorite_gifs() {
+        let empty = Preferences::new();
+        assert!(merge(
+            &empty,
+            &json!({"favorite_gifs": ["https://example.test/a.gif"]})
+        )
+        .is_ok());
+        assert!(merge(
+            &empty,
+            &json!({"favorite_gifs": ["http://example.test/a.gif"]})
+        )
+        .is_err());
+        assert!(merge(
+            &empty,
+            &json!({"favorite_gifs": vec!["https://example.test/a.gif"; 101]})
+        )
+        .is_err());
     }
 }

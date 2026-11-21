@@ -102,6 +102,9 @@ pub struct StoredMessage {
 /// Messages are owned by the `messages` service.
 #[async_trait]
 pub trait MessageService: Send + Sync {
+    async fn sign_media(&self, _urls: Vec<String>) -> AppResult<Vec<String>> {
+        Err(AppError::Unavailable("media signing unavailable".into()))
+    }
     /// Observed message markers and whether this UTC day has verified coverage.
     async fn guild_message_count(
         &self,

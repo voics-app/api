@@ -24,6 +24,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::users::routes())
         .merge(routes::devices::routes())
         .merge(routes::guilds::routes())
+        .merge(routes::gifs::routes())
         .merge(routes::discovery::routes())
         .merge(routes::templates::routes())
         .merge(routes::scheduled_events::routes())
@@ -36,6 +37,7 @@ pub fn router(state: AppState) -> Router {
         .merge(routes::integrations::routes())
         .merge(routes::reports::routes())
         .merge(routes::webhooks::routes());
+    let public = public.layer(axum::Extension(routes::gifs::GifProvider::from_env()));
     let public = public.layer(axum::middleware::from_fn_with_state(
         state.clone(),
         ratelimit::enforce,
