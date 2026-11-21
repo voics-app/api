@@ -4,6 +4,11 @@ The Voics REST API: accounts, users and settings, DMs, relationships, devices, g
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
 
+Thread members and browse routes use migration `0084_thread_members.sql`. The gateway must
+support and strip versioned internal membership state before this API change is deployed;
+otherwise private membership data could reach clients. A private thread inherits its parent
+permissions and is visible to its creator, joined members and thread managers.
+
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts
 self-only avatar, banner and bio overrides independently of nickname permissions.

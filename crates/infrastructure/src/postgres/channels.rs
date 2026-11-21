@@ -18,7 +18,7 @@ use super::error::db;
 use super::PgStore;
 
 pub(super) const CHANNEL_COLUMNS: &str = "id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
-     rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at";
+     rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, thread_membership_version, created_at";
 
 #[derive(FromRow)]
 pub(super) struct ChannelRow {
@@ -39,6 +39,7 @@ pub(super) struct ChannelRow {
     delivery_mode: String,
     voice_region: Option<String>,
     thread_metadata: Option<serde_json::Value>,
+    thread_membership_version: i64,
     created_at: DateTime<Utc>,
 }
 
@@ -46,6 +47,7 @@ pub(super) struct ChannelRow {
 pub(super) fn assemble(
     row: ChannelRow,
     recipients: &HashMap<i64, Vec<i64>>,
+    thread_members: &HashMap<i64, Vec<i64>>,
     overwrites: &HashMap<i64, Vec<OverwriteRow>>,
 ) -> Channel {
     let id = row.id;
@@ -68,6 +70,11 @@ pub(super) fn assemble(
             .get(&id)
             .map(|ids| sfs(ids.clone()))
             .unwrap_or_default(),
+        thread_member_ids: thread_members
+            .get(&id)
+            .map(|ids| sfs(ids.clone()))
+            .unwrap_or_default(),
+        thread_membership_version: row.thread_membership_version as u64,
         overwrites: overwrites
             .get(&id)
             .map(|rows| rows.iter().map(|o| o.clone().into()).collect())
@@ -113,6 +120,12 @@ pub(super) async fn hydrate(
             .bind(&ids)
             .fetch_all(pool)
             .await?;
+    let thread_member_rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT thread_id, user_id FROM thread_members WHERE thread_id = ANY($1) ORDER BY user_id",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
     let overwrite_rows: Vec<OverwriteRow> = sqlx::query_as(
         "SELECT channel_id, target_id, kind, allow_bits, deny_bits FROM permission_overwrites \
          WHERE channel_id = ANY($1) ORDER BY channel_id, kind, target_id",
@@ -125,13 +138,17 @@ pub(super) async fn hydrate(
     for (channel_id, user_id) in recipient_rows {
         recipients.entry(channel_id).or_default().push(user_id);
     }
+    let mut thread_members: HashMap<i64, Vec<i64>> = HashMap::new();
+    for (thread_id, user_id) in thread_member_rows {
+        thread_members.entry(thread_id).or_default().push(user_id);
+    }
     let mut overwrites: HashMap<i64, Vec<OverwriteRow>> = HashMap::new();
     for row in overwrite_rows {
         overwrites.entry(row.channel_id).or_default().push(row);
     }
     Ok(rows
         .into_iter()
-        .map(|row| assemble(row, &recipients, &overwrites))
+        .map(|row| assemble(row, &recipients, &thread_members, &overwrites))
         .collect())
 }
 

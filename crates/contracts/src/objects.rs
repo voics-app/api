@@ -395,6 +395,10 @@ pub struct ChannelDto {
     pub rtc_region: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread_metadata: Option<ThreadMetadataDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_thread_member: Option<bool>,
     pub delivery_mode: &'static str,
     pub voice_region: Option<String>,
 }
@@ -431,6 +435,11 @@ impl ChannelDto {
                 .thread_metadata
                 .as_ref()
                 .map(ThreadMetadataDto::from),
+            member_count: channel
+                .kind
+                .is_thread()
+                .then_some(channel.thread_member_ids.len()),
+            is_thread_member: None,
             delivery_mode: delivery_mode.as_str(),
             voice_region: channel.voice_region.clone(),
         }
@@ -438,6 +447,15 @@ impl ChannelDto {
 
     pub fn guild(channel: &Channel) -> Self {
         Self::build(channel, channel.delivery_mode, None)
+    }
+
+    pub fn guild_for_viewer(channel: &Channel, viewer: Snowflake) -> Self {
+        let mut dto = Self::guild(channel);
+        dto.is_thread_member = channel
+            .kind
+            .is_thread()
+            .then(|| channel.thread_member_ids.contains(&viewer));
+        dto
     }
 
     /// A DM or group DM as seen by `viewer`, who is left out of `recipients`.
