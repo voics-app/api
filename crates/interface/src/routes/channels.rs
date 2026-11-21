@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 
+use application::context::Actor;
 use application::events::ChannelView;
 use application::support::audit::AuditContext;
 use application::use_cases::channels::create_guild_channel::CreateChannelInput;
@@ -13,8 +14,8 @@ use application::use_cases::channels::reorder_channels::ChannelPosition;
 use application::use_cases::channels::update_channel::UpdateChannelInput;
 use application::use_cases::channels::{
     add_recipient, create_guild_channel, create_thread, delete_channel, delete_overwrite,
-    get_channel, list_guild_channels, list_threads, put_overwrite, remove_recipient,
-    reorder_channels, thread_members, trigger_typing, update_channel,
+    get_channel, list_forum_posts, list_guild_channels, list_threads, put_overwrite,
+    remove_recipient, reorder_channels, thread_members, trigger_typing, update_channel,
 };
 use application::{AppError, Resource};
 use contracts::objects::ChannelDto;
@@ -212,6 +213,13 @@ async fn modify(
         archived: body.archived,
         locked: body.locked,
         auto_archive_duration: body.auto_archive_duration,
+        available_tags: body.available_tags,
+        default_sort_order: body.default_sort_order,
+        default_forum_layout: body.default_forum_layout,
+        default_reaction_emoji: body.default_reaction_emoji,
+        require_tags: body.require_tags,
+        applied_tags: body.applied_tags,
+        flags: body.flags,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,
@@ -338,6 +346,60 @@ async fn remove_permission(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn forum_posts(
+    state: AppState,
+    actor: Actor,
+    parent_id: Snowflake,
+) -> Result<Json<Vec<ChannelDto>>, ApiError> {
+    let posts = list_forum_posts::execute(&state.ports, &actor, parent_id).await?;
+    let forum = state
+        .ports
+        .channels
+        .find(parent_id)
+        .await?
+        .ok_or(AppError::NotFound(Resource::Channel))?;
+    let ids: Vec<_> = posts
+        .iter()
+        .filter(|post| {
+            forum.delivery_mode == DeliveryMode::Standard
+                && post.delivery_mode == DeliveryMode::Standard
+        })
+        .map(|post| post.id)
+        .collect();
+    let summaries = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        state.ports.messages.forum_summaries(&ids),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or_default();
+    let result = posts
+        .iter()
+        .map(|post| {
+            let mut dto = ChannelDto::guild_for_viewer(post, actor.user_id);
+            if let Some(summary) = summaries.iter().find(|value| {
+                value.get("channel_id").and_then(serde_json::Value::as_str)
+                    == Some(post.id.to_string().as_str())
+            }) {
+                dto.message_count = summary
+                    .get("message_count")
+                    .and_then(serde_json::Value::as_u64);
+                dto.last_message_id = summary
+                    .get("last_message_id")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+                dto.forum_first_message = summary
+                    .get("first_message")
+                    .filter(|value| !value.is_null())
+                    .cloned();
+            }
+            dto
+        })
+        .collect();
+    Ok(Json(result))
+}
+
 async fn thread(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -352,6 +414,9 @@ async fn thread(
         auto_archive_duration: body.auto_archive_duration,
         invitable: body.invitable,
         rate_limit_per_user: body.rate_limit_per_user,
+        applied_tags: body.applied_tags,
+        message: body.message,
+        request_id: body.request_id,
     };
     let audit = AuditContext {
         actor_id: actor.user_id,
@@ -365,8 +430,18 @@ async fn thread(
         audit,
     )
     .await?;
+    let status = if channel
+        .forum_settings
+        .get("pending")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        StatusCode::ACCEPTED
+    } else {
+        StatusCode::CREATED
+    };
     Ok((
-        StatusCode::CREATED,
+        status,
         Json(ChannelDto::guild_for_viewer(&channel, actor.user_id)),
     ))
 }
@@ -383,13 +458,17 @@ async fn list_channel_threads(
     Path(parent): Path<String>,
     Query(query): Query<ThreadListQuery>,
 ) -> Result<Json<Vec<ChannelDto>>, ApiError> {
-    let threads = list_threads::execute(
-        &state.ports,
-        &actor,
-        snowflake(&parent, Resource::Channel)?,
-        query.archived,
-    )
-    .await?;
+    let parent_id = snowflake(&parent, Resource::Channel)?;
+    let is_forum = state
+        .ports
+        .channels
+        .find(parent_id)
+        .await?
+        .is_some_and(|channel| channel.kind == domain::channel::ChannelType::GuildForum);
+    if is_forum && !query.archived {
+        return forum_posts(state, actor, parent_id).await;
+    }
+    let threads = list_threads::execute(&state.ports, &actor, parent_id, query.archived).await?;
     if threads.is_empty() {
         return Ok(Json(Vec::new()));
     }
