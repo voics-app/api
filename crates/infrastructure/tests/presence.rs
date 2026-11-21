@@ -54,4 +54,56 @@ async fn counts_only_users_with_a_live_non_offline_session() {
     let ids: Vec<Snowflake> = (1..=5).map(Snowflake::from_i64).collect();
     assert_eq!(presence.online_count(&ids).await.expect("count"), 2);
     assert_eq!(presence.online_count(&[]).await.expect("count"), 0);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = axum::Router::new().route(
+        "/internal/v1/guilds/{guild}/channels/{channel}/voice-members/{user}",
+        axum::routing::get(
+            |axum::extract::Path((guild, channel, user)): axum::extract::Path<(
+                String,
+                String,
+                String,
+            )>,
+             headers: axum::http::HeaderMap| async move {
+                assert_eq!(headers.get("x-internal-token").unwrap(), "test-token");
+                axum::Json(
+                    serde_json::json!({"connected": guild == "1" && channel == "2" && user == "3"}),
+                )
+            },
+        ),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let presence = presence
+        .with_gateway(
+            format!("http://{addr}").parse().unwrap(),
+            "test-token".into(),
+        )
+        .unwrap();
+    assert!(presence
+        .in_voice_channel(
+            Snowflake::from_i64(1),
+            Snowflake::from_i64(2),
+            Snowflake::from_i64(3)
+        )
+        .await
+        .unwrap());
+    assert!(!presence
+        .in_voice_channel(
+            Snowflake::from_i64(1),
+            Snowflake::from_i64(4),
+            Snowflake::from_i64(3)
+        )
+        .await
+        .unwrap());
+    server.abort();
+    let _ = server.await;
+    assert!(presence
+        .in_voice_channel(
+            Snowflake::from_i64(1),
+            Snowflake::from_i64(2),
+            Snowflake::from_i64(3)
+        )
+        .await
+        .is_err());
 }

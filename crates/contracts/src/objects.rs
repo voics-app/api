@@ -398,6 +398,7 @@ pub struct ChannelDto {
     pub permission_overwrites: Vec<PermissionOverwriteDto>,
     pub name: Option<String>,
     pub topic: Option<String>,
+    pub status: Option<String>,
     pub nsfw: bool,
     pub text_chat_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -462,6 +463,7 @@ impl ChannelDto {
                 .collect(),
             name: channel.name.clone(),
             topic: channel.topic.clone(),
+            status: channel.status.clone(),
             nsfw: channel.nsfw,
             text_chat_enabled: channel.text_chat_enabled,
             bitrate: channel.bitrate,

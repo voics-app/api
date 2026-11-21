@@ -15,13 +15,14 @@ use application::use_cases::channels::update_channel::UpdateChannelInput;
 use application::use_cases::channels::{
     add_recipient, create_guild_channel, create_thread, delete_channel, delete_overwrite,
     get_channel, list_forum_posts, list_guild_channels, list_threads, put_overwrite,
-    remove_recipient, reorder_channels, thread_members, trigger_typing, update_channel,
+    remove_recipient, reorder_channels, set_voice_status, thread_members, trigger_typing,
+    update_channel,
 };
 use application::{AppError, Resource};
 use contracts::objects::ChannelDto;
 use contracts::requests::{
     ChannelPositionRequest, CreateChannelRequest, CreateThreadRequest, EditOverwriteRequest,
-    ModifyChannelRequest, OverwriteRequest,
+    ModifyChannelRequest, OverwriteRequest, VoiceStatusRequest,
 };
 use contracts::wire::{Id, Perm};
 use domain::channel::ChannelType;
@@ -506,6 +507,22 @@ async fn typing(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn voice_status(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<VoiceStatusRequest>,
+) -> Result<StatusCode, ApiError> {
+    set_voice_status::execute(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Channel)?,
+        body.status,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn join_thread(
     State(state): State<AppState>,
     Caller(actor): Caller,
@@ -553,6 +570,7 @@ pub fn routes() -> Router<AppState> {
             get(list).post(create).patch(reorder),
         )
         .route("/channels/{id}", get(fetch).patch(modify).delete(remove))
+        .route("/channels/{id}/voice-status", put(voice_status))
         .route(
             "/channels/{id}/permissions/{overwrite_id}",
             put(put_permission).delete(remove_permission),

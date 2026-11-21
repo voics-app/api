@@ -14,6 +14,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  voice-status-integration:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/api-53-insights'
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p infrastructure --test http_voice_status --test presence -- --test-threads=1
+
   gitflow:
     if: github.event_name == 'pull_request'
     uses: voics-app/.github/.github/workflows/gitflow-guard.yml@main

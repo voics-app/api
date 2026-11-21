@@ -57,6 +57,7 @@ pub struct Config {
     pub worker_id: u16,
     pub public_api_url: Url,
     pub public_gateway_url: Url,
+    pub gateway_internal_url: Option<Url>,
     pub cdn_public_url: Url,
     pub messages_internal_url: Url,
     pub default_voice_region: String,
@@ -245,6 +246,25 @@ impl Config {
                 ),
                 None => None,
             };
+        let gateway_internal_url =
+            match get("GATEWAY_INTERNAL_URL").filter(|v| !v.trim().is_empty()) {
+                Some(raw) => {
+                    let parsed = Url::parse(raw.trim())
+                        .map_err(|e| invalid("GATEWAY_INTERNAL_URL", e.to_string()))?;
+                    if !matches!(parsed.scheme(), "http" | "https")
+                        || parsed.host_str().is_none()
+                        || !parsed.username().is_empty()
+                        || parsed.password().is_some()
+                    {
+                        return Err(invalid(
+                            "GATEWAY_INTERNAL_URL",
+                            "expected an HTTP(S) service URL without credentials",
+                        ));
+                    }
+                    Some(parsed)
+                }
+                None => None,
+            };
 
         let cors_allowed_origins = split_list(&optional(
             &get,
@@ -268,6 +288,7 @@ impl Config {
             worker_id,
             public_api_url: url(&get, "PUBLIC_API_URL")?,
             public_gateway_url: url(&get, "PUBLIC_GATEWAY_URL")?,
+            gateway_internal_url,
             cdn_public_url: url(&get, "CDN_PUBLIC_URL")?,
             messages_internal_url: url(&get, "MESSAGES_INTERNAL_URL")?,
             default_voice_region: optional(&get, "DEFAULT_VOICE_REGION", "nl-home"),

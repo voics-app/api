@@ -97,6 +97,49 @@ struct MessageCountDto {
 
 #[async_trait]
 impl MessageService for HttpMessages {
+    async fn guild_message_count(
+        &self,
+        guild_id: Snowflake,
+        utc_day: i64,
+    ) -> AppResult<(u64, bool, Option<u64>)> {
+        let path = format!("internal/v1/guilds/{guild_id}/message-activity/{utc_day}");
+        let url = self.base.join(&path).map_err(AppError::internal)?;
+        let response = self
+            .http
+            .get(url)
+            .header(TOKEN_HEADER, &self.internal_token)
+            .timeout(std::time::Duration::from_secs(3))
+            .send()
+            .await
+            .map_err(|_| AppError::Unavailable("messages activity lookup failed".into()))?;
+        if !response.status().is_success() {
+            return Err(AppError::Unavailable(
+                "messages activity lookup failed".into(),
+            ));
+        }
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|_| AppError::Unavailable("invalid messages activity response".into()))?;
+        let day = body.get("utc_day").and_then(Value::as_i64);
+        let count = body.get("count").and_then(Value::as_u64);
+        let complete = body.get("coverage_complete").and_then(Value::as_bool);
+        let initialized = body.get("source_initialized_at_ms").and_then(|v| {
+            if v.is_null() {
+                Some(None)
+            } else {
+                v.as_u64().map(Some)
+            }
+        });
+        match (day, count, complete, initialized) {
+            (Some(day), Some(count), Some(complete), Some(initialized)) if day == utc_day => {
+                Ok((count, complete, initialized))
+            }
+            _ => Err(AppError::Unavailable(
+                "invalid messages activity response".into(),
+            )),
+        }
+    }
     async fn deliver_crosspost(
         &self,
         channel_id: Snowflake,
