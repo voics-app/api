@@ -29,6 +29,19 @@ pub struct PrivateChannelView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomainEvent {
+    ScheduledEventCreate(domain::scheduled_event::ScheduledEvent),
+    ScheduledEventUpdate {
+        before: domain::scheduled_event::ScheduledEvent,
+        after: domain::scheduled_event::ScheduledEvent,
+    },
+    ScheduledEventDelete(domain::scheduled_event::ScheduledEvent),
+    ScheduledEventInterest {
+        guild_id: Snowflake,
+        event_id: Snowflake,
+        user_id: Snowflake,
+        channel_id: Option<Snowflake>,
+        interested: bool,
+    },
     // discordy.guild.v1
     /// Sent to `recipients` only (a creator or a joining member).
     GuildCreate {
@@ -92,6 +105,12 @@ pub enum DomainEvent {
         guild_id: Snowflake,
         channel_id: Snowflake,
         code: String,
+    },
+    /// Forum opener, emitted by the API outbox only after message storage is confirmed.
+    ForumOpeningMessage {
+        guild_id: Snowflake,
+        channel_id: Snowflake,
+        message: Value,
     },
     ThreadCreate(Channel),
     ThreadUpdate(Channel),

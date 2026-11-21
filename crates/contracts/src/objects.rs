@@ -31,6 +31,25 @@ fn base64(bytes: &[u8]) -> String {
     STANDARD.encode(bytes)
 }
 
+/// Wire representation shared by HTTP responses and gateway dispatches.
+pub fn scheduled_event(event: &domain::scheduled_event::ScheduledEvent) -> Value {
+    use domain::scheduled_event::EventKind;
+    let (entity_type, channel_id, metadata) = match &event.details.kind {
+        EventKind::Stage { channel_id } => (1, Some(channel_id.to_string()), None),
+        EventKind::Voice { channel_id } => (2, Some(channel_id.to_string()), None),
+        EventKind::External { location } => (3, None, Some(json!({ "location": location }))),
+    };
+    json!({
+        "id": event.id.to_string(), "guild_id": event.guild_id.to_string(),
+        "creator_id": event.creator_id.map(|id| id.to_string()), "channel_id": channel_id,
+        "name": event.details.name, "description": event.details.description,
+        "scheduled_start_time": timestamp(event.details.start),
+        "scheduled_end_time": event.details.end.map(timestamp),
+        "status": event.details.status.code(), "entity_type": entity_type,
+        "entity_metadata": metadata, "image": event.image, "user_count": event.user_count,
+    })
+}
+
 // --- users -----------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
@@ -398,11 +417,31 @@ pub struct ChannelDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub member_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_count: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_thread_member: Option<bool>,
     pub delivery_mode: &'static str,
     pub voice_region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_tags: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied_tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flags: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_sort_order: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_forum_layout: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_reaction_emoji: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_tags: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forum_post_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forum_first_message: Option<Value>,
 }
 
 impl ChannelDto {
@@ -441,10 +480,73 @@ impl ChannelDto {
                 .kind
                 .is_thread()
                 .then_some(channel.thread_member_ids.len()),
-            message_count: None,
             is_thread_member: None,
             delivery_mode: delivery_mode.as_str(),
             voice_region: channel.voice_region.clone(),
+            available_tags: (channel.kind == domain::channel::ChannelType::GuildForum).then(|| {
+                channel
+                    .forum_settings
+                    .get("available_tags")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!([]))
+            }),
+            applied_tags: channel
+                .kind
+                .is_thread()
+                .then(|| channel.applied_tags.clone()),
+            flags: channel.kind.is_thread().then(|| {
+                if channel
+                    .forum_settings
+                    .get("pinned")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    2
+                } else {
+                    0
+                }
+            }),
+            default_sort_order: (channel.kind == domain::channel::ChannelType::GuildForum).then(
+                || {
+                    channel
+                        .forum_settings
+                        .get("default_sort_order")
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                },
+            ),
+            default_forum_layout: (channel.kind == domain::channel::ChannelType::GuildForum).then(
+                || {
+                    channel
+                        .forum_settings
+                        .get("default_forum_layout")
+                        .cloned()
+                        .unwrap_or(serde_json::json!(0))
+                },
+            ),
+            default_reaction_emoji: (channel.kind == domain::channel::ChannelType::GuildForum)
+                .then(|| {
+                    channel
+                        .forum_settings
+                        .get("default_reaction_emoji")
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                }),
+            message_count: None,
+            last_message_id: None,
+            forum_first_message: None,
+            forum_post_status: channel
+                .forum_settings
+                .get("status")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            require_tags: (channel.kind == domain::channel::ChannelType::GuildForum).then(|| {
+                channel
+                    .forum_settings
+                    .get("require_tags")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            }),
         }
     }
 

@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use domain::application::Webhook;
+use domain::application::{Webhook, WebhookKind};
 use domain::audit::{AuditAction, AuditChange};
 use domain::permissions::Permissions;
 use domain::validation;
@@ -29,6 +29,12 @@ pub async fn execute(
     audit: AuditContext<'_>,
 ) -> AppResult<Webhook> {
     let (before, _ctx) = require_manager(ports, actor, webhook_id).await?;
+    if before.kind == WebhookKind::ChannelFollower {
+        return Err(AppError::BadRequest {
+            code: 50024,
+            message: "Cannot modify a follower webhook".into(),
+        });
+    }
     let mut webhook = before.clone();
     let mut patch = WebhookMetadataPatch::default();
     let mut changes = Vec::new();

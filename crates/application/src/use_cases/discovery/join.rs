@@ -50,7 +50,9 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
     }
 
     let user = require_user(ports, actor.user_id).await?;
-    let member = Member::new(guild_id, actor.user_id, now);
+    let screening = ports.guilds.screening(guild_id).await?;
+    let mut member = Member::new(guild_id, actor.user_id, now);
+    member.pending = screening.enabled;
     let profile = MemberProfile {
         member: member.clone(),
         user,
@@ -62,7 +64,11 @@ pub async fn execute(ports: &Ports, actor: &Actor, guild_id: Snowflake) -> AppRe
 
     let mut writes = WriteSet::new();
     writes
-        .mutate(Mutation::UpsertMember(member))
+        .mutate(Mutation::CheckScreeningRevision {
+            guild_id,
+            revision: screening.revision,
+        })
+        .mutate(Mutation::InsertMember(member))
         .emit(DomainEvent::MemberAdd(profile))
         .emit(DomainEvent::GuildCreate {
             snapshot: Box::new(snapshot),

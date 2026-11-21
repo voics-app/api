@@ -96,7 +96,7 @@ async fn audience(ports: &Ports, channel: &Channel) -> AppResult<Audience> {
 }
 
 /// An absent, cyclic or foreign parent cannot make a background preview safe.
-async fn restricted_context(ports: &Ports, channel: &Channel) -> AppResult<bool> {
+pub(crate) async fn restricted_context(ports: &Ports, channel: &Channel) -> AppResult<bool> {
     let mut current = channel.clone();
     let mut seen = HashSet::new();
     loop {
