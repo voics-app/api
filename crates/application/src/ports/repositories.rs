@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use domain::account::{AccountState, AccountToken, TokenPurpose};
-use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
+use domain::application::{Application, ApplicationCommand, FollowedChannel, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
 use domain::bot_authorization::{BotAuthorization, BotInstallation, BotInstallationRevision};
 use domain::channel::Channel;
@@ -240,6 +240,25 @@ pub trait DeviceRepository: Send + Sync {
 #[async_trait]
 pub trait RelationshipRepository: Send + Sync {
     async fn list(&self, user_id: Snowflake) -> AppResult<Vec<Relationship>>;
+    async fn favourites(&self, user_id: Snowflake) -> AppResult<Vec<Snowflake>>;
+    async fn set_favourite(
+        &self,
+        user_id: Snowflake,
+        target_id: Snowflake,
+        favourite: bool,
+    ) -> AppResult<bool>;
+    async fn create_friend_invite(
+        &self,
+        owner: Snowflake,
+        hash: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<()>;
+    async fn friend_invite_owner(
+        &self,
+        hash: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<Snowflake>>;
+    async fn revoke_friend_invites(&self, owner: Snowflake) -> AppResult<()>;
     async fn get(
         &self,
         user_id: Snowflake,
@@ -249,7 +268,45 @@ pub trait RelationshipRepository: Send + Sync {
 
 #[async_trait]
 pub trait ChannelRepository: Send + Sync {
+    async fn find_forum_request(
+        &self,
+        guild_id: Snowflake,
+        parent_id: Snowflake,
+        owner_id: Snowflake,
+        request_key: &str,
+    ) -> AppResult<Option<Channel>> {
+        Ok(self.list_for_guild(guild_id).await?.into_iter().find(|c| {
+            c.parent_id == Some(parent_id)
+                && c.owner_id == Some(owner_id)
+                && c.forum_settings
+                    .get("request_key")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(request_key)
+        }))
+    }
+    /// Marks a confirmed deleted opener as terminal only while this lease is current.
+    async fn fail_forum_post(&self, _id: Snowflake, _token: &str) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "forum reservations unavailable".into(),
+        ))
+    }
+    /// Claims or takes over an expired forum delivery/publication lease.
+    async fn claim_forum_post(
+        &self,
+        _id: Snowflake,
+        _phase: &str,
+        _token: &str,
+    ) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "forum reservations unavailable".into(),
+        ))
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Channel>>;
+    async fn stage_instance(
+        &self,
+        channel_id: Snowflake,
+    ) -> AppResult<Option<domain::stage_instance::StageInstance>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Channel>>;
     async fn list_private(&self, user_id: Snowflake) -> AppResult<Vec<Channel>>;
     async fn find_dm(&self, a: Snowflake, b: Snowflake) -> AppResult<Option<Channel>>;
@@ -261,9 +318,96 @@ pub trait ChannelRepository: Send + Sync {
     async fn count(&self) -> AppResult<u64>;
 }
 
+#[derive(Debug, Clone)]
+pub struct ScheduledEventDelivery {
+    pub id: uuid::Uuid,
+    pub lease_id: uuid::Uuid,
+    pub guild_id: Snowflake,
+    pub event_id: Snowflake,
+    pub user_id: Snowflake,
+    pub session_id: uuid::Uuid,
+    pub start: DateTime<Utc>,
+    pub schedule_revision: i64,
+}
+
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
+    async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>>;
+    async fn set_appeal_form(&self, guild_id: Snowflake, question: &str) -> AppResult<()>;
+    async fn submit_appeal(
+        &self,
+        id: Snowflake,
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        answer: &str,
+        question: &str,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeal(
+        &self,
+        guild_id: Snowflake,
+        id: Snowflake,
+    ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
+    async fn appeals(&self, guild_id: Snowflake) -> AppResult<Vec<domain::ban_appeal::BanAppeal>>;
+    async fn claim_scheduled_event_delivery(&self) -> AppResult<Option<ScheduledEventDelivery>>;
+    async fn scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+    ) -> AppResult<Option<ScheduledEventDelivery>>;
+    async fn finish_scheduled_event_delivery(
+        &self,
+        delivery_id: uuid::Uuid,
+        lease_id: uuid::Uuid,
+        retry_after_secs: Option<u32>,
+    ) -> AppResult<bool>;
+    async fn scheduled_events(
+        &self,
+        guild_id: Snowflake,
+    ) -> AppResult<Vec<domain::scheduled_event::ScheduledEvent>>;
+    async fn scheduled_event(
+        &self,
+        guild_id: Snowflake,
+        event_id: Snowflake,
+    ) -> AppResult<Option<domain::scheduled_event::ScheduledEvent>>;
+    async fn scheduled_event_interested(
+        &self,
+        event_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<bool>;
+    async fn onboarding(&self, guild_id: Snowflake) -> AppResult<(serde_json::Value, i64)>;
+    async fn set_onboarding(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<i64>;
+    async fn welcome_screen(&self, guild_id: Snowflake) -> AppResult<serde_json::Value>;
+    async fn set_welcome_screen(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<()>;
+    async fn screening(&self, guild_id: Snowflake) -> AppResult<ScreeningConfig>;
+    async fn set_screening(
+        &self,
+        guild_id: Snowflake,
+        enabled: bool,
+        rules: &[String],
+    ) -> AppResult<ScreeningConfig>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
+    async fn widget_settings(&self, id: Snowflake) -> AppResult<Option<WidgetSettings>>;
+    async fn public_widget(&self, id: Snowflake) -> AppResult<Option<PublicWidget>>;
+    async fn membership_activity(
+        &self,
+        id: Snowflake,
+        since: chrono::NaiveDate,
+    ) -> AppResult<(DateTime<Utc>, Vec<MembershipActivity>)>;
+    async fn voice_checkpoint(&self, checkpoint: VoiceCheckpoint) -> AppResult<()>;
+    async fn update_widget_settings(
+        &self,
+        id: Snowflake,
+        enabled: Option<bool>,
+        channel: Option<Option<Snowflake>>,
+    ) -> AppResult<WidgetSettings>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>>;
     async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>>;
     async fn member(&self, guild_id: Snowflake, user_id: Snowflake) -> AppResult<Option<Member>>;
@@ -308,6 +452,44 @@ pub trait GuildRepository: Send + Sync {
     async fn update_template(&self, template: &GuildTemplate) -> AppResult<()>;
     async fn delete_template(&self, code: &str) -> AppResult<()>;
     async fn bump_template_usage(&self, code: &str) -> AppResult<()>;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WidgetSettings {
+    pub enabled: bool,
+    pub channel_id: Option<Snowflake>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicWidget {
+    pub id: Snowflake,
+    pub name: String,
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MembershipActivity {
+    pub day: chrono::NaiveDate,
+    pub joins: i64,
+    pub leaves: i64,
+    pub voice_millis: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoiceCheckpoint {
+    pub guild_id: Snowflake,
+    pub user_id: Snowflake,
+    pub session_id: String,
+    pub generation_id: Uuid,
+    pub observed_at: DateTime<Utc>,
+    pub connected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreeningConfig {
+    pub enabled: bool,
+    pub rules: Vec<String>,
+    pub revision: i64,
 }
 
 /// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,
@@ -430,6 +612,9 @@ pub trait InteractionRepository: Send + Sync {
 pub trait WebhookRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Webhook>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Webhook>>;
+    async fn list_followed_for_guild(&self, guild_id: Snowflake)
+        -> AppResult<Vec<FollowedChannel>>;
+    async fn followers_of(&self, channel_id: Snowflake) -> AppResult<Vec<FollowedChannel>>;
 }
 
 /// Push tokens of the mobile app, one per login session.

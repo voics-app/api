@@ -67,6 +67,13 @@ impl<'a> GuildAccess<'a> {
         channel: &Channel,
         parent: Option<&Channel>,
     ) -> Permissions {
+        if channel.kind.is_thread()
+            && !parent.is_some_and(|parent| {
+                Some(parent.id) == channel.parent_id && parent.guild_id == channel.guild_id
+            })
+        {
+            return Permissions::from_bits(0);
+        }
         let overwrites = match (channel.kind.is_thread(), parent) {
             (true, Some(parent)) => &parent.overwrites,
             _ => &channel.overwrites,
@@ -79,14 +86,30 @@ impl<'a> GuildAccess<'a> {
         } else {
             permissions
         };
-        if !channel.kind.is_thread() || permissions == Permissions::ALL {
-            return permissions;
+        let permissions = if !channel.kind.is_thread() || permissions == Permissions::ALL {
+            permissions
+        } else {
+            self.thread_permissions(member, channel, permissions)
+        };
+        // Apply this after thread inheritance and administrator expansion so
+        // neither can restore a pending member's ability to send.
+        if member.pending {
+            // Downstream services treat ADMINISTRATOR as an implicit grant of
+            // every bit, so remove it from this already-expanded bitfield too.
+            permissions.without(
+                Permissions::SEND_MESSAGES
+                    | Permissions::SEND_MESSAGES_IN_THREADS
+                    | Permissions::CREATE_PUBLIC_THREADS
+                    | Permissions::CREATE_PRIVATE_THREADS
+                    | Permissions::ADMINISTRATOR,
+            )
+        } else {
+            permissions
         }
-        self.thread_permissions(member, channel, permissions)
     }
 
     /// In threads SEND_MESSAGES_IN_THREADS replaces SEND_MESSAGES, and private
-    /// threads are visible only to their creator and thread managers.
+    /// threads are visible only to their creator, members, and thread managers.
     fn thread_permissions(
         &self,
         member: &Member,
@@ -95,6 +118,7 @@ impl<'a> GuildAccess<'a> {
     ) -> Permissions {
         let private_hidden = thread.kind == ChannelType::PrivateThread
             && thread.owner_id != Some(member.user_id)
+            && !thread.thread_member_ids.contains(&member.user_id)
             && !permissions.contains(Permissions::MANAGE_THREADS);
         if private_hidden {
             return permissions.without(Permissions::CHANNEL_SCOPED);
@@ -245,6 +269,29 @@ mod tests {
     }
 
     #[test]
+    fn pending_members_cannot_send_even_with_administrator_or_thread_permissions() {
+        let (guild, mut roles) = (guild(), roles());
+        roles.push(role(23, 4, Permissions::ADMINISTRATOR));
+        let access = GuildAccess::new(&guild, &roles, Utc::now());
+        let parent = channel(100, ChannelType::GuildText);
+        let mut thread = channel(101, ChannelType::PublicThread);
+        thread.parent_id = Some(parent.id);
+        for role_ids in [&[][..], &[23][..]] {
+            let mut user = member(2, role_ids);
+            user.pending = true;
+            for channel in [&parent, &thread] {
+                let permissions = access.in_channel(&user, channel, Some(&parent));
+                assert!(permissions.contains(Permissions::VIEW_CHANNEL));
+                assert!(!permissions.contains(Permissions::SEND_MESSAGES));
+                assert!(!permissions.contains(Permissions::SEND_MESSAGES_IN_THREADS));
+                assert!(!permissions.contains(Permissions::CREATE_PUBLIC_THREADS));
+                assert!(!permissions.contains(Permissions::CREATE_PRIVATE_THREADS));
+                assert!(!permissions.contains(Permissions::ADMINISTRATOR));
+            }
+        }
+    }
+
+    #[test]
     fn voice_text_chat_can_be_switched_off_for_senders() {
         let (guild, roles) = (guild(), roles());
         let access = GuildAccess::new(&guild, &roles, Utc::now());
@@ -279,16 +326,19 @@ mod tests {
     }
 
     #[test]
-    fn private_threads_visible_to_creator_and_managers_only() {
+    fn private_threads_visible_to_creator_members_and_managers_only() {
         let (guild, roles) = (guild(), roles());
         let access = GuildAccess::new(&guild, &roles, Utc::now());
         let parent = channel(100, ChannelType::GuildText);
         let mut thread = channel(101, ChannelType::PrivateThread);
+        thread.parent_id = Some(parent.id);
         thread.owner_id = Some(Snowflake::new(2));
+        thread.thread_member_ids.push(Snowflake::new(5));
         let cases = [
             (member(2, &[]), true),
             (member(3, &[]), false),
             (member(4, &[22]), true),
+            (member(5, &[]), true),
             (member(1, &[]), true),
         ];
         for (m, visible) in cases {
@@ -299,6 +349,20 @@ mod tests {
                 "user {}",
                 m.user_id
             );
+        }
+    }
+
+    #[test]
+    fn orphaned_threads_are_hidden_even_from_owner_and_managers() {
+        let (guild, roles) = (guild(), roles());
+        let access = GuildAccess::new(&guild, &roles, Utc::now());
+        for kind in [ChannelType::PublicThread, ChannelType::PrivateThread] {
+            let thread = channel(101, kind);
+            for member in [member(1, &[]), member(2, &[]), member(4, &[22])] {
+                assert!(!access
+                    .in_channel(&member, &thread, None)
+                    .contains(Permissions::VIEW_CHANNEL));
+            }
         }
     }
 

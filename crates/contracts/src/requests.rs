@@ -331,6 +331,19 @@ pub struct CreateChannelRequest {
     pub voice_region: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct VoiceStatusRequest {
+    #[serde(deserialize_with = "required_nullable_status")]
+    pub status: Option<String>,
+}
+
+fn required_nullable_status<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct ModifyChannelRequest {
     #[serde(default)]
@@ -367,6 +380,20 @@ pub struct ModifyChannelRequest {
     pub locked: Option<bool>,
     #[serde(default)]
     pub auto_archive_duration: Option<u32>,
+    #[serde(default)]
+    pub available_tags: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub default_sort_order: Option<Option<u8>>,
+    #[serde(default)]
+    pub default_forum_layout: Option<u8>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub default_reaction_emoji: Option<Option<serde_json::Value>>,
+    #[serde(default)]
+    pub require_tags: Option<bool>,
+    #[serde(default)]
+    pub applied_tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub flags: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -403,6 +430,12 @@ pub struct CreateInviteRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateThreadRequest {
     pub name: String,
+    #[serde(default)]
+    pub message: Option<serde_json::Value>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub applied_tags: Vec<String>,
     #[serde(default, rename = "type")]
     pub kind: Option<u8>,
     #[serde(default)]
@@ -456,6 +489,9 @@ pub struct ModifyMemberRequest {
     /// A voice channel to move the member to; `null` disconnects them from voice.
     #[serde(default, deserialize_with = "double_option")]
     pub channel_id: Option<Option<Id>>,
+    /// Stage audience status: false promotes the member, true moves them to the audience.
+    #[serde(default)]
+    pub suppress: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]

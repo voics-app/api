@@ -15,6 +15,7 @@ const CHUNK: usize = 500;
 #[derive(Clone)]
 pub struct ValkeyPresence {
     connection: ConnectionManager,
+    gateway: Option<(reqwest::Url, String, reqwest::Client)>,
 }
 
 impl ValkeyPresence {
@@ -23,7 +24,20 @@ impl ValkeyPresence {
         let connection = ConnectionManager::new(client)
             .await
             .map_err(|e| AppError::Unavailable(format!("valkey: {e}")))?;
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            gateway: None,
+        })
+    }
+
+    pub fn with_gateway(mut self, base: reqwest::Url, token: String) -> AppResult<Self> {
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+            .map_err(AppError::internal)?;
+        self.gateway = Some((base, token, client));
+        Ok(self)
     }
 }
 
@@ -41,6 +55,39 @@ fn is_online(aggregate: &str) -> bool {
 
 #[async_trait]
 impl PresenceDirectory for ValkeyPresence {
+    async fn in_voice_channel(
+        &self,
+        guild_id: Snowflake,
+        channel_id: Snowflake,
+        user_id: Snowflake,
+    ) -> AppResult<bool> {
+        let (base, token, client) = self.gateway.as_ref().ok_or_else(|| {
+            AppError::Unavailable("gateway voice lookup is not configured".into())
+        })?;
+        let url = base
+            .join(&format!(
+                "/internal/v1/guilds/{guild_id}/channels/{channel_id}/voice-members/{user_id}"
+            ))
+            .map_err(AppError::internal)?;
+        let response = client
+            .get(url)
+            .header("X-Internal-Token", token)
+            .send()
+            .await
+            .map_err(|_| AppError::Unavailable("gateway voice lookup failed".into()))?;
+        if !response.status().is_success() {
+            return Err(AppError::Unavailable("gateway voice lookup failed".into()));
+        }
+        let value: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|_| AppError::Unavailable("invalid gateway voice lookup response".into()))?;
+        value
+            .get("connected")
+            .and_then(|v| v.as_bool())
+            .ok_or_else(|| AppError::Unavailable("invalid gateway voice lookup response".into()))
+    }
+
     async fn online_count(&self, user_ids: &[Snowflake]) -> AppResult<u64> {
         let mut connection = self.connection.clone();
         let mut online = 0u64;

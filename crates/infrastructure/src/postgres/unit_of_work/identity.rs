@@ -211,6 +211,20 @@ pub(super) async fn set_relationship(
     kind: Option<RelationshipType>,
     since: chrono::DateTime<chrono::Utc>,
 ) -> AppResult<()> {
+    if kind != Some(RelationshipType::Friend) {
+        sqlx::query("SELECT 1 FROM relationships WHERE user_id = $1 AND target_id = $2 FOR UPDATE")
+            .bind(user_id.as_i64())
+            .bind(target_id.as_i64())
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(db)?;
+        sqlx::query("DELETE FROM friend_favourites WHERE user_id = $1 AND target_id = $2")
+            .bind(user_id.as_i64())
+            .bind(target_id.as_i64())
+            .execute(&mut *conn)
+            .await
+            .map_err(db)?;
+    }
     match kind {
         Some(kind) => {
             sqlx::query(
@@ -256,16 +270,55 @@ pub(super) async fn suspend_user(
 
 pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -> AppResult<()> {
     crate::postgres::community::check_update(conn, channel).await?;
+    // check_update holds the guild row lock. Recheck mode and children under
+    // that lock so forum creation cannot race a change of privacy mode.
+    if channel.kind == domain::channel::ChannelType::GuildForum {
+        let current: Option<String> =
+            sqlx::query_scalar("SELECT delivery_mode FROM channels WHERE id = $1")
+                .bind(channel.id.as_i64())
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(db)?;
+        if current
+            .as_deref()
+            .is_some_and(|mode| mode != channel.delivery_mode.as_str())
+        {
+            let has_posts: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM channels WHERE parent_id = $1 AND kind IN (10, 11, 12) AND COALESCE(forum_settings->>'status','') <> 'deleted')")
+                .bind(channel.id.as_i64()).fetch_one(&mut *conn).await.map_err(db)?;
+            if has_posts {
+                return Err(application::AppError::invalid(
+                    "delivery_mode",
+                    "DELIVERY_MODE_INVALID",
+                    "A forum with posts cannot change delivery mode.",
+                ));
+            }
+        }
+    } else if channel.kind.is_thread() && channel.forum_settings.get("request_key").is_some() {
+        let parent: Option<(i16, String)> =
+            sqlx::query_as("SELECT kind, delivery_mode FROM channels WHERE id = $1")
+                .bind(channel.parent_id.map(|id| id.as_i64()))
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(db)?;
+        if !matches!(parent, Some((15, ref mode)) if mode == channel.delivery_mode.as_str()) {
+            return Err(application::AppError::invalid(
+                "delivery_mode",
+                "DELIVERY_MODE_INVALID",
+                "The forum delivery mode changed.",
+            ));
+        }
+    }
     sqlx::query(
         "INSERT INTO channels (id, kind, guild_id, position, name, topic, nsfw, text_chat_enabled, bitrate, user_limit, \
-             rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, created_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) \
+             rate_limit_per_user, parent_id, owner_id, icon, delivery_mode, voice_region, thread_metadata, forum_settings, applied_tags, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) \
          ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, guild_id = EXCLUDED.guild_id, \
              position = EXCLUDED.position, name = EXCLUDED.name, topic = EXCLUDED.topic, nsfw = EXCLUDED.nsfw, \
              text_chat_enabled = EXCLUDED.text_chat_enabled, bitrate = EXCLUDED.bitrate, user_limit = EXCLUDED.user_limit, \
              rate_limit_per_user = EXCLUDED.rate_limit_per_user, parent_id = EXCLUDED.parent_id, \
              owner_id = EXCLUDED.owner_id, icon = EXCLUDED.icon, delivery_mode = EXCLUDED.delivery_mode, \
-             voice_region = EXCLUDED.voice_region, thread_metadata = EXCLUDED.thread_metadata",
+             voice_region = EXCLUDED.voice_region, thread_metadata = EXCLUDED.thread_metadata, \
+             forum_settings = EXCLUDED.forum_settings, applied_tags = EXCLUDED.applied_tags",
     )
     .bind(channel.id.as_i64())
     .bind(i16::from(channel.kind.code()))
@@ -284,6 +337,8 @@ pub(super) async fn upsert_channel(conn: &mut PgConnection, channel: &Channel) -
     .bind(channel.delivery_mode.as_str())
     .bind(&channel.voice_region)
     .bind(channel.thread_metadata.as_ref().map(thread_metadata_json))
+    .bind(&channel.forum_settings)
+    .bind(&channel.applied_tags)
     .bind(channel.created_at)
     .execute(&mut *conn)
     .await
@@ -334,6 +389,23 @@ pub(super) async fn delete_channel(
     channel_id: Snowflake,
 ) -> AppResult<()> {
     crate::postgres::community::check_delete(conn, channel_id).await?;
+    // Keep only the idempotency tombstone so a late retry cannot recreate a deleted post.
+    let tombstone = sqlx::query("UPDATE channels SET name = NULL, topic = NULL, applied_tags = '{}', thread_metadata = NULL, forum_settings = jsonb_build_object('request_key', forum_settings->'request_key', 'request_hash', forum_settings->'request_hash', 'pending', true, 'status', 'deleted') WHERE id = $1 AND kind = 11 AND forum_settings ? 'request_key'")
+        .bind(channel_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+    if tombstone.rows_affected() != 0 {
+        for table in [
+            "channel_recipients",
+            "permission_overwrites",
+            "channel_delivery_overrides",
+        ] {
+            sqlx::query(&format!("DELETE FROM {table} WHERE channel_id = $1"))
+                .bind(channel_id.as_i64())
+                .execute(&mut *conn)
+                .await
+                .map_err(db)?;
+        }
+        return Ok(());
+    }
     sqlx::query("DELETE FROM channels WHERE id = $1")
         .bind(channel_id.as_i64())
         .execute(conn)
@@ -469,6 +541,7 @@ pub(super) async fn anonymize_user(
         "application_authorizations",
         "connection_oauth_states",
         "user_connections",
+        "ban_appeals",
         "user_badges",
     ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE user_id = $1"))

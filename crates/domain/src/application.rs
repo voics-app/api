@@ -316,13 +316,22 @@ impl Interaction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WebhookKind {
     Incoming,
+    ChannelFollower,
     Application,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FollowedChannel {
+    pub source_channel_id: Snowflake,
+    pub target_channel_id: Snowflake,
+    pub webhook_id: Snowflake,
 }
 
 impl WebhookKind {
     pub const fn code(self) -> u8 {
         match self {
             WebhookKind::Incoming => 1,
+            WebhookKind::ChannelFollower => 2,
             WebhookKind::Application => 3,
         }
     }
@@ -330,6 +339,7 @@ impl WebhookKind {
     pub const fn from_code(code: u8) -> Option<Self> {
         match code {
             1 => Some(WebhookKind::Incoming),
+            2 => Some(WebhookKind::ChannelFollower),
             3 => Some(WebhookKind::Application),
             _ => None,
         }

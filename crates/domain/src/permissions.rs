@@ -66,8 +66,10 @@ permission_bits! {
     CREATE_EVENTS = 44,
     USE_EXTERNAL_SOUNDS = 45,
     SEND_VOICE_MESSAGES = 46,
+    SET_VOICE_CHANNEL_STATUS = 48,
     SEND_POLLS = 49,
     USE_EXTERNAL_APPS = 50,
+    MANAGE_BAN_APPEALS = 53,
 }
 
 impl Permissions {
@@ -78,6 +80,7 @@ impl Permissions {
     pub const GUILD_ONLY: Permissions = Permissions(
         Self::KICK_MEMBERS.0
             | Self::BAN_MEMBERS.0
+            | Self::MANAGE_BAN_APPEALS.0
             | Self::ADMINISTRATOR.0
             | Self::MANAGE_GUILD.0
             | Self::VIEW_AUDIT_LOG.0

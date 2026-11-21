@@ -4,7 +4,9 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::{json, Value};
 
 use application::use_cases::admin::{
     list_guilds, list_reports, list_users, resolve_report, stats, suspend_user,
@@ -19,14 +21,13 @@ use application::{AppError, Resource};
 use contracts::internal::{
     AdminGuildDto, AdminReportDto, AdminReportPageDto, AdminReportUserDto, AdminUserDto,
     AdminUserPageDto, ApiAdminStatsDto, ChannelAccessDto, ChannelRoutingDto,
-    ForgetPushTokenRequest, IntrospectRequest, IntrospectResponse, ManualPushTargetsDto,
-    ManualPushUserDto, NotificationRecipientDto, NotificationRecipientPageDto, PushTargetDto,
-    PushTargetsDto, PushTokenDto, ResolveReportRequest, SuspendUserRequest, UserReadyDto,
-    UsersLookupRequest, VoipTokenDto,
+    ForgetPushTokenRequest, InternalGuildFullDto, IntrospectRequest, IntrospectResponse,
+    ManualPushTargetsDto, ManualPushUserDto, NotificationRecipientDto,
+    NotificationRecipientPageDto, PushTargetDto, PushTargetsDto, PushTokenDto,
+    ResolveReportRequest, SuspendUserRequest, UserReadyDto, UsersLookupRequest, VoipTokenDto,
 };
 use contracts::objects::{
-    ChannelDto, GuildFullDto, GuildNotificationSettingsDto, RelationshipDto, UserDto,
-    UserSettingsDto,
+    ChannelDto, GuildNotificationSettingsDto, RelationshipDto, UserDto, UserSettingsDto,
 };
 use contracts::wire::{timestamp, Id, Perm};
 use domain::push_token::PushPlatform;
@@ -44,6 +45,56 @@ fn parse_id(raw: &str) -> Result<Snowflake, ApiError> {
 
 fn region(state: &AppState) -> &str {
     &state.ports.settings.default_voice_region
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VoiceCheckpointRequest {
+    guild_id: Id,
+    user_id: Id,
+    session_id: String,
+    generation_id: uuid::Uuid,
+    observed_at: chrono::DateTime<chrono::Utc>,
+    connected: bool,
+}
+
+async fn voice_checkpoint(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Body(body): Body<VoiceCheckpointRequest>,
+) -> Result<StatusCode, ApiError> {
+    let now = state.ports.clock.now();
+    if body.session_id.is_empty()
+        || body.session_id.chars().count() > 128
+        || body.session_id.contains('\0')
+    {
+        return Err(
+            AppError::invalid("session_id", "INVALID_STRING", "Invalid session id.").into(),
+        );
+    }
+    if body.observed_at > now + chrono::Duration::seconds(10)
+        || body.observed_at < now - chrono::Duration::hours(24)
+    {
+        return Err(AppError::invalid(
+            "observed_at",
+            "INVALID_TIMESTAMP",
+            "Checkpoint is outside the accepted time window.",
+        )
+        .into());
+    }
+    state
+        .ports
+        .guilds
+        .voice_checkpoint(application::ports::VoiceCheckpoint {
+            guild_id: body.guild_id.0,
+            user_id: body.user_id.0,
+            session_id: body.session_id,
+            generation_id: body.generation_id,
+            observed_at: body.observed_at,
+            connected: body.connected,
+        })
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn reserve_ids(
@@ -107,7 +158,7 @@ async fn user_ready_state(
         guilds: ready
             .guilds
             .iter()
-            .map(|snapshot| GuildFullDto::new(snapshot, region))
+            .map(|snapshot| InternalGuildFullDto::new(snapshot, region))
             .collect(),
         private_channels: ready
             .private_channels
@@ -144,9 +195,9 @@ async fn guild_full_state(
     State(state): State<AppState>,
     _internal: Internal,
     Path(guild_id): Path<String>,
-) -> Result<Json<GuildFullDto>, ApiError> {
+) -> Result<Json<InternalGuildFullDto>, ApiError> {
     let snapshot = guild_state::execute(&state.ports, parse_id(&guild_id)?).await?;
-    Ok(Json(GuildFullDto::new(&snapshot, region(&state))))
+    Ok(Json(InternalGuildFullDto::new(&snapshot, region(&state))))
 }
 
 async fn channel_delivery(
@@ -158,6 +209,7 @@ async fn channel_delivery(
     Ok(Json(ChannelRoutingDto {
         guild_id: routing.guild_id.map(Id),
         channel_type: routing.channel_type.code(),
+        thread_locked: routing.thread_locked,
         delivery_mode: routing.delivery_mode.as_str().to_owned(),
         recipient_ids: routing.recipient_ids.into_iter().map(Id).collect(),
     }))
@@ -174,9 +226,33 @@ async fn channel_access_info(
         permissions: Perm(info.permissions),
         guild_id: info.guild_id.map(Id),
         channel_type: info.channel_type.code(),
+        thread_locked: info.thread_locked,
         delivery_mode: info.delivery_mode.as_str().to_owned(),
         recipient_ids: info.recipient_ids.into_iter().map(Id).collect(),
     }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThreadActivityRequest {
+    occurred_at: DateTime<Utc>,
+}
+
+async fn record_thread_activity(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(thread_id): Path<String>,
+    Body(body): Body<ThreadActivityRequest>,
+) -> Result<StatusCode, ApiError> {
+    let thread_id = thread_id
+        .parse()
+        .map_err(|_| AppError::NotFound(Resource::Channel))?;
+    state
+        .ports
+        .thread_lifecycle
+        .record_message(thread_id, body.occurred_at, state.ports.clock.now())
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -343,6 +419,121 @@ async fn user_push_tokens(
 ) -> Result<Json<ManualPushTargetsDto>, ApiError> {
     let found = manual_targets::for_user(&state.ports, parse_id(&user_id)?).await?;
     Ok(Json(manual_targets_dto(found)))
+}
+
+#[derive(Deserialize)]
+struct EventReminderTargetsQuery {
+    user_id: String,
+    scheduled_start_time: chrono::DateTime<chrono::Utc>,
+    revision: i64,
+}
+
+async fn event_reminder_targets(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path((guild_id, event_id)): Path<(String, String)>,
+    Query(query): Query<EventReminderTargetsQuery>,
+) -> Result<Json<ManualPushTargetsDto>, ApiError> {
+    let user_id = parse_id(&query.user_id)?;
+    let tokens = application::use_cases::scheduled_events::reminder_targets(
+        &state.ports,
+        parse_id(&guild_id)?,
+        parse_id(&event_id)?,
+        user_id,
+        query.scheduled_start_time,
+        query.revision,
+    )
+    .await?;
+    let users = if tokens.is_empty() {
+        Vec::new()
+    } else {
+        vec![(user_id, tokens)]
+    };
+    Ok(Json(manual_targets_dto(manual_targets::ManualTargets {
+        users,
+        next_after: None,
+    })))
+}
+
+#[derive(Deserialize)]
+struct DeliveryLeaseRequest {
+    lease_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+struct FinishDeliveryRequest {
+    lease_id: uuid::Uuid,
+    retry_after_secs: Option<u32>,
+}
+
+async fn claim_event_delivery(
+    State(state): State<AppState>,
+    _internal: Internal,
+) -> Result<Json<Value>, ApiError> {
+    let delivery = state.ports.guilds.claim_scheduled_event_delivery().await?;
+    Ok(Json(match delivery {
+        None => Value::Null,
+        Some(delivery) => json!({
+            "delivery_id": delivery.id, "lease_id": delivery.lease_id,
+            "guild_id": delivery.guild_id.to_string(), "event_id": delivery.event_id.to_string(),
+            "user_id": delivery.user_id.to_string(), "scheduled_start_time": timestamp(delivery.start),
+            "revision": delivery.schedule_revision
+        }),
+    }))
+}
+
+async fn resolve_event_delivery(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(id): Path<uuid::Uuid>,
+    Body(body): Body<DeliveryLeaseRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let delivery = state
+        .ports
+        .guilds
+        .scheduled_event_delivery(id, body.lease_id)
+        .await?
+        .ok_or(AppError::Conflict {
+            code: 0,
+            message: "Reminder lease expired.".into(),
+        })?;
+    let tokens = application::use_cases::scheduled_events::reminder_targets(
+        &state.ports,
+        delivery.guild_id,
+        delivery.event_id,
+        delivery.user_id,
+        delivery.start,
+        delivery.schedule_revision,
+    )
+    .await?;
+    let token = tokens
+        .into_iter()
+        .find(|token| token.session_id == delivery.session_id);
+    Ok(Json(match token {
+        Some(token) => serde_json::to_value(push_token_dto(token)).map_err(AppError::internal)?,
+        None => Value::Null,
+    }))
+}
+
+async fn finish_event_delivery(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(id): Path<uuid::Uuid>,
+    Body(body): Body<FinishDeliveryRequest>,
+) -> Result<StatusCode, ApiError> {
+    if !state
+        .ports
+        .guilds
+        .finish_scheduled_event_delivery(id, body.lease_id, body.retry_after_secs)
+        .await?
+    {
+        return Err(AppError::Conflict {
+            code: 0,
+            message: "Reminder lease expired.".into(),
+        }
+        .into());
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -536,6 +727,10 @@ async fn admin_resolve_report(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/internal/v1/voice/activity-checkpoints",
+            post(voice_checkpoint),
+        )
         .route("/internal/v1/id-reservations", post(reserve_ids))
         .route("/internal/v1/auth/introspect", post(introspect_token))
         .route("/internal/v1/users/lookup", post(users_lookup))
@@ -546,6 +741,10 @@ pub fn routes() -> Router<AppState> {
             get(channel_access_info),
         )
         .route("/internal/v1/channels/{id}/delivery", get(channel_delivery))
+        .route(
+            "/internal/v1/threads/{id}/activity",
+            post(record_thread_activity),
+        )
         .route("/internal/v1/channels/{id}/push-targets", get(push_targets))
         .route(
             "/internal/v1/channels/{id}/notification-recipients",
@@ -556,6 +755,22 @@ pub fn routes() -> Router<AppState> {
             delete(forget_push_token).get(push_token_page),
         )
         .route("/internal/v1/users/{id}/push-tokens", get(user_push_tokens))
+        .route(
+            "/internal/v1/guilds/{guild_id}/scheduled-events/{event_id}/push-targets",
+            get(event_reminder_targets),
+        )
+        .route(
+            "/internal/v1/scheduled-event-deliveries/claim",
+            post(claim_event_delivery),
+        )
+        .route(
+            "/internal/v1/scheduled-event-deliveries/{id}/resolve",
+            post(resolve_event_delivery),
+        )
+        .route(
+            "/internal/v1/scheduled-event-deliveries/{id}/finish",
+            post(finish_event_delivery),
+        )
         .route("/internal/v1/admin/stats", get(admin_stats))
         .route("/internal/v1/admin/users", get(admin_users))
         .route("/internal/v1/admin/users/{id}/suspend", post(admin_suspend))

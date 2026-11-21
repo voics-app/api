@@ -119,6 +119,8 @@ impl EventPublisher for DiscardEvents {
 #[derive(Default)]
 pub struct RecordingMessages {
     pub get_calls: std::sync::atomic::AtomicUsize,
+    pub lose_crosspost_response: std::sync::atomic::AtomicBool,
+    pub forum_fail_after_store: std::sync::atomic::AtomicBool,
     pub bodies: std::sync::Mutex<Vec<serde_json::Value>>,
     /// The channel each recorded body was posted to.
     pub channels: std::sync::Mutex<Vec<domain::Snowflake>>,
@@ -130,6 +132,84 @@ pub struct RecordingMessages {
 
 #[async_trait]
 impl MessageService for RecordingMessages {
+    async fn deliver_crosspost(
+        &self,
+        channel_id: domain::Snowflake,
+        body: serde_json::Value,
+    ) -> AppResult<StoredMessage> {
+        let id: domain::Snowflake = body["message_id"].as_str().unwrap().parse().unwrap();
+        let webhook = body["webhook_id"].clone();
+        self.channels.lock().unwrap().push(channel_id);
+        self.bodies.lock().unwrap().push(body);
+        let stored = serde_json::json!({"id":id.to_string(), "webhook_id":webhook});
+        self.stored
+            .lock()
+            .unwrap()
+            .insert((channel_id, id), stored.clone());
+        if self
+            .lose_crosspost_response
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(AppError::Unavailable(
+                "fixture lost successful delivery response".into(),
+            ));
+        }
+        Ok(StoredMessage { id, body: stored })
+    }
+    async fn mark_crossposted(
+        &self,
+        channel_id: domain::Snowflake,
+        message_id: domain::Snowflake,
+    ) -> AppResult<StoredMessage> {
+        let mut stored = self.stored.lock().unwrap();
+        let body = stored
+            .get_mut(&(channel_id, message_id))
+            .ok_or(AppError::NotFound(application::Resource::Message))?;
+        let flags = body
+            .get("flags")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        body["flags"] = serde_json::json!(flags | 1);
+        Ok(StoredMessage {
+            id: message_id,
+            body: body.clone(),
+        })
+    }
+    async fn forum_summaries(
+        &self,
+        channel_ids: &[domain::Snowflake],
+    ) -> AppResult<Vec<serde_json::Value>> {
+        let stored = self.stored.lock().unwrap();
+        Ok(channel_ids.iter().map(|channel_id| {
+            let mut messages: Vec<_> = stored.iter().filter(|((channel, _), _)| channel == channel_id).collect();
+            messages.sort_by_key(|((_, id), _)| *id);
+            serde_json::json!({"channel_id": channel_id.to_string(), "message_count": messages.len(), "first_message": messages.first().map(|(_, body)| *body), "last_message_id": messages.last().map(|((_, id), _)| id.to_string())})
+        }).collect())
+    }
+    async fn create_forum_start(
+        &self,
+        channel_id: domain::Snowflake,
+        message: serde_json::Value,
+    ) -> AppResult<StoredMessage> {
+        let id: domain::Snowflake = message["message_id"].as_str().unwrap().parse().unwrap();
+        if let Some(body) = self.stored.lock().unwrap().get(&(channel_id, id)).cloned() {
+            return Ok(StoredMessage { id, body });
+        }
+        let body = serde_json::json!({"id": id.to_string(), "channel_id": channel_id.to_string(), "author": {"id": message["author_id"]}, "content": message["content"], "attachments": []});
+        self.stored
+            .lock()
+            .unwrap()
+            .insert((channel_id, id), body.clone());
+        self.channels.lock().unwrap().push(channel_id);
+        self.bodies.lock().unwrap().push(message);
+        if self
+            .forum_fail_after_store
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(AppError::Unavailable("simulated lost response".into()));
+        }
+        Ok(StoredMessage { id, body })
+    }
     async fn create(
         &self,
         channel_id: domain::Snowflake,
@@ -168,6 +248,12 @@ impl MessageService for RecordingMessages {
                 body: body.clone(),
             }))
     }
+    async fn message_counts(
+        &self,
+        channel_ids: &[domain::Snowflake],
+    ) -> AppResult<Vec<(domain::Snowflake, u64)>> {
+        Ok(channel_ids.iter().copied().map(|id| (id, 0)).collect())
+    }
 }
 
 struct NoMessages;
@@ -202,6 +288,12 @@ impl MessageService for NoMessages {
         Err(AppError::Unavailable(
             "messages service not wired in this test".into(),
         ))
+    }
+    async fn message_counts(
+        &self,
+        channel_ids: &[domain::Snowflake],
+    ) -> AppResult<Vec<(domain::Snowflake, u64)>> {
+        Ok(channel_ids.iter().copied().map(|id| (id, 0)).collect())
     }
 }
 
@@ -254,6 +346,10 @@ pub fn ports_with_messages(
         relationships: store.clone(),
         reports: store.clone(),
         channels: store.clone(),
+        thread_lifecycle: Arc::new(infrastructure::postgres::PgThreadLifecycle::new(
+            pool.clone(),
+            "nl-home".into(),
+        )),
         guilds: store.clone(),
         invites: store.clone(),
         emojis: store.clone(),

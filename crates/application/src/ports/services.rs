@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use domain::Snowflake;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events::DomainEvent;
 use crate::write_set::WriteSet;
 
@@ -102,6 +102,32 @@ pub struct StoredMessage {
 /// Messages are owned by the `messages` service.
 #[async_trait]
 pub trait MessageService: Send + Sync {
+    async fn sign_media(&self, _urls: Vec<String>) -> AppResult<Vec<String>> {
+        Err(AppError::Unavailable("media signing unavailable".into()))
+    }
+    /// Observed message markers and whether this UTC day has verified coverage.
+    async fn guild_message_count(
+        &self,
+        _guild_id: Snowflake,
+        _utc_day: i64,
+    ) -> AppResult<(u64, bool, Option<u64>)> {
+        Err(AppError::Unavailable(
+            "guild message activity is not configured".into(),
+        ))
+    }
+    /// Server-stored forum summaries for already authorized channels.
+    async fn forum_summaries(&self, _channel_ids: &[Snowflake]) -> AppResult<Vec<Value>> {
+        Err(AppError::Unavailable("forum summaries unavailable".into()))
+    }
+    /// One invocation only after the caller durably claims the reserved forum message.
+    async fn create_forum_start(
+        &self,
+        _channel_id: Snowflake,
+        _message: Value,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable("forum start is unavailable".into()))
+    }
+
     /// Creates a message on behalf of a bot, webhook or interaction.
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage>;
     async fn edit(
@@ -118,6 +144,28 @@ pub trait MessageService: Send + Sync {
         channel_id: Snowflake,
         message_id: Snowflake,
     ) -> AppResult<Option<StoredMessage>>;
+
+    /// Exact current message counts for the requested channels.
+    async fn message_counts(&self, channel_ids: &[Snowflake]) -> AppResult<Vec<(Snowflake, u64)>>;
+    async fn mark_crossposted(
+        &self,
+        _channel_id: Snowflake,
+        _message_id: Snowflake,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable(
+            "message publication marker unavailable".into(),
+        ))
+    }
+    /// Sends a journalled follower delivery. Errors after dispatch may be ambiguous.
+    async fn deliver_crosspost(
+        &self,
+        _channel_id: Snowflake,
+        _body: Value,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable(
+            "crosspost delivery unavailable".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,6 +185,17 @@ pub trait PresenceDirectory: Send + Sync {
     async fn online_count(&self, user_ids: &[Snowflake]) -> AppResult<u64>;
     /// Which of `user_ids` hold at least one live gateway session, whatever their status.
     async fn live_ids(&self, user_ids: &[Snowflake]) -> AppResult<Vec<Snowflake>>;
+    /// The gateway owns voice state; inability to check never grants permission.
+    async fn in_voice_channel(
+        &self,
+        _guild_id: Snowflake,
+        _channel_id: Snowflake,
+        _user_id: Snowflake,
+    ) -> AppResult<bool> {
+        Err(AppError::Unavailable(
+            "voice state lookup is not configured".into(),
+        ))
+    }
 }
 
 #[async_trait]

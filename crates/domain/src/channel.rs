@@ -122,6 +122,7 @@ pub struct Channel {
     pub position: i32,
     pub name: Option<String>,
     pub topic: Option<String>,
+    pub status: Option<String>,
     pub nsfw: bool,
     /// Voice channels only: whether members may send messages to the channel's chat.
     pub text_chat_enabled: bool,
@@ -132,11 +133,16 @@ pub struct Channel {
     pub owner_id: Option<Snowflake>,
     pub icon: Option<String>,
     pub recipient_ids: Vec<Snowflake>,
+    /// Guild users who joined this thread. Never included in public channel DTOs.
+    pub thread_member_ids: Vec<Snowflake>,
+    pub thread_membership_version: u64,
     pub overwrites: Vec<PermissionOverwrite>,
     /// Configured mode; only meaningful for guild channels.
     pub delivery_mode: DeliveryMode,
     pub voice_region: Option<String>,
     pub thread_metadata: Option<ThreadMetadata>,
+    pub forum_settings: serde_json::Value,
+    pub applied_tags: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -155,6 +161,7 @@ impl Channel {
             position: 0,
             name: None,
             topic: None,
+            status: None,
             nsfw: false,
             text_chat_enabled: true,
             bitrate: kind.is_voice().then_some(64_000),
@@ -164,10 +171,14 @@ impl Channel {
             owner_id: None,
             icon: None,
             recipient_ids: Vec::new(),
+            thread_member_ids: Vec::new(),
+            thread_membership_version: 0,
             overwrites: Vec::new(),
             delivery_mode: DeliveryMode::Standard,
             voice_region: None,
             thread_metadata: None,
+            forum_settings: serde_json::json!({}),
+            applied_tags: Vec::new(),
             created_at,
         }
     }

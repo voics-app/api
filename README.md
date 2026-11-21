@@ -1,8 +1,41 @@
 # api
 
+Forum post creation uses an author-scoped request UUID and reserved thread and message IDs. Standard-mode requests return a pending status until the opening message is confirmed; retry the same request to recover an expired lease. Published forum feeds include message summaries from the messages service. Private-mode forum creation is not yet supported.
+
 The Voics REST API: accounts, users and settings, DMs, relationships, devices, guilds and their channels, roles, members, bans, invites, emojis, audit log, applications and bots, commands, interactions and webhooks. It also serves the internal P4 endpoints used by gateway and admin-bff.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
+
+The internal channel-access endpoint returns 403 when the caller lacks VIEW_CHANNEL, before
+returning encrypted relay recipient IDs. Eligible viewers retain the existing permission response.
+
+Scheduled events (api#49, draft): guild members can list visible events and inspect their
+own interest. Creators with `CREATE_EVENTS` and managers with `MANAGE_EVENTS` can create,
+modify and delete events; channel events require a visible matching voice or stage channel.
+Interest writes are idempotent. Changes and their gateway dispatches share the Postgres
+transaction. Migration `0087` also records start-reminder claims; a bounded worker writes
+user-targeted outbox records and the desktop rechecks access and interest before displaying.
+The proposed notifier consumer sends generic mobile pushes after a second eligibility check,
+but its restart and overload delivery guarantees are limited. These paths need integrated
+verification before release; see `http_scheduled_events` and `postgres_scheduled_events` tests.
+Announcement follows and publication (api#36) are gated by
+`ANNOUNCEMENT_DELIVERY_ENABLED`, default `false`. A follower is a non-executable
+type-2 webhook; publication reserves one delivery per source message and target
+channel in Postgres. The relay checks the reserved destination after a lost
+response and never blindly re-sends an unknown result. This work remains in
+review pending cross-service verification and an operator recovery procedure.
+For the isolated bridge test, build `announcement_fixture` from the companion
+messages worktree (`cargo build --locked -p discordy-messages-interface --example
+announcement_fixture`), set `MESSAGES_FIXTURE_BIN` to that binary, and run
+`cargo test --locked -p infrastructure --test http_announcement_bridge -- --ignored`.
+It starts one disposable PostgreSQL container and a loopback messages fixture;
+it exercises a lost response after the destination was stored. The regular PR
+job cannot check out the private messages repository with its repository-scoped
+token, so it does not run this cross-repository test.
+Thread members and browse routes use migration `0084_thread_members.sql`. The gateway must
+support and strip versioned internal membership state before this API change is deployed;
+otherwise private membership data could reach clients. A private thread inherits its parent
+permissions and is visible to its creator, joined members and thread managers.
 
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts
@@ -85,8 +118,27 @@ The admin queue receives public name/description/category/tags, guild ID and the
 owner at filing. No private channel/member/message data is copied. Resolving a
 report does not automatically delist the server. See the central
 [discovery specification](https://github.com/voics-app/docs/blob/develop/specs/2026-11-03-server-discovery.md).
-No new configuration or infrastructure is needed. Membership screening remains
-a separate feature; Community setup does not implement api#40.
+No new configuration or infrastructure is needed. Community setup and rules
+screening are configured separately.
+
+`GET /guilds/{id}/member-verification` returns the current rules, revision and
+the caller's pending status. `PUT` requires `MANAGE_GUILD`; enable screening
+with one to twenty rules. New invite and discovery members become pending and
+cannot send until they `POST /guilds/{id}/member-verification/accept` with the
+revision they reviewed. If rules change concurrently the request returns 409;
+fetch and display the new version before another acceptance. Migration 0092
+stores the configuration and serializes configuration changes with joins and
+acceptance. Pending members also cannot create threads, which generate a system
+message. Existing members are not made pending when screening is enabled.
+
+`GET|PUT /guilds/{id}/onboarding` reads or replaces up to five optional
+questions; options can suggest a channel and grant an eligible role. Managers
+configuring role options also need `MANAGE_ROLES` and must outrank the role.
+`POST /guilds/{id}/onboarding/complete` takes the reviewed revision and one
+option index per question, once per membership and after accepting rules. Roles
+with privileged base permissions or channel overwrites cannot be self-assigned.
+`GET|PUT /guilds/{id}/welcome-screen` configures a description and up to five
+suggested text channels. GET omits channels the caller cannot view.
 
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or
@@ -137,6 +189,7 @@ All configuration comes from environment variables, validated at startup. Missin
 | `SNOWFLAKE_WORKER_ID` | yes | | Preferred API worker 0–63; allocation uses 1–63 and permanently excludes legacy worker 0 |
 | `PUBLIC_API_URL` | yes | | Base for webhook URLs |
 | `PUBLIC_GATEWAY_URL` | yes | | Gateway URL advertised to clients |
+| `GATEWAY_INTERNAL_URL` | no | | Internal HTTP(S) gateway service URL for connected-member voice-status authorization. When unset, that authorization path fails closed. |
 | `CDN_PUBLIC_URL` | yes | | Public asset base |
 | `MESSAGES_INTERNAL_URL` | yes | | messages service internal base |
 | `MINIO_ENDPOINT` | yes | | S3 API endpoint |
@@ -325,5 +378,17 @@ Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians
 GitHub linking is disabled by default. Set `CONNECTION_GITHUB_ENABLED=true` and supply `CONNECTION_GITHUB_CLIENT_ID` and `CONNECTION_GITHUB_CLIENT_SECRET` from the existing secret injection mechanism. Register the callback as `PUBLIC_API_URL/api/v1/connections/github/callback`. The server exchanges the code and fetches the GitHub identity; it does not persist provider tokens. Connections start private. Disabling the provider stops new authorization while retaining the ability to view, hide, and remove links.
 
 A connection is started with authenticated `POST /users/@me/connections/github/authorize`; open the returned URL in a browser. Manage it with `GET /users/@me/connections`, `PUT /users/@me/connections` (`{ "provider": "github", "visible": true }`), and `DELETE /users/@me/connections` (`{ "provider": "github" }`). The provider-specific PUT and DELETE paths are also supported. `GET /users/{id}/connections` only returns visible links.
+## Stage instances
+
+Guild stage-channel metadata is managed through `POST /stage-instances` and `GET`, `PATCH`, or `DELETE /stage-instances/{channel_id}`. Reading requires channel visibility; starting, changing the topic and ending require `MANAGE_CHANNELS`. Each mutation is committed with its `STAGE_INSTANCE_*` event through the transactional outbox. A channel can have at most one active instance. This metadata lifecycle does not itself enable stage audio; see the stage enforcement design in the docs repository.
+
+
+## Ban appeals
+
+A server can configure a single short appeal question with `PUT /guilds/{guild_id}/ban-appeals/form`. A currently banned, authenticated user can read that question and submit an answer to `POST /guilds/{guild_id}/ban-appeals`. Only one appeal may be open per user and server. Moderators need `MANAGE_BAN_APPEALS` to configure the question, list appeals and accept or deny them. Acceptance removes the current ban; decisions record an audit action when guild audit logging is enabled. A decision against a superseded ban is rejected rather than removing a newer ban. Unbanned users need a valid invite to rejoin.
+
+## Optional GIF provider
+
+GIF search is disabled unless `GIF_PROVIDER_URL`, `GIF_PROVIDER_KEY` and comma-separated exact `GIF_MEDIA_HOSTS` are set. The URL is the base of a Tenor v2-compatible service exposing `featured`, `search` and `categories`. The API calls it server-side with the key, limits public requests through the existing rate limiter, and keeps up to 128 filtered JSON responses in memory for 60 seconds. The key is never returned to clients. Preview links are signed by messages and served by its existing media proxy. Enable only after confirming the provider permits proxy requests and response caching; these assumptions do not apply to GIPHY or standard KLIPY integrations. No provider or credentials are shipped. A provider agreement, key provisioning, and a live end-to-end check remain prerequisites before enabling this feature.
 
 Profile badges are separate from user flags. `GET /api/v1/users/@me/badges` lists the authenticated account's granted badge IDs and visibility; `PUT /api/v1/users/@me/badges/{id}` with `{"visible":false}` or `true` changes an existing grant only. `GET /api/v1/users/{id}/badges` returns only visible badge IDs. Grants are provisioned by trusted operators in `user_badges`; this API does not grant badges. No production badge catalog is defined yet.

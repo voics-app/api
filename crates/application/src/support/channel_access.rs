@@ -1,4 +1,4 @@
-use domain::channel::Channel;
+use domain::channel::{Channel, ChannelType};
 use domain::permissions::Permissions;
 use domain::Snowflake;
 
@@ -60,6 +60,11 @@ impl ChannelAccess {
             (true, Some(parent_id)) => ports.channels.find(parent_id).await?,
             _ => None,
         };
+        if parent.as_ref().is_some_and(|parent| {
+            parent.kind == ChannelType::GuildForum && parent.delivery_mode != channel.delivery_mode
+        }) {
+            return Err(AppError::missing_access());
+        }
         let permissions = guild.channel_permissions(&channel, parent.as_ref());
         Ok(Self {
             channel,
@@ -76,6 +81,15 @@ impl ChannelAccess {
         user_id: Snowflake,
     ) -> AppResult<Self> {
         let access = Self::resolve(ports, channel_id, user_id).await?;
+        if access
+            .channel
+            .forum_settings
+            .get("pending")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            return Err(AppError::NotFound(Resource::Channel));
+        }
         if !access.permissions.contains(Permissions::VIEW_CHANNEL) {
             return Err(AppError::missing_access());
         }

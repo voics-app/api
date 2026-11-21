@@ -1,0 +1,267 @@
+//! The public follow route persists a non-executable webhook in the target guild.
+mod support;
+
+use axum::http::{Method, StatusCode};
+use serde_json::json;
+use support::http::{call, request, send, INTERNAL_TOKEN};
+use support::{jwt_keys, ports_with_messages, start_database, RecordingMessages};
+
+#[tokio::test]
+async fn follow_requires_visible_announcement_and_target_webhook_permission() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let messages = std::sync::Arc::new(RecordingMessages::default());
+    let mut test_ports = ports_with_messages(&database.pool, &public, &private, messages.clone());
+    test_ports.settings.announcement_delivery_enabled = true;
+    let app = interface::router(interface::state::AppState {
+        ports: test_ports,
+        internal_token: INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
+    });
+    let (status, user) = send(&app, request(Method::POST, "/api/v1/auth/register", None,
+        Some(json!({"email":"follow@example.com", "username":"follower", "password":"a-long-enough-passphrase"})))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let token = user["access_token"].as_str().unwrap();
+    let (_, source_guild) = call(
+        &app,
+        Method::POST,
+        "/api/v1/guilds",
+        token,
+        Some(json!({"name":"Source"})),
+    )
+    .await;
+    let (_, target_guild) = call(
+        &app,
+        Method::POST,
+        "/api/v1/guilds",
+        token,
+        Some(json!({"name":"Target"})),
+    )
+    .await;
+    let source_guild_id = source_guild["id"].as_str().unwrap();
+    let target_guild_id = target_guild["id"].as_str().unwrap();
+    let (status, source) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/guilds/{source_guild_id}/channels"),
+        token,
+        Some(json!({"name":"news", "type":5})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{source}");
+    let source_id = source["id"].as_str().unwrap();
+    let (_, channels) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{target_guild_id}/channels"),
+        token,
+        None,
+    )
+    .await;
+    let target_id = channels
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["type"] == 0)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let uri = format!("/api/v1/channels/{source_id}/followers");
+    let (status, follower) = call(
+        &app,
+        Method::POST,
+        &uri,
+        token,
+        Some(json!({"webhook_channel_id":target_id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{follower}");
+    assert_eq!(follower["channel_id"], source_id);
+    let hook_id = follower["webhook_id"].as_str().unwrap();
+    let (status, hook) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/webhooks/{hook_id}"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(hook["type"], 2);
+    assert!(hook.get("token").is_none());
+    let (status, following) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{target_guild_id}/followed-channels"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(following[0]["channel_id"], source_id);
+    assert_eq!(following[0]["webhook_channel_id"], target_id);
+    assert_eq!(following[0]["webhook_id"], hook_id);
+    let author = source_guild["owner_id"].as_str().unwrap();
+    let source_sf = source_id.parse().unwrap();
+    let message_sf = "12345".parse().unwrap();
+    messages.stored.lock().unwrap().insert(
+        (source_sf, message_sf),
+        json!({"id":"12345", "author":{"id":author}, "content":"news", "type":0, "flags":0}),
+    );
+    let crosspost_uri = format!("/api/v1/channels/{source_id}/messages/12345/crosspost");
+    let (status, published) = call(&app, Method::POST, &crosspost_uri, token, None).await;
+    assert_eq!(status, StatusCode::OK, "{published}");
+    assert_eq!(published["flags"], 1);
+    let deliveries: i64 = sqlx::query_scalar("SELECT count(*) FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
+        .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(deliveries, 1);
+    messages
+        .lose_crosspost_response
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let relay = infrastructure::announcement_relay::AnnouncementRelay::new(
+        database.pool.clone(),
+        messages.clone(),
+    );
+    relay.run_once().await.unwrap();
+    {
+        let bodies = messages.bodies.lock().unwrap();
+        let delivered = bodies.last().unwrap();
+        assert_eq!(delivered["webhook_id"], hook_id);
+        assert_eq!(delivered["snapshot"]["content"], "news");
+    }
+    let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
+        .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(state, "unknown");
+    relay.run_once().await.unwrap();
+    let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=$2")
+        .bind(source_sf.as_i64()).bind(message_sf.as_i64()).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(state, "delivered");
+    assert_eq!(
+        messages
+            .bodies
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|body| body.get("snapshot").is_some())
+            .count(),
+        1
+    );
+    let (status, _) = call(&app, Method::POST, &crosspost_uri, token, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, outsider) = send(
+        &app,
+        request(
+            Method::POST,
+            "/api/v1/auth/register",
+            None,
+            Some(json!({"email":"outsider@example.com", "username":"outsider", "password":"a-long-enough-passphrase"})),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let outsider_token = outsider["access_token"].as_str().unwrap();
+    let (status, _) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/guilds/{target_guild_id}/followed-channels"),
+        outsider_token,
+        None,
+    )
+    .await;
+    assert!(status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &uri,
+        outsider_token,
+        Some(json!({"webhook_channel_id":target_id})),
+    )
+    .await;
+    assert!(status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &uri,
+        token,
+        Some(json!({"webhook_channel_id":target_id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        &format!("/api/v1/channels/{target_id}/followers"),
+        token,
+        Some(json!({"webhook_channel_id":source_id})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Hold the same follower lock used by publication while a concurrent
+    // unfollow starts. Once the enqueue commits, the delete trigger must see
+    // and cancel the pending row rather than leave an orphaned delivery.
+    let source_raw = source_id.parse::<i64>().unwrap();
+    let target_raw = target_id.parse::<i64>().unwrap();
+    let hook_raw = hook_id.parse::<i64>().unwrap();
+    let mut tx = database.pool.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$2 AND webhook_id=$3 FOR KEY SHARE")
+        .bind(source_raw).bind(target_raw).bind(hook_raw).fetch_one(&mut *tx).await.unwrap();
+    let pool = database.pool.clone();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let remove = tokio::spawn(async move {
+        let mut connection = pool.acquire().await.unwrap();
+        let backend: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *connection)
+            .await
+            .unwrap();
+        let _ = started_tx.send(backend);
+        sqlx::query("DELETE FROM webhooks WHERE id=$1")
+            .bind(hook_raw)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+    });
+    let backend = started_rx.await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let blocked: bool = sqlx::query_scalar("SELECT cardinality(pg_blocking_pids($1)) > 0")
+                .bind(backend)
+                .fetch_one(&database.pool)
+                .await
+                .unwrap();
+            if blocked {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("unfollow must wait on the held follower lock");
+    sqlx::query("INSERT INTO announcement_publications (source_channel_id, source_message_id, payload) VALUES ($1, 12346, '{}'::jsonb)")
+        .bind(source_raw).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO announcement_deliveries (source_channel_id, source_message_id, target_channel_id, webhook_id, destination_message_id) SELECT $1, 12346, $2, $3, 12347 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$2 AND webhook_id=$3 FOR KEY SHARE")
+        .bind(source_raw).bind(target_raw).bind(hook_raw).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    remove.await.unwrap();
+    let state: String = sqlx::query_scalar("SELECT state FROM announcement_deliveries WHERE source_channel_id=$1 AND source_message_id=12346 AND target_channel_id=$2")
+        .bind(source_raw).bind(target_raw).fetch_one(&database.pool).await.unwrap();
+    assert_eq!(state, "cancelled");
+    let (status, _) = call(
+        &app,
+        Method::DELETE,
+        &format!("/api/v1/channels/{source_id}"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = call(
+        &app,
+        Method::GET,
+        &format!("/api/v1/webhooks/{hook_id}"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

@@ -51,6 +51,82 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
     };
 
     match event {
+        DomainEvent::ScheduledEventDelete(event) => emit(
+            TOPIC_GUILD,
+            event.guild_id,
+            "GUILD_SCHEDULED_EVENT_DELETE",
+            Some(event.guild_id),
+            scheduled_channel(event),
+            None,
+            contracts::objects::scheduled_event(event),
+        ),
+        DomainEvent::ScheduledEventUpdate { before, after } => {
+            if scheduled_channel(before) != scheduled_channel(after) {
+                emit(
+                    TOPIC_GUILD,
+                    before.guild_id,
+                    "GUILD_SCHEDULED_EVENT_DELETE",
+                    Some(before.guild_id),
+                    scheduled_channel(before),
+                    None,
+                    contracts::objects::scheduled_event(before),
+                );
+                emit(
+                    TOPIC_GUILD,
+                    after.guild_id,
+                    "GUILD_SCHEDULED_EVENT_CREATE",
+                    Some(after.guild_id),
+                    scheduled_channel(after),
+                    None,
+                    contracts::objects::scheduled_event(after),
+                );
+            } else {
+                emit(
+                    TOPIC_GUILD,
+                    after.guild_id,
+                    "GUILD_SCHEDULED_EVENT_UPDATE",
+                    Some(after.guild_id),
+                    scheduled_channel(after),
+                    None,
+                    contracts::objects::scheduled_event(after),
+                );
+            }
+        }
+        DomainEvent::ScheduledEventInterest {
+            guild_id,
+            event_id,
+            user_id,
+            channel_id,
+            interested,
+        } => emit(
+            TOPIC_GUILD,
+            *guild_id,
+            if *interested {
+                "GUILD_SCHEDULED_EVENT_USER_ADD"
+            } else {
+                "GUILD_SCHEDULED_EVENT_USER_REMOVE"
+            },
+            Some(*guild_id),
+            *channel_id,
+            None,
+            json!({ "guild_id": guild_id.to_string(), "guild_scheduled_event_id": event_id.to_string(), "user_id": user_id.to_string() }),
+        ),
+        DomainEvent::ScheduledEventCreate(event) => {
+            let channel_id = match &event.details.kind {
+                domain::scheduled_event::EventKind::Stage { channel_id }
+                | domain::scheduled_event::EventKind::Voice { channel_id } => Some(*channel_id),
+                domain::scheduled_event::EventKind::External { .. } => None,
+            };
+            emit(
+                TOPIC_GUILD,
+                event.guild_id,
+                "GUILD_SCHEDULED_EVENT_CREATE",
+                Some(event.guild_id),
+                channel_id,
+                None,
+                contracts::objects::scheduled_event(event),
+            );
+        }
         DomainEvent::GuildCreate {
             snapshot,
             recipients,
@@ -84,12 +160,83 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             recipients.clone(),
             json!({ "id": guild_id.to_string() }),
         ),
+        DomainEvent::StageInstanceCreate(stage)
+        | DomainEvent::StageInstanceUpdate(stage)
+        | DomainEvent::StageInstanceDelete(stage) => {
+            let kind = match event {
+                DomainEvent::StageInstanceCreate(_) => "STAGE_INSTANCE_CREATE",
+                DomainEvent::StageInstanceUpdate(_) => "STAGE_INSTANCE_UPDATE",
+                _ => "STAGE_INSTANCE_DELETE",
+            };
+            emit(
+                TOPIC_GUILD,
+                stage.guild_id,
+                kind,
+                Some(stage.guild_id),
+                Some(stage.channel_id),
+                None,
+                json!({"id": stage.id.to_string(), "guild_id": stage.guild_id.to_string(),
+                    "channel_id": stage.channel_id.to_string(), "topic": stage.topic,
+                    "privacy_level": 2, "discoverable_disabled": false}),
+            );
+        }
         DomainEvent::ChannelCreate(channel) => guild_channel(&mut emit, "CHANNEL_CREATE", channel),
         DomainEvent::ChannelUpdate(channel) => guild_channel(&mut emit, "CHANNEL_UPDATE", channel),
         DomainEvent::ChannelDelete(channel) => guild_channel(&mut emit, "CHANNEL_DELETE", channel),
+        DomainEvent::ForumOpeningMessage {
+            guild_id,
+            channel_id,
+            message,
+        } => {
+            let mut data = message.clone();
+            data["guild_id"] = json!(guild_id.to_string());
+            emit(
+                TOPIC_MESSAGE,
+                *channel_id,
+                "MESSAGE_CREATE",
+                Some(*guild_id),
+                Some(*channel_id),
+                None,
+                data,
+            );
+        }
         DomainEvent::ThreadCreate(channel) => guild_channel(&mut emit, "THREAD_CREATE", channel),
         DomainEvent::ThreadUpdate(channel) => guild_channel(&mut emit, "THREAD_UPDATE", channel),
         DomainEvent::ThreadDelete(channel) => guild_channel(&mut emit, "THREAD_DELETE", channel),
+        DomainEvent::ThreadMembersUpdate {
+            guild_id,
+            thread_id,
+            user_id,
+            joined_at,
+            member_count,
+            version,
+            member_ids,
+        } => {
+            let added = joined_at
+                .map(|at| {
+                    vec![json!({
+                        "id": thread_id.to_string(),
+                        "user_id": user_id.to_string(),
+                        "join_timestamp": contracts::wire::timestamp(at),
+                        "flags": 0
+                    })]
+                })
+                .unwrap_or_default();
+            let removed = if joined_at.is_none() {
+                vec![user_id.to_string()]
+            } else {
+                Vec::new()
+            };
+            emit(
+                TOPIC_GUILD,
+                *guild_id,
+                "THREAD_MEMBERS_UPDATE",
+                Some(*guild_id),
+                Some(*thread_id),
+                None,
+                json!({"id": thread_id.to_string(), "guild_id": guild_id.to_string(), "member_count": member_count, "added_members": added, "removed_member_ids": removed, "_membership_version": version, "_member_ids": member_ids.iter().map(ToString::to_string).collect::<Vec<_>>()}),
+            );
+        }
         DomainEvent::RoleCreate(role) => emit(
             TOPIC_GUILD,
             role.guild_id,
@@ -154,6 +301,7 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             guild_id,
             user_id,
             channel_id,
+            suppress,
         } => emit(
             TOPIC_GUILD,
             *guild_id,
@@ -161,11 +309,21 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
             Some(*guild_id),
             None,
             None,
-            json!({
-                "guild_id": guild_id.to_string(),
-                "user_id": user_id.to_string(),
-                "channel_id": channel_id.map(|id| id.to_string()),
-            }),
+            {
+                let mut data = json!({
+                    "guild_id": guild_id.to_string(),
+                    "user_id": user_id.to_string(),
+                });
+                if let Some(channel_id) = channel_id {
+                    data["channel_id"] = json!(channel_id.to_string());
+                } else if suppress.is_none() {
+                    data["channel_id"] = serde_json::Value::Null;
+                }
+                if let Some(suppress) = suppress {
+                    data["suppress"] = json!(suppress);
+                }
+                data
+            },
         ),
         DomainEvent::BanMessagePurge {
             guild_id,
@@ -486,6 +644,14 @@ pub fn route(event: &DomainEvent, default_region: &str, occurred_at: DateTime<Ut
         ),
     }
     out
+}
+
+fn scheduled_channel(event: &domain::scheduled_event::ScheduledEvent) -> Option<Snowflake> {
+    match &event.details.kind {
+        domain::scheduled_event::EventKind::Stage { channel_id }
+        | domain::scheduled_event::EventKind::Voice { channel_id } => Some(*channel_id),
+        domain::scheduled_event::EventKind::External { .. } => None,
+    }
 }
 
 fn to_value<T: Serialize>(value: T) -> Value {

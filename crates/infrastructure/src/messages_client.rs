@@ -3,6 +3,7 @@
 
 use async_trait::async_trait;
 use reqwest::{Client, Method, Url};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use application::ports::{MessageService, StoredMessage};
@@ -83,8 +84,141 @@ fn stored(body: Value) -> AppResult<StoredMessage> {
     Ok(StoredMessage { id, body })
 }
 
+#[derive(Serialize)]
+struct MessageCountsRequest {
+    channel_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct MessageCountDto {
+    channel_id: String,
+    message_count: u64,
+}
+
 #[async_trait]
 impl MessageService for HttpMessages {
+    async fn sign_media(&self, urls: Vec<String>) -> AppResult<Vec<String>> {
+        let body = self
+            .send(
+                Method::POST,
+                "internal/v1/media/sign",
+                Some(serde_json::json!({"urls": urls})),
+            )
+            .await?;
+        serde_json::from_value(body.get("urls").cloned().unwrap_or(Value::Null))
+            .map_err(|_| AppError::Unavailable("invalid media signing response".into()))
+    }
+    async fn guild_message_count(
+        &self,
+        guild_id: Snowflake,
+        utc_day: i64,
+    ) -> AppResult<(u64, bool, Option<u64>)> {
+        let path = format!("internal/v1/guilds/{guild_id}/message-activity/{utc_day}");
+        let url = self.base.join(&path).map_err(AppError::internal)?;
+        let response = self
+            .http
+            .get(url)
+            .header(TOKEN_HEADER, &self.internal_token)
+            .timeout(std::time::Duration::from_secs(3))
+            .send()
+            .await
+            .map_err(|_| AppError::Unavailable("messages activity lookup failed".into()))?;
+        if !response.status().is_success() {
+            return Err(AppError::Unavailable(
+                "messages activity lookup failed".into(),
+            ));
+        }
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|_| AppError::Unavailable("invalid messages activity response".into()))?;
+        let day = body.get("utc_day").and_then(Value::as_i64);
+        let count = body.get("count").and_then(Value::as_u64);
+        let complete = body.get("coverage_complete").and_then(Value::as_bool);
+        let initialized = body.get("source_initialized_at_ms").and_then(|v| {
+            if v.is_null() {
+                Some(None)
+            } else {
+                v.as_u64().map(Some)
+            }
+        });
+        match (day, count, complete, initialized) {
+            (Some(day), Some(count), Some(complete), Some(initialized)) if day == utc_day => {
+                Ok((count, complete, initialized))
+            }
+            _ => Err(AppError::Unavailable(
+                "invalid messages activity response".into(),
+            )),
+        }
+    }
+    async fn deliver_crosspost(
+        &self,
+        channel_id: Snowflake,
+        body: Value,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/crossposts");
+        stored(self.send(Method::POST, &path, Some(body)).await?)
+    }
+    async fn mark_crossposted(
+        &self,
+        channel_id: Snowflake,
+        message_id: Snowflake,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/messages/{message_id}/crossposted");
+        let (status, body) = self
+            .exchange(Method::POST, &path, Some(serde_json::json!({})))
+            .await?;
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(AppError::NotFound(application::Resource::Message));
+        }
+        if !status.is_success() {
+            return Err(AppError::BadRequest {
+                code: 0,
+                message: format!("messages responded {status}"),
+            });
+        }
+        stored(body)
+    }
+    async fn forum_summaries(&self, channel_ids: &[Snowflake]) -> AppResult<Vec<Value>> {
+        let mut result = Vec::new();
+        for chunk in channel_ids.chunks(50) {
+            let ids: Vec<String> = chunk.iter().map(ToString::to_string).collect();
+            let response = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                self.send(
+                    Method::POST,
+                    "internal/v1/forum-summaries",
+                    Some(serde_json::json!({"channel_ids": ids})),
+                ),
+            )
+            .await
+            .map_err(|_| AppError::Unavailable("forum summary timed out".into()))??;
+            let values = response
+                .get("summaries")
+                .and_then(Value::as_array)
+                .ok_or_else(|| AppError::Unavailable("invalid forum summaries".into()))?;
+            result.extend(values.iter().cloned());
+        }
+        Ok(result)
+    }
+    async fn create_forum_start(
+        &self,
+        channel_id: Snowflake,
+        message: Value,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/forum-start");
+        let (status, body) = self.exchange(Method::POST, &path, Some(message)).await?;
+        if status == reqwest::StatusCode::GONE {
+            return Err(AppError::NotFound(application::Resource::Message));
+        }
+        if !status.is_success() {
+            return Err(AppError::BadRequest {
+                code: 0,
+                message: format!("messages responded {status}"),
+            });
+        }
+        stored(body)
+    }
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage> {
         let path = format!("internal/v1/channels/{channel_id}/messages");
         stored(self.send(Method::POST, &path, Some(message)).await?)
@@ -120,5 +254,30 @@ impl MessageService for HttpMessages {
     async fn delete(&self, channel_id: Snowflake, message_id: Snowflake) -> AppResult<()> {
         let path = format!("internal/v1/channels/{channel_id}/messages/{message_id}");
         self.send(Method::DELETE, &path, None).await.map(|_| ())
+    }
+
+    async fn message_counts(&self, channel_ids: &[Snowflake]) -> AppResult<Vec<(Snowflake, u64)>> {
+        let body = serde_json::to_value(MessageCountsRequest {
+            channel_ids: channel_ids.iter().map(ToString::to_string).collect(),
+        })
+        .map_err(AppError::internal)?;
+        let response = self
+            .send(
+                Method::POST,
+                "internal/v1/channels/message-counts",
+                Some(body),
+            )
+            .await?;
+        let counts: Vec<MessageCountDto> = serde_json::from_value(response)
+            .map_err(|error| AppError::Unavailable(format!("messages count body: {error}")))?;
+        counts
+            .into_iter()
+            .map(|count| {
+                let channel_id = count.channel_id.parse().map_err(|_| {
+                    AppError::Unavailable("messages returned an invalid channel id".into())
+                })?;
+                Ok((channel_id, count.message_count))
+            })
+            .collect()
     }
 }

@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
+use serde_json::{json, Value};
 
 use application::ports::AuditLogQuery;
 use application::support::audit::AuditContext;
@@ -13,11 +14,15 @@ use application::use_cases::audit::list_audit_log;
 use application::use_cases::guilds::create_guild::CreateGuildInput;
 use application::use_cases::guilds::update_guild::UpdateGuildInput;
 use application::use_cases::guilds::{
-    create_guild, delete_guild, get_guild, leave_guild, list_current_user_guilds, update_guild,
+    create_guild, delete_guild, get_guild, insights, leave_guild, list_current_user_guilds,
+    update_guild, widget,
 };
 use application::{AppError, Resource};
 use contracts::objects::{AuditLogDto, GuildDto, GuildFullDto};
 use contracts::requests::{CreateGuildRequest, ModifyGuildRequest};
+use contracts::screening::{
+    AcceptScreeningRequest, ScreeningDto, SetScreeningRequest, SubmitOnboardingRequest,
+};
 use contracts::wire::Id;
 use domain::audit::AuditAction;
 
@@ -29,6 +34,146 @@ use crate::state::AppState;
 
 fn region(state: &AppState) -> &str {
     &state.ports.settings.default_voice_region
+}
+
+fn screening_dto(config: application::ports::ScreeningConfig, pending: bool) -> ScreeningDto {
+    ScreeningDto {
+        enabled: config.enabled,
+        rules: config.rules,
+        revision: config.revision,
+        pending,
+    }
+}
+
+async fn get_screening(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<ScreeningDto>, ApiError> {
+    let (config, pending) = application::use_cases::guilds::screening::get(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Guild)?,
+    )
+    .await?;
+    Ok(Json(screening_dto(config, pending)))
+}
+
+async fn put_screening(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<SetScreeningRequest>,
+) -> Result<Json<ScreeningDto>, ApiError> {
+    Ok(Json(screening_dto(
+        application::use_cases::guilds::screening::set(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body.enabled,
+            body.rules,
+        )
+        .await?,
+        false,
+    )))
+}
+
+async fn accept_screening(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<AcceptScreeningRequest>,
+) -> Result<StatusCode, ApiError> {
+    application::use_cases::guilds::screening::accept(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Guild)?,
+        body.revision,
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_welcome(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::welcome::get(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+        )
+        .await?,
+    ))
+}
+
+async fn put_welcome(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::welcome::set(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body,
+        )
+        .await?,
+    ))
+}
+
+async fn get_onboarding(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::onboarding::get(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+        )
+        .await?,
+    ))
+}
+
+async fn put_onboarding(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::onboarding::set(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body,
+        )
+        .await?,
+    ))
+}
+
+async fn submit_onboarding(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<SubmitOnboardingRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    Ok(Json(
+        application::use_cases::guilds::onboarding::submit(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body.revision,
+            body.choices,
+        )
+        .await?,
+    ))
 }
 
 async fn create(
@@ -130,6 +275,121 @@ async fn leave(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WidgetPatch {
+    #[serde(default, deserialize_with = "optional_bool")]
+    enabled: Option<bool>,
+    #[serde(default, deserialize_with = "contracts::wire::double_option")]
+    channel_id: Option<Option<Id>>,
+}
+
+#[derive(Deserialize)]
+struct InsightsQuery {
+    period: Option<u32>,
+}
+
+fn coverage_summary<'a>(values: impl Iterator<Item = &'a str>) -> Value {
+    let (mut complete, mut partial, mut unavailable) = (0u32, 0u32, 0u32);
+    for value in values {
+        match value {
+            "complete" => complete += 1,
+            "partial" => partial += 1,
+            _ => unavailable += 1,
+        }
+    }
+    let status = if unavailable == 0 && partial == 0 {
+        "complete"
+    } else if complete + partial == 0 {
+        "unavailable"
+    } else {
+        "partial"
+    };
+    json!({"status": status, "complete_days": complete, "partial_days": partial, "unavailable_days": unavailable})
+}
+
+async fn guild_insights(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Query(query): Query<InsightsQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let period = query.period.unwrap_or(7);
+    let days = insights::execute(
+        &state.ports,
+        &actor,
+        snowflake(&id, Resource::Guild)?,
+        period,
+    )
+    .await?;
+    let message_coverage = days.iter().all(|day| day.message_complete);
+    let coverage = json!({
+        "membership": coverage_summary(days.iter().map(|day| day.membership_coverage)),
+        "messages": coverage_summary(days.iter().map(|day| day.message_coverage)),
+        "voice": coverage_summary(days.iter().map(|day| day.voice_coverage)),
+    });
+    let days: Vec<_> = days.into_iter().map(|day| json!({
+        "date": day.day.to_string(), "new_members": day.joins, "leavers": day.leaves,
+        "membership_complete": day.membership_complete, "messages": day.messages, "message_complete": day.message_complete,
+        "message_source_initialized_at_ms": day.message_source_initialized_at_ms,
+        "activity_source_initialized_at_ms": day.activity_source_initialized_at_ms, "voice_minutes": day.voice_minutes,
+        "coverage": {"membership": day.membership_coverage, "messages": day.message_coverage, "voice": day.voice_coverage}
+    })).collect();
+    Ok(Json(
+        json!({"period": period, "days": days, "coverage": coverage, "message_coverage": message_coverage, "voice_coverage": false}),
+    ))
+}
+
+fn optional_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    bool::deserialize(deserializer).map(Some)
+}
+
+fn widget_settings_json(settings: application::ports::WidgetSettings) -> Json<Value> {
+    Json(json!({"enabled": settings.enabled, "channel_id": settings.channel_id.map(Id)}))
+}
+
+async fn widget_public(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let widget = widget::public(&state.ports, snowflake(&id, Resource::Guild)?).await?;
+    Ok(Json(
+        json!({"id": Id(widget.id), "name": widget.name, "icon": widget.icon}),
+    ))
+}
+
+async fn widget_get(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(widget_settings_json(
+        widget::settings(&state.ports, &actor, snowflake(&id, Resource::Guild)?).await?,
+    ))
+}
+
+async fn widget_patch(
+    State(state): State<AppState>,
+    Caller(actor): Caller,
+    Path(id): Path<String>,
+    Body(body): Body<WidgetPatch>,
+) -> Result<Json<Value>, ApiError> {
+    let channel = body.channel_id.map(|inner| inner.map(|Id(id)| id));
+    Ok(widget_settings_json(
+        widget::update(
+            &state.ports,
+            &actor,
+            snowflake(&id, Resource::Guild)?,
+            body.enabled,
+            channel,
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
 struct AuditQuery {
     user_id: Option<String>,
     target_id: Option<String>,
@@ -185,6 +445,23 @@ async fn audit_logs(
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/guilds/{id}/member-verification",
+            get(get_screening).put(put_screening),
+        )
+        .route(
+            "/guilds/{id}/member-verification/accept",
+            post(accept_screening),
+        )
+        .route(
+            "/guilds/{id}/welcome-screen",
+            get(get_welcome).put(put_welcome),
+        )
+        .route(
+            "/guilds/{id}/onboarding",
+            get(get_onboarding).put(put_onboarding),
+        )
+        .route("/guilds/{id}/onboarding/complete", post(submit_onboarding))
         .route("/guilds", post(create))
         .route(
             "/guilds/{id}",
@@ -194,6 +471,9 @@ pub fn routes() -> Router<AppState> {
                 .layer(DefaultBodyLimit::max(IMAGE_BODY_LIMIT)),
         )
         .route("/guilds/{id}/audit-logs", get(audit_logs))
+        .route("/guilds/{id}/insights", get(guild_insights))
+        .route("/guilds/{id}/widget.json", get(widget_public))
+        .route("/guilds/{id}/widget", get(widget_get).patch(widget_patch))
         .route("/users/@me/guilds", get(my_guilds))
         .route("/users/@me/guilds/{id}", axum::routing::delete(leave))
 }

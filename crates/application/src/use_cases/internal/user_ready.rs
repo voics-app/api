@@ -1,4 +1,4 @@
-use domain::guild::GuildSnapshot;
+use domain::guild::{GuildSnapshot, MemberProfile};
 use domain::notification::{GuildNotificationSettings, DIRECT_MESSAGES};
 use domain::relationship::Relationship;
 use domain::user::{User, UserSettings};
@@ -7,7 +7,7 @@ use domain::Snowflake;
 use crate::context::Ports;
 use crate::error::AppResult;
 use crate::events::PrivateChannelView;
-use crate::support::views::{guild_snapshot, private_view, require_user};
+use crate::support::views::{guild_snapshot, private_view, require_user, SNAPSHOT_MEMBER_LIMIT};
 
 #[derive(Debug, Clone)]
 pub struct UserReady {
@@ -27,7 +27,25 @@ pub async fn execute(ports: &Ports, user_id: Snowflake) -> AppResult<UserReady> 
     let user = require_user(ports, user_id).await?;
     let mut guilds = Vec::new();
     for guild in ports.guilds.list_for_user(user_id).await? {
-        guilds.push(guild_snapshot(ports, guild.id).await?);
+        let mut snapshot = guild_snapshot(ports, guild.id).await?;
+        // The capped member snapshot must still include the recipient, so a
+        // pending member can resume screening after reconnecting to a large guild.
+        if !snapshot
+            .members
+            .iter()
+            .any(|profile| profile.member.user_id == user_id)
+        {
+            if let Some(member) = ports.guilds.member(guild.id, user_id).await? {
+                if snapshot.members.len() >= SNAPSHOT_MEMBER_LIMIT as usize {
+                    snapshot.members.pop();
+                }
+                snapshot.members.push(MemberProfile {
+                    member,
+                    user: user.clone(),
+                });
+            }
+        }
+        guilds.push(snapshot);
     }
     let mut private_channels = Vec::new();
     for channel in ports.channels.list_private(user_id).await? {

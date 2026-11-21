@@ -33,6 +33,8 @@ pub const DEFAULT_ACCOUNT_DELETION_DAYS: i64 = 14;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
+    /// Both admission and the delivery worker are disabled until explicitly enabled.
+    pub announcement_delivery_enabled: bool,
     pub access_token_ttl: Duration,
     pub refresh_token_ttl: Duration,
     /// Devices not seen for this long leave E2EE device listings and are pruned.
@@ -67,6 +69,7 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            announcement_delivery_enabled: false,
             access_token_ttl: Duration::minutes(15),
             refresh_token_ttl: Duration::days(30),
             device_max_idle: Duration::days(DEFAULT_DEVICE_MAX_IDLE_DAYS),
@@ -97,6 +100,7 @@ pub struct Ports {
     pub relationships: Arc<dyn RelationshipRepository>,
     pub reports: Arc<dyn ReportRepository>,
     pub channels: Arc<dyn ChannelRepository>,
+    pub thread_lifecycle: Arc<dyn ThreadLifecycleStore>,
     pub guilds: Arc<dyn GuildRepository>,
     pub invites: Arc<dyn InviteRepository>,
     pub emojis: Arc<dyn EmojiRepository>,
