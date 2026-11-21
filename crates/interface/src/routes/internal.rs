@@ -4,6 +4,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -227,6 +228,29 @@ async fn channel_access_info(
         delivery_mode: info.delivery_mode.as_str().to_owned(),
         recipient_ids: info.recipient_ids.into_iter().map(Id).collect(),
     }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThreadActivityRequest {
+    occurred_at: DateTime<Utc>,
+}
+
+async fn record_thread_activity(
+    State(state): State<AppState>,
+    _internal: Internal,
+    Path(thread_id): Path<String>,
+    Body(body): Body<ThreadActivityRequest>,
+) -> Result<StatusCode, ApiError> {
+    let thread_id = thread_id
+        .parse()
+        .map_err(|_| AppError::NotFound(Resource::Channel))?;
+    state
+        .ports
+        .thread_lifecycle
+        .record_message(thread_id, body.occurred_at, state.ports.clock.now())
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -715,6 +739,10 @@ pub fn routes() -> Router<AppState> {
             get(channel_access_info),
         )
         .route("/internal/v1/channels/{id}/delivery", get(channel_delivery))
+        .route(
+            "/internal/v1/threads/{id}/activity",
+            post(record_thread_activity),
+        )
         .route("/internal/v1/channels/{id}/push-targets", get(push_targets))
         .route(
             "/internal/v1/channels/{id}/notification-recipients",

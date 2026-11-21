@@ -470,12 +470,32 @@ async fn list_channel_threads(
         return forum_posts(state, actor, parent_id).await;
     }
     let threads = list_threads::execute(&state.ports, &actor, parent_id, query.archived).await?;
-    Ok(Json(
-        threads
-            .iter()
-            .map(|thread| ChannelDto::guild_for_viewer(thread, actor.user_id))
-            .collect(),
-    ))
+    if threads.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+    let ids: Vec<_> = threads.iter().map(|thread| thread.id).collect();
+    let counts: std::collections::HashMap<_, _> = state
+        .ports
+        .messages
+        .message_counts(&ids)
+        .await?
+        .into_iter()
+        .collect();
+    let body = threads
+        .iter()
+        .map(|thread| {
+            counts
+                .get(&thread.id)
+                .copied()
+                .ok_or_else(|| {
+                    AppError::Unavailable("messages omitted a requested channel count".into())
+                })
+                .map(|count| {
+                    ChannelDto::guild_for_viewer(thread, actor.user_id).with_message_count(count)
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Json(body))
 }
 
 async fn typing(

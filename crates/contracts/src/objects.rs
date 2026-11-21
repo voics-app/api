@@ -565,6 +565,11 @@ impl ChannelDto {
         dto
     }
 
+    pub fn with_message_count(mut self, message_count: u64) -> Self {
+        self.message_count = Some(message_count);
+        self
+    }
+
     /// A DM or group DM as seen by `viewer`, who is left out of `recipients`.
     pub fn private(
         channel: &Channel,

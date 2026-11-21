@@ -47,6 +47,9 @@ impl MessageService for LostResponse {
     async fn get(&self, c: Snowflake, m: Snowflake) -> AppResult<Option<StoredMessage>> {
         self.inner.get(c, m).await
     }
+    async fn message_counts(&self, ids: &[Snowflake]) -> AppResult<Vec<(Snowflake, u64)>> {
+        self.inner.message_counts(ids).await
+    }
     async fn mark_crossposted(&self, c: Snowflake, m: Snowflake) -> AppResult<StoredMessage> {
         self.inner.mark_crossposted(c, m).await
     }

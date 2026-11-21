@@ -141,6 +141,9 @@ pub trait MessageService: Send + Sync {
         channel_id: Snowflake,
         message_id: Snowflake,
     ) -> AppResult<Option<StoredMessage>>;
+
+    /// Exact current message counts for the requested channels.
+    async fn message_counts(&self, channel_ids: &[Snowflake]) -> AppResult<Vec<(Snowflake, u64)>>;
     async fn mark_crossposted(
         &self,
         _channel_id: Snowflake,

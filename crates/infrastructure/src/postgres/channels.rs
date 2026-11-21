@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool};
 
 use application::ports::ChannelRepository;
 use application::AppResult;
@@ -141,6 +141,14 @@ pub(super) async fn hydrate(
     pool: &PgPool,
     rows: Vec<ChannelRow>,
 ) -> Result<Vec<Channel>, sqlx::Error> {
+    let mut conn = pool.acquire().await?;
+    hydrate_on(&mut conn, rows).await
+}
+
+pub(super) async fn hydrate_on(
+    conn: &mut PgConnection,
+    rows: Vec<ChannelRow>,
+) -> Result<Vec<Channel>, sqlx::Error> {
     let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -148,20 +156,20 @@ pub(super) async fn hydrate(
     let recipient_rows: Vec<(i64, i64)> =
         sqlx::query_as("SELECT channel_id, user_id FROM channel_recipients WHERE channel_id = ANY($1) ORDER BY user_id")
             .bind(&ids)
-            .fetch_all(pool)
+            .fetch_all(&mut *conn)
             .await?;
     let thread_member_rows: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT thread_id, user_id FROM thread_members WHERE thread_id = ANY($1) ORDER BY user_id",
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
     let overwrite_rows: Vec<OverwriteRow> = sqlx::query_as(
         "SELECT channel_id, target_id, kind, allow_bits, deny_bits FROM permission_overwrites \
          WHERE channel_id = ANY($1) ORDER BY channel_id, kind, target_id",
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
 
     let mut recipients: HashMap<i64, Vec<i64>> = HashMap::new();
