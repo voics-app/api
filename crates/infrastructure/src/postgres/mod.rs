@@ -24,6 +24,7 @@ mod reports;
 mod session_revocation;
 mod sessions;
 mod snowflake;
+mod thread_lifecycle;
 mod unit_of_work;
 mod users;
 mod vanity;
@@ -35,6 +36,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
 pub use snowflake::PgIdReservations;
+pub use thread_lifecycle::PgThreadLifecycle;
 pub use unit_of_work::PgUnitOfWork;
 
 /// Opens the connection pool.
