@@ -268,6 +268,40 @@ pub trait RelationshipRepository: Send + Sync {
 
 #[async_trait]
 pub trait ChannelRepository: Send + Sync {
+    async fn find_forum_request(
+        &self,
+        guild_id: Snowflake,
+        parent_id: Snowflake,
+        owner_id: Snowflake,
+        request_key: &str,
+    ) -> AppResult<Option<Channel>> {
+        Ok(self.list_for_guild(guild_id).await?.into_iter().find(|c| {
+            c.parent_id == Some(parent_id)
+                && c.owner_id == Some(owner_id)
+                && c.forum_settings
+                    .get("request_key")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(request_key)
+        }))
+    }
+    /// Marks a confirmed deleted opener as terminal only while this lease is current.
+    async fn fail_forum_post(&self, _id: Snowflake, _token: &str) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "forum reservations unavailable".into(),
+        ))
+    }
+    /// Claims or takes over an expired forum delivery/publication lease.
+    async fn claim_forum_post(
+        &self,
+        _id: Snowflake,
+        _phase: &str,
+        _token: &str,
+    ) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "forum reservations unavailable".into(),
+        ))
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Channel>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Channel>>;
     async fn list_private(&self, user_id: Snowflake) -> AppResult<Vec<Channel>>;
