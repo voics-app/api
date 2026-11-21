@@ -1,8 +1,29 @@
 # api
 
+Forum post creation uses an author-scoped request UUID and reserved thread and message IDs. Standard-mode requests return a pending status until the opening message is confirmed; retry the same request to recover an expired lease. Published forum feeds include message summaries from the messages service. Private-mode forum creation is not yet supported.
+
 The Voics REST API: accounts, users and settings, DMs, relationships, devices, guilds and their channels, roles, members, bans, invites, emojis, audit log, applications and bots, commands, interactions and webhooks. It also serves the internal P4 endpoints used by gateway and admin-bff.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering and component diagram.
+
+Announcement follows and publication (api#36) are gated by
+`ANNOUNCEMENT_DELIVERY_ENABLED`, default `false`. A follower is a non-executable
+type-2 webhook; publication reserves one delivery per source message and target
+channel in Postgres. The relay checks the reserved destination after a lost
+response and never blindly re-sends an unknown result. This work remains in
+review pending cross-service verification and an operator recovery procedure.
+For the isolated bridge test, build `announcement_fixture` from the companion
+messages worktree (`cargo build --locked -p discordy-messages-interface --example
+announcement_fixture`), set `MESSAGES_FIXTURE_BIN` to that binary, and run
+`cargo test --locked -p infrastructure --test http_announcement_bridge -- --ignored`.
+It starts one disposable PostgreSQL container and a loopback messages fixture;
+it exercises a lost response after the destination was stored. The regular PR
+job cannot check out the private messages repository with its repository-scoped
+token, so it does not run this cross-repository test.
+Thread members and browse routes use migration `0084_thread_members.sql`. The gateway must
+support and strip versioned internal membership state before this API change is deployed;
+otherwise private membership data could reach clients. A private thread inherits its parent
+permissions and is visible to its creator, joined members and thread managers.
 
 Profile customization (api#43): `PATCH /users/@me` persists pronouns, a pair of RGB theme
 colours, an accent colour and a banner. `PATCH /guilds/{guild}/members/{user}` accepts

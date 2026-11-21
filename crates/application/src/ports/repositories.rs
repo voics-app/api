@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use domain::account::{AccountState, AccountToken, TokenPurpose};
-use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
+use domain::application::{Application, ApplicationCommand, FollowedChannel, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
 use domain::bot_authorization::{BotAuthorization, BotInstallation, BotInstallationRevision};
 use domain::channel::Channel;
@@ -249,6 +249,40 @@ pub trait RelationshipRepository: Send + Sync {
 
 #[async_trait]
 pub trait ChannelRepository: Send + Sync {
+    async fn find_forum_request(
+        &self,
+        guild_id: Snowflake,
+        parent_id: Snowflake,
+        owner_id: Snowflake,
+        request_key: &str,
+    ) -> AppResult<Option<Channel>> {
+        Ok(self.list_for_guild(guild_id).await?.into_iter().find(|c| {
+            c.parent_id == Some(parent_id)
+                && c.owner_id == Some(owner_id)
+                && c.forum_settings
+                    .get("request_key")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(request_key)
+        }))
+    }
+    /// Marks a confirmed deleted opener as terminal only while this lease is current.
+    async fn fail_forum_post(&self, _id: Snowflake, _token: &str) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "forum reservations unavailable".into(),
+        ))
+    }
+    /// Claims or takes over an expired forum delivery/publication lease.
+    async fn claim_forum_post(
+        &self,
+        _id: Snowflake,
+        _phase: &str,
+        _token: &str,
+    ) -> AppResult<bool> {
+        Err(crate::error::AppError::Unavailable(
+            "forum reservations unavailable".into(),
+        ))
+    }
+
     async fn find(&self, id: Snowflake) -> AppResult<Option<Channel>>;
     async fn stage_instance(
         &self,
@@ -434,6 +468,9 @@ pub trait InteractionRepository: Send + Sync {
 pub trait WebhookRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Webhook>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Webhook>>;
+    async fn list_followed_for_guild(&self, guild_id: Snowflake)
+        -> AppResult<Vec<FollowedChannel>>;
+    async fn followers_of(&self, channel_id: Snowflake) -> AppResult<Vec<FollowedChannel>>;
 }
 
 /// Push tokens of the mobile app, one per login session.

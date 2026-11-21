@@ -367,6 +367,20 @@ pub struct ModifyChannelRequest {
     pub locked: Option<bool>,
     #[serde(default)]
     pub auto_archive_duration: Option<u32>,
+    #[serde(default)]
+    pub available_tags: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub default_sort_order: Option<Option<u8>>,
+    #[serde(default)]
+    pub default_forum_layout: Option<u8>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub default_reaction_emoji: Option<Option<serde_json::Value>>,
+    #[serde(default)]
+    pub require_tags: Option<bool>,
+    #[serde(default)]
+    pub applied_tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub flags: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -403,6 +417,12 @@ pub struct CreateInviteRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateThreadRequest {
     pub name: String,
+    #[serde(default)]
+    pub message: Option<serde_json::Value>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub applied_tags: Vec<String>,
     #[serde(default, rename = "type")]
     pub kind: Option<u8>,
     #[serde(default)]

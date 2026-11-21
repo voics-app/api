@@ -106,6 +106,12 @@ pub enum Mutation {
     /// Replaces every column, overwrites and recipients included.
     UpdateChannel(Channel),
     DeleteChannel(Snowflake),
+    SetThreadMember {
+        thread_id: Snowflake,
+        guild_id: Snowflake,
+        user_id: Snowflake,
+        joined_at: Option<DateTime<Utc>>,
+    },
     /// `mode: None` clears the override.
     SetDeliveryOverride {
         user_id: Snowflake,
@@ -208,6 +214,22 @@ pub enum Mutation {
     },
 
     InsertWebhook(Webhook),
+    InsertAnnouncementFollower {
+        source_channel_id: Snowflake,
+        target_channel_id: Snowflake,
+        webhook_id: Snowflake,
+    },
+    EnqueueAnnouncement {
+        source_channel_id: Snowflake,
+        source_message_id: Snowflake,
+        payload: serde_json::Value,
+        /// (target channel, follower webhook, reserved destination message id).
+        deliveries: Vec<(Snowflake, Snowflake, Snowflake)>,
+    },
+    MarkAnnouncementPublished {
+        source_channel_id: Snowflake,
+        source_message_id: Snowflake,
+    },
     /// Serializes lifecycle changes and rejects actions based on a replaced installation.
     GuardApplicationInstallation {
         guild_id: Snowflake,
@@ -243,11 +265,18 @@ pub enum Mutation {
 pub struct WriteSet {
     pub mutations: Vec<Mutation>,
     pub events: Vec<DomainEvent>,
+    /// A publication must still own this forum lease at commit time.
+    pub forum_guard: Option<(Snowflake, String)>,
 }
 
 impl WriteSet {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn guard_forum_publication(&mut self, id: Snowflake, token: String) -> &mut Self {
+        self.forum_guard = Some((id, token));
+        self
     }
 
     pub fn mutate(&mut self, mutation: Mutation) -> &mut Self {
