@@ -49,7 +49,7 @@ pub async fn view(ports: &Ports, invite: Invite) -> AppResult<InviteView> {
 }
 
 /// Best effort: a presence outage must not break invite lookups.
-async fn online_count(ports: &Ports, guild_id: domain::Snowflake) -> Option<u64> {
+pub(crate) async fn online_count(ports: &Ports, guild_id: domain::Snowflake) -> Option<u64> {
     let ids = ports
         .guilds
         .member_ids(guild_id, PRESENCE_SAMPLE)
