@@ -365,7 +365,10 @@ async fn thread(
         audit,
     )
     .await?;
-    Ok((StatusCode::CREATED, Json(ChannelDto::guild(&channel))))
+    Ok((
+        StatusCode::CREATED,
+        Json(ChannelDto::guild_for_viewer(&channel, actor.user_id)),
+    ))
 }
 
 #[derive(serde::Deserialize)]
