@@ -91,6 +91,7 @@ impl Default for Settings {
 
 #[derive(Clone)]
 pub struct Ports {
+    pub connections: Option<Arc<dyn Connections>>,
     pub users: Arc<dyn UserRepository>,
     pub sessions: Arc<dyn SessionRepository>,
     pub account_tokens: Arc<dyn AccountTokenRepository>,

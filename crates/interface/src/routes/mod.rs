@@ -23,3 +23,5 @@ pub mod stage_instances;
 pub mod templates;
 pub mod users;
 pub mod webhooks;
+
+pub mod connections;

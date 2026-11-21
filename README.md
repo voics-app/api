@@ -373,13 +373,20 @@ remove/reinstall, removal-after-absent-read and transaction-rollback interleavin
 
 Tests run locally, not in CI. Install [lefthook](https://github.com/evilmartians/lefthook) once and run `make hooks` (or `lefthook install`) to enable the pre-push hook in `lefthook.yml`: it runs this repository's lint and unit tests before every push. CI repeats only the slim gate on pull requests. Skip once with `LEFTHOOK=0 git push`.
 
+## Linked GitHub accounts
+
+GitHub linking is disabled by default. Set `CONNECTION_GITHUB_ENABLED=true` and supply `CONNECTION_GITHUB_CLIENT_ID` and `CONNECTION_GITHUB_CLIENT_SECRET` from the existing secret injection mechanism. Register the callback as `PUBLIC_API_URL/api/v1/connections/github/callback`. The server exchanges the code and fetches the GitHub identity; it does not persist provider tokens. Connections start private. Disabling the provider stops new authorization while retaining the ability to view, hide, and remove links.
+
+A connection is started with authenticated `POST /users/@me/connections/github/authorize`; open the returned URL in a browser. Manage it with `GET /users/@me/connections`, `PUT /users/@me/connections` (`{ "provider": "github", "visible": true }`), and `DELETE /users/@me/connections` (`{ "provider": "github" }`). The provider-specific PUT and DELETE paths are also supported. `GET /users/{id}/connections` only returns visible links.
 ## Stage instances
 
 Guild stage-channel metadata is managed through `POST /stage-instances` and `GET`, `PATCH`, or `DELETE /stage-instances/{channel_id}`. Reading requires channel visibility; starting, changing the topic and ending require `MANAGE_CHANNELS`. Each mutation is committed with its `STAGE_INSTANCE_*` event through the transactional outbox. A channel can have at most one active instance. This metadata lifecycle does not itself enable stage audio; see the stage enforcement design in the docs repository.
 
+
 ## Ban appeals
 
 A server can configure a single short appeal question with `PUT /guilds/{guild_id}/ban-appeals/form`. A currently banned, authenticated user can read that question and submit an answer to `POST /guilds/{guild_id}/ban-appeals`. Only one appeal may be open per user and server. Moderators need `MANAGE_BAN_APPEALS` to configure the question, list appeals and accept or deny them. Acceptance removes the current ban; decisions record an audit action when guild audit logging is enabled. A decision against a superseded ban is rejected rather than removing a newer ban. Unbanned users need a valid invite to rejoin.
+
 ## Optional GIF provider
 
 GIF search is disabled unless `GIF_PROVIDER_URL`, `GIF_PROVIDER_KEY` and comma-separated exact `GIF_MEDIA_HOSTS` are set. The URL is the base of a Tenor v2-compatible service exposing `featured`, `search` and `categories`. The API calls it server-side with the key, limits public requests through the existing rate limiter, and keeps up to 128 filtered JSON responses in memory for 60 seconds. The key is never returned to clients. Preview links are signed by messages and served by its existing media proxy. Enable only after confirming the provider permits proxy requests and response caching; these assumptions do not apply to GIPHY or standard KLIPY integrations. No provider or credentials are shipped. A provider agreement, key provisioning, and a live end-to-end check remain prerequisites before enabling this feature.

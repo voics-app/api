@@ -92,7 +92,20 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
             from: smtp.from.clone(),
         })?),
     };
+    let (github_id, github_secret) = config.github_connections.clone().unwrap_or_default();
+    let callback = config
+        .public_api_url
+        .join("/api/v1/connections/github/callback")?;
+    let connections = Some(
+        Arc::new(infrastructure::connections::GithubConnections::new(
+            pool.clone(),
+            github_id,
+            github_secret,
+            callback,
+        )?) as Arc<dyn application::ports::Connections>,
+    );
     let ports = Ports {
+        connections,
         passkeys: store.clone(),
         webauthn: config
             .webauthn

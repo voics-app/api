@@ -539,6 +539,8 @@ pub(super) async fn anonymize_user(
         "user_passkeys",
         "passkey_challenges",
         "application_authorizations",
+        "connection_oauth_states",
+        "user_connections",
         "ban_appeals",
         "user_badges",
     ] {

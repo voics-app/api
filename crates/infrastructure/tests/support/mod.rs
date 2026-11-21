@@ -328,6 +328,7 @@ pub fn ports_with_messages(
 ) -> Ports {
     let store = Arc::new(PgStore::new(pool.clone()));
     Ports {
+        connections: None,
         users: store.clone(),
         sessions: store.clone(),
         passkeys: store.clone(),

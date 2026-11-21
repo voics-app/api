@@ -1,0 +1,21 @@
+name: connections-integration
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "bin/**"
+      - "migrations/**"
+      - "Cargo.*"
+      - ".github/workflows/connections-integration.yml"
+permissions:
+  contents: read
+jobs:
+  oauth-flow:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Exercise OAuth redirect and callback
+        run: cargo test --locked -p infrastructure --test http_connections
