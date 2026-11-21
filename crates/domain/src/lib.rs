@@ -23,6 +23,7 @@ pub mod profile;
 pub mod push_token;
 pub mod relationship;
 pub mod report;
+pub mod scheduled_event;
 pub mod session;
 pub mod snowflake;
 pub mod template;

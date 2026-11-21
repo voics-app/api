@@ -188,6 +188,19 @@ async fn run(config: Config) -> Result<(), Box<dyn Error>> {
     let prune_every = std::time::Duration::from_secs(config.device_prune_interval_secs);
 
     tokio::spawn(OutboxRelay::new(pool.clone(), publisher.clone()).run());
+    let reminder_pool = pool.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            if let Err(error) =
+                infrastructure::postgres::enqueue_due_reminders(&reminder_pool).await
+            {
+                tracing::warn!(%error, "scheduled event reminder enqueue failed");
+            }
+        }
+    });
     tokio::spawn(async move {
         const AUDIT_RETENTION_INTERVAL_SECS: u64 = 3600;
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(
