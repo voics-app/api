@@ -97,6 +97,34 @@ struct MessageCountDto {
 
 #[async_trait]
 impl MessageService for HttpMessages {
+    async fn deliver_crosspost(
+        &self,
+        channel_id: Snowflake,
+        body: Value,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/crossposts");
+        stored(self.send(Method::POST, &path, Some(body)).await?)
+    }
+    async fn mark_crossposted(
+        &self,
+        channel_id: Snowflake,
+        message_id: Snowflake,
+    ) -> AppResult<StoredMessage> {
+        let path = format!("internal/v1/channels/{channel_id}/messages/{message_id}/crossposted");
+        let (status, body) = self
+            .exchange(Method::POST, &path, Some(serde_json::json!({})))
+            .await?;
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(AppError::NotFound(application::Resource::Message));
+        }
+        if !status.is_success() {
+            return Err(AppError::BadRequest {
+                code: 0,
+                message: format!("messages responded {status}"),
+            });
+        }
+        stored(body)
+    }
     async fn forum_summaries(&self, channel_ids: &[Snowflake]) -> AppResult<Vec<Value>> {
         let mut result = Vec::new();
         for chunk in channel_ids.chunks(50) {
@@ -137,7 +165,6 @@ impl MessageService for HttpMessages {
         }
         stored(body)
     }
-
     async fn create(&self, channel_id: Snowflake, message: Value) -> AppResult<StoredMessage> {
         let path = format!("internal/v1/channels/{channel_id}/messages");
         stored(self.send(Method::POST, &path, Some(message)).await?)
