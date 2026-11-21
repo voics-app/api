@@ -135,6 +135,8 @@ pub struct GuildFolder {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserSettings {
     pub user_id: Snowflake,
+    /// Internal optimistic concurrency token; never exposed to clients.
+    pub settings_revision: i64,
     pub default_delivery_mode: DeliveryMode,
     pub e2ee_calls_default: bool,
     pub theme: Theme,
@@ -158,6 +160,7 @@ impl UserSettings {
     pub fn defaults_for(user_id: Snowflake) -> Self {
         Self {
             user_id,
+            settings_revision: 0,
             default_delivery_mode: DeliveryMode::Standard,
             e2ee_calls_default: false,
             theme: Theme::Dark,

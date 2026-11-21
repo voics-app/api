@@ -75,6 +75,7 @@ impl From<UserRow> for User {
 #[derive(FromRow)]
 struct SettingsRow {
     user_id: i64,
+    settings_revision: i64,
     default_delivery_mode: String,
     e2ee_calls_default: bool,
     theme: String,
@@ -95,6 +96,7 @@ impl From<SettingsRow> for UserSettings {
     fn from(row: SettingsRow) -> Self {
         UserSettings {
             user_id: sf(row.user_id),
+            settings_revision: row.settings_revision,
             default_delivery_mode: mode(&row.default_delivery_mode),
             e2ee_calls_default: row.e2ee_calls_default,
             theme: Theme::parse(&row.theme).unwrap_or_default(),
@@ -114,7 +116,7 @@ impl From<SettingsRow> for UserSettings {
 }
 
 const SETTINGS_COLUMNS: &str =
-    "user_id, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids";
+    "user_id, settings_revision, default_delivery_mode, e2ee_calls_default, theme, locale, status, custom_status, developer_mode, accent_color, guild_folders, guild_positions, message_display_compact, preferences, pinned_dm_channel_ids, pinned_channel_ids";
 
 #[async_trait]
 impl UserRepository for PgStore {

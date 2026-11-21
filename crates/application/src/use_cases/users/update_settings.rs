@@ -70,7 +70,31 @@ pub async fn execute(
     input: UpdateSettingsInput,
 ) -> AppResult<UserSettings> {
     actor.require_user()?;
-    let mut settings = ports.users.settings(actor.user_id).await?;
+    // A write may lose the revision race; re-read and merge the original patch.
+    // Never retry validation or infrastructure errors as concurrency conflicts.
+    for _ in 0..8 {
+        let mut settings = ports.users.settings(actor.user_id).await?;
+        apply_patch(&mut settings, input.clone())?;
+        let mut writes = WriteSet::new();
+        writes
+            .mutate(Mutation::UpsertSettings(settings.clone()))
+            .emit(DomainEvent::UserSettingsUpdate(settings.clone()));
+        match ports.unit_of_work.commit(writes).await {
+            Ok(()) => {
+                settings.settings_revision = settings
+                    .settings_revision
+                    .checked_add(1)
+                    .ok_or_else(|| AppError::internal("settings revision exhausted"))?;
+                return Ok(settings);
+            }
+            Err(AppError::SettingsWriteConflict) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(AppError::SettingsWriteConflict)
+}
+
+fn apply_patch(settings: &mut UserSettings, input: UpdateSettingsInput) -> AppResult<()> {
     if let Some(mode) = input.default_delivery_mode {
         settings.default_delivery_mode = mode.parse::<DeliveryMode>()?;
     }
@@ -163,10 +187,5 @@ pub async fn execute(
                 )
             })?;
     }
-    let mut writes = WriteSet::new();
-    writes
-        .mutate(Mutation::UpsertSettings(settings.clone()))
-        .emit(DomainEvent::UserSettingsUpdate(settings.clone()));
-    ports.unit_of_work.commit(writes).await?;
-    Ok(settings)
+    Ok(())
 }

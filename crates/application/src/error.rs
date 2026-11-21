@@ -48,6 +48,8 @@ pub enum Denial {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error("settings changed concurrently")]
+    SettingsWriteConflict,
     #[error("unauthorized")]
     Unauthorized,
     /// Login needs a second factor (Discord 60008 "MFA required"); `ticket`
