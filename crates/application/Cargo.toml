@@ -12,11 +12,13 @@ metrics.workspace = true
 chrono.workspace = true
 futures.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tokio.workspace = true
 uuid.workspace = true
 voics-snowflake.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
 metrics-exporter-prometheus.workspace = true

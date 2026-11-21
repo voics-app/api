@@ -45,6 +45,16 @@ impl UnitOfWork for PgUnitOfWork {
         let mut tx = self.pool.begin().await.map_err(db)?;
         let conn = &mut *tx;
         let mut membership_events = Vec::new();
+        if let Some((id, token)) = &writes.forum_guard {
+            let valid: Option<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE id = $1 AND forum_settings->>'pending' = 'true' AND forum_settings->>'status' = 'publishing' AND forum_settings->>'lease_token' = $2 FOR UPDATE")
+                .bind(id.as_i64()).bind(token).fetch_optional(&mut *conn).await.map_err(db)?;
+            if valid.is_none() {
+                return Err(application::AppError::Conflict {
+                    code: 0,
+                    message: "Forum publication lease was superseded.".into(),
+                });
+            }
+        }
         for mutation in &writes.mutations {
             if !matches!(mutation, Mutation::InsertAudit(_)) {
                 let removed_threads: Vec<i64> = if let Mutation::DeleteMember {
@@ -310,6 +320,103 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
         Mutation::InsertGuild(guild) | Mutation::UpdateGuild(guild) => {
             guilds::upsert_guild(conn, guild).await
         }
+        Mutation::ApplyOnboarding {
+            guild_id,
+            user_id,
+            revision,
+            role_ids,
+        } => {
+            // Channel overwrite writers take this same guild lock. Inspecting
+            // them under it prevents a role from granting moderation via an
+            // overwrite while a member selects it.
+            super::community::lock(conn, *guild_id).await?;
+            let (current,): (i64,) = sqlx::query_as("SELECT onboarding_revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE")
+                .bind(guild_id.as_i64()).fetch_one(&mut *conn).await.map_err(db)?;
+            if current != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding changed; review it again.".into(),
+                });
+            }
+            let (pending,): (bool,) = sqlx::query_as(
+                "SELECT pending FROM members WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+            )
+            .bind(guild_id.as_i64())
+            .bind(user_id.as_i64())
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(db)?;
+            if pending {
+                return Err(application::AppError::missing_permissions());
+            }
+            let result = sqlx::query("INSERT INTO guild_onboarding_completions (guild_id, user_id, revision) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(revision).execute(&mut *conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Onboarding has already been completed.".into(),
+                });
+            }
+            for role_id in role_ids {
+                let row: Option<(i64, bool)> = sqlx::query_as("SELECT permissions, managed FROM roles WHERE guild_id = $1 AND id = $2 FOR SHARE")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).fetch_optional(&mut *conn).await.map_err(db)?;
+                let Some((permissions, managed)) = row else {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role no longer exists.".into(),
+                    });
+                };
+                if managed
+                    || *role_id == *guild_id
+                    || (permissions as u64
+                        & !application::use_cases::guilds::onboarding::SAFE_ROLE_BITS)
+                        != 0
+                {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role is no longer eligible.".into(),
+                    });
+                }
+                let unsafe_overwrite: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM permission_overwrites p JOIN channels c ON c.id = p.channel_id WHERE c.guild_id = $1 AND p.kind = 0 AND p.target_id = $2 AND (p.allow_bits & $3) <> 0)")
+                    .bind(guild_id.as_i64()).bind(role_id.as_i64()).bind(!(application::use_cases::guilds::onboarding::SAFE_ROLE_BITS as i64)).fetch_one(&mut *conn).await.map_err(db)?;
+                if unsafe_overwrite {
+                    return Err(application::AppError::Conflict {
+                        code: 40001,
+                        message: "An onboarding role has a privileged channel overwrite.".into(),
+                    });
+                }
+                sqlx::query("INSERT INTO member_roles (guild_id, user_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+                    .bind(guild_id.as_i64()).bind(user_id.as_i64()).bind(role_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+            }
+            Ok(())
+        }
+        Mutation::CheckScreeningRevision { guild_id, revision } => {
+            let current: (i64,) = sqlx::query_as(
+                "SELECT revision FROM guild_member_screening WHERE guild_id = $1 FOR SHARE",
+            )
+            .bind(guild_id.as_i64())
+            .fetch_one(conn)
+            .await
+            .map_err(db)?;
+            if current.0 != *revision {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Rules changed; review them again.".into(),
+                });
+            }
+            Ok(())
+        }
+        Mutation::AcceptScreening { guild_id, user_id } => {
+            let result = sqlx::query("UPDATE members SET pending = false WHERE guild_id = $1 AND user_id = $2 AND pending = true")
+                .bind(guild_id.as_i64()).bind(user_id.as_i64()).execute(conn).await.map_err(db)?;
+            if result.rows_affected() != 1 {
+                return Err(application::AppError::Conflict {
+                    code: 40001,
+                    message: "Membership changed; reload and try again.".into(),
+                });
+            }
+            Ok(())
+        }
         Mutation::DeleteGuild(guild_id) => guilds::delete_guild(conn, *guild_id).await,
         Mutation::InsertRole(role) | Mutation::UpdateRole(role) => {
             guilds::upsert_role(conn, role).await
@@ -394,7 +501,45 @@ async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<
             state,
             original_message_id,
         } => applications::update_interaction(conn, *id, *state, *original_message_id).await,
+        Mutation::MarkAnnouncementPublished {
+            source_channel_id,
+            source_message_id,
+        } => {
+            sqlx::query("UPDATE announcement_publications SET marked=true WHERE source_channel_id=$1 AND source_message_id=$2")
+                .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).execute(conn).await.map_err(db)?;
+            Ok(())
+        }
+        Mutation::EnqueueAnnouncement {
+            source_channel_id,
+            source_message_id,
+            payload,
+            deliveries,
+        } => {
+            sqlx::query("INSERT INTO announcement_publications (source_channel_id, source_message_id, payload) VALUES ($1, $2, $3)")
+                .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).bind(payload)
+                .execute(&mut *conn).await.map_err(db)?;
+            for (target, webhook, destination_id) in deliveries {
+                sqlx::query("INSERT INTO announcement_deliveries (source_channel_id, source_message_id, target_channel_id, webhook_id, destination_message_id) SELECT $1, $2, $3, $4, $5 FROM announcement_followers WHERE source_channel_id=$1 AND target_channel_id=$3 AND webhook_id=$4 FOR KEY SHARE")
+                    .bind(source_channel_id.as_i64()).bind(source_message_id.as_i64()).bind(target.as_i64())
+                    .bind(webhook.as_i64()).bind(destination_id.as_i64()).execute(&mut *conn).await.map_err(db)?;
+            }
+            Ok(())
+        }
         Mutation::InsertWebhook(webhook) => applications::insert_webhook(conn, webhook).await,
+        Mutation::InsertAnnouncementFollower {
+            source_channel_id,
+            target_channel_id,
+            webhook_id,
+        } => {
+            sqlx::query("INSERT INTO announcement_followers (source_channel_id, target_channel_id, webhook_id) VALUES ($1, $2, $3)")
+                .bind(source_channel_id.as_i64())
+                .bind(target_channel_id.as_i64())
+                .bind(webhook_id.as_i64())
+                .execute(conn)
+                .await
+                .map_err(db)?;
+            Ok(())
+        }
         Mutation::GuardApplicationInstallation {
             guild_id,
             application_id,

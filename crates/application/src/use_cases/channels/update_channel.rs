@@ -36,6 +36,13 @@ pub struct UpdateChannelInput {
     pub archived: Option<bool>,
     pub locked: Option<bool>,
     pub auto_archive_duration: Option<u32>,
+    pub available_tags: Option<serde_json::Value>,
+    pub default_sort_order: Option<Option<u8>>,
+    pub default_forum_layout: Option<u8>,
+    pub default_reaction_emoji: Option<Option<serde_json::Value>>,
+    pub require_tags: Option<bool>,
+    pub applied_tags: Option<Vec<String>>,
+    pub flags: Option<u32>,
 }
 
 pub async fn execute(
@@ -122,6 +129,43 @@ async fn update_thread(
         return Err(AppError::missing_permissions());
     }
     let mut thread = access.channel.clone();
+    if let Some(flags) = input.flags {
+        if !manages {
+            return Err(AppError::missing_permissions());
+        }
+        let parent_id = thread.parent_id.ok_or_else(|| {
+            AppError::invalid("flags", "CHANNEL_TYPE_INVALID", "Thread has no parent.")
+        })?;
+        let parent = ports.channels.find(parent_id).await?.ok_or_else(|| {
+            AppError::invalid("flags", "CHANNEL_TYPE_INVALID", "Thread parent not found.")
+        })?;
+        if parent.kind != ChannelType::GuildForum || flags & !2 != 0 {
+            return Err(AppError::invalid(
+                "flags",
+                "CHANNEL_TYPE_INVALID",
+                "Only forum posts can be pinned.",
+            ));
+        }
+        thread.forum_settings["pinned"] = json!(flags & 2 != 0);
+    }
+    if let Some(tags) = input.applied_tags.as_ref() {
+        let parent_id = thread.parent_id.ok_or_else(|| {
+            AppError::invalid(
+                "applied_tags",
+                "CHANNEL_TYPE_INVALID",
+                "Thread has no parent.",
+            )
+        })?;
+        let parent = ports.channels.find(parent_id).await?.ok_or_else(|| {
+            AppError::invalid(
+                "applied_tags",
+                "CHANNEL_TYPE_INVALID",
+                "Thread parent not found.",
+            )
+        })?;
+        super::forum::validate_applied(&parent, tags, manages)?;
+        thread.applied_tags = tags.clone();
+    }
     if let Some(name) = input.name {
         apply_name(&mut thread, &name)?;
     }
@@ -153,7 +197,23 @@ async fn update_thread(
             metadata.auto_archive_duration = duration;
         }
     }
-    let changes = name_change(&access.channel, &thread);
+    let mut changes = name_change(&access.channel, &thread);
+    changes.extend(
+        [
+            AuditChange::if_changed(
+                "applied_tags",
+                json!(access.channel.applied_tags),
+                json!(thread.applied_tags),
+            ),
+            AuditChange::if_changed(
+                "pinned",
+                json!(access.channel.forum_settings.get("pinned")),
+                json!(thread.forum_settings.get("pinned")),
+            ),
+        ]
+        .into_iter()
+        .flatten(),
+    );
     let mut writes = WriteSet::new();
     writes
         .mutate(Mutation::UpdateChannel(thread.clone()))
@@ -179,6 +239,65 @@ async fn update_guild_channel(
     access.require(Permissions::MANAGE_CHANNELS)?;
     let before = &access.channel;
     let mut channel = before.clone();
+    let has_forum_fields = input.available_tags.is_some()
+        || input.default_sort_order.is_some()
+        || input.default_forum_layout.is_some()
+        || input.default_reaction_emoji.is_some()
+        || input.require_tags.is_some();
+    if has_forum_fields && channel.kind != ChannelType::GuildForum {
+        return Err(AppError::invalid(
+            "available_tags",
+            "CHANNEL_TYPE_INVALID",
+            "Forum settings require a forum channel.",
+        ));
+    }
+    if input.flags.is_some() {
+        return Err(AppError::invalid(
+            "flags",
+            "CHANNEL_TYPE_INVALID",
+            "Only forum posts can be pinned.",
+        ));
+    }
+    if input.applied_tags.is_some() {
+        return Err(AppError::invalid(
+            "applied_tags",
+            "CHANNEL_TYPE_INVALID",
+            "Tags apply to forum posts.",
+        ));
+    }
+    if let Some(tags) = input.available_tags {
+        channel.forum_settings["available_tags"] =
+            super::forum::normalize_tags(ports, before, tags)?;
+    }
+    if let Some(sort) = input.default_sort_order {
+        if sort.is_some_and(|v| v > 1) {
+            return Err(AppError::invalid(
+                "default_sort_order",
+                "BASE_TYPE_CHOICES",
+                "Invalid sort order.",
+            ));
+        }
+        channel.forum_settings["default_sort_order"] = json!(sort);
+    }
+    if let Some(layout) = input.default_forum_layout {
+        if layout > 2 {
+            return Err(AppError::invalid(
+                "default_forum_layout",
+                "BASE_TYPE_CHOICES",
+                "Invalid layout.",
+            ));
+        }
+        channel.forum_settings["default_forum_layout"] = json!(layout);
+    }
+    if let Some(reaction) = input.default_reaction_emoji {
+        if let Some(value) = reaction.as_ref() {
+            super::forum::validate_emoji(value, "default_reaction_emoji")?;
+        }
+        channel.forum_settings["default_reaction_emoji"] = json!(reaction);
+    }
+    if let Some(required) = input.require_tags {
+        channel.forum_settings["require_tags"] = json!(required);
+    }
     if let Some(name) = input.name {
         apply_name(&mut channel, &name)?;
     }
@@ -221,6 +340,21 @@ async fn update_guild_channel(
         channel.overwrites = overwrites;
     }
     let mode = input.delivery_mode.unwrap_or(channel.delivery_mode);
+    if channel.kind == ChannelType::GuildForum && mode != before.delivery_mode {
+        let has_posts = ports
+            .channels
+            .list_for_guild(ctx.guild.id)
+            .await?
+            .iter()
+            .any(|candidate| candidate.parent_id == Some(channel.id) && candidate.kind.is_thread());
+        if has_posts {
+            return Err(AppError::invalid(
+                "delivery_mode",
+                "DELIVERY_MODE_INVALID",
+                "A forum with posts cannot change delivery mode.",
+            ));
+        }
+    }
     if input.delivery_mode.is_some()
         || (mode == DeliveryMode::Ephemeral && channel.overwrites != before.overwrites)
     {
@@ -232,6 +366,11 @@ async fn update_guild_channel(
     changes.extend(
         [
             AuditChange::if_changed("topic", json!(before.topic), json!(channel.topic)),
+            AuditChange::if_changed(
+                "forum_settings",
+                json!(before.forum_settings),
+                json!(channel.forum_settings),
+            ),
             AuditChange::if_changed(
                 "delivery_mode",
                 json!(before.delivery_mode.as_str()),
