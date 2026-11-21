@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use domain::account::{AccountState, AccountToken, TokenPurpose};
-use domain::application::{Application, ApplicationCommand, Interaction, Webhook};
+use domain::application::{Application, ApplicationCommand, FollowedChannel, Interaction, Webhook};
 use domain::audit::{AuditAction, AuditLogEntry};
 use domain::bot_authorization::{BotAuthorization, BotInstallation, BotInstallationRevision};
 use domain::channel::Channel;
@@ -240,6 +240,25 @@ pub trait DeviceRepository: Send + Sync {
 #[async_trait]
 pub trait RelationshipRepository: Send + Sync {
     async fn list(&self, user_id: Snowflake) -> AppResult<Vec<Relationship>>;
+    async fn favourites(&self, user_id: Snowflake) -> AppResult<Vec<Snowflake>>;
+    async fn set_favourite(
+        &self,
+        user_id: Snowflake,
+        target_id: Snowflake,
+        favourite: bool,
+    ) -> AppResult<bool>;
+    async fn create_friend_invite(
+        &self,
+        owner: Snowflake,
+        hash: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<()>;
+    async fn friend_invite_owner(
+        &self,
+        hash: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Option<Snowflake>>;
+    async fn revoke_friend_invites(&self, owner: Snowflake) -> AppResult<()>;
     async fn get(
         &self,
         user_id: Snowflake,
@@ -335,6 +354,25 @@ pub trait GuildRepository: Send + Sync {
         event_id: Snowflake,
         user_id: Snowflake,
     ) -> AppResult<bool>;
+    async fn onboarding(&self, guild_id: Snowflake) -> AppResult<(serde_json::Value, i64)>;
+    async fn set_onboarding(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<i64>;
+    async fn welcome_screen(&self, guild_id: Snowflake) -> AppResult<serde_json::Value>;
+    async fn set_welcome_screen(
+        &self,
+        guild_id: Snowflake,
+        value: &serde_json::Value,
+    ) -> AppResult<()>;
+    async fn screening(&self, guild_id: Snowflake) -> AppResult<ScreeningConfig>;
+    async fn set_screening(
+        &self,
+        guild_id: Snowflake,
+        enabled: bool,
+        rules: &[String],
+    ) -> AppResult<ScreeningConfig>;
     async fn find(&self, id: Snowflake) -> AppResult<Option<Guild>>;
     async fn list_for_user(&self, user_id: Snowflake) -> AppResult<Vec<Guild>>;
     async fn roles(&self, guild_id: Snowflake) -> AppResult<Vec<Role>>;
@@ -380,6 +418,13 @@ pub trait GuildRepository: Send + Sync {
     async fn update_template(&self, template: &GuildTemplate) -> AppResult<()>;
     async fn delete_template(&self, code: &str) -> AppResult<()>;
     async fn bump_template_usage(&self, code: &str) -> AppResult<()>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreeningConfig {
+    pub enabled: bool,
+    pub rules: Vec<String>,
+    pub revision: i64,
 }
 
 /// Filters of `GET /discovery/guilds`; the rule thresholds are applied in SQL too,
@@ -502,6 +547,9 @@ pub trait InteractionRepository: Send + Sync {
 pub trait WebhookRepository: Send + Sync {
     async fn find(&self, id: Snowflake) -> AppResult<Option<Webhook>>;
     async fn list_for_guild(&self, guild_id: Snowflake) -> AppResult<Vec<Webhook>>;
+    async fn list_followed_for_guild(&self, guild_id: Snowflake)
+        -> AppResult<Vec<FollowedChannel>>;
+    async fn followers_of(&self, channel_id: Snowflake) -> AppResult<Vec<FollowedChannel>>;
 }
 
 /// Push tokens of the mobile app, one per login session.

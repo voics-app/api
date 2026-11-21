@@ -133,3 +133,155 @@ async fn adding_a_friend_by_username_lists_the_full_public_user_for_both_sides()
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["code"], 10013);
 }
+
+#[tokio::test]
+async fn personal_friend_invites_and_favourites_follow_relationship_lifecycle() {
+    let database = start_database().await;
+    let (private, public) = jwt_keys();
+    let state = AppState {
+        ports: ports(&database.pool, &public, &private),
+        internal_token: INTERNAL_TOKEN.into(),
+        rate_limiter: std::sync::Arc::new(support::AllowAll),
+        rate_policy: interface::state::RatePolicy::default(),
+    };
+    let app = interface::router(state);
+    let (_, alice) = send(&app, post_json("/api/v1/auth/register", "", json!({"email":"alice2@example.com","username":"alice2","password":"a-long-enough-passphrase"}))).await;
+    let (_, bob) = send(&app, post_json("/api/v1/auth/register", "", json!({"email":"bob2@example.com","username":"bob2","password":"a-long-enough-passphrase"}))).await;
+    let alice_token = alice["access_token"].as_str().unwrap();
+    let bob_token = bob["access_token"].as_str().unwrap();
+    let alice_id = alice["user"]["id"].as_str().unwrap();
+    let bob_id = bob["user"]["id"].as_str().unwrap();
+    let (status, invite) = send(
+        &app,
+        post_json("/api/v1/users/@me/friend-invites", alice_token, json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let old_code = invite["token"].as_str().unwrap();
+    let (_, rotated) = send(
+        &app,
+        post_json("/api/v1/users/@me/friend-invites", alice_token, json!({})),
+    )
+    .await;
+    let code = rotated["token"].as_str().unwrap();
+    assert_ne!(old_code, code);
+    assert_eq!(
+        send(
+            &app,
+            post_json(
+                "/api/v1/friend-invites",
+                bob_token,
+                json!({"token":old_code})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(
+            &app,
+            post_json("/api/v1/friend-invites", alice_token, json!({"token":code}))
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        send(
+            &app,
+            post_json("/api/v1/friend-invites", bob_token, json!({"token":code}))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (status, pending) = send(&app, get("/api/v1/users/@me/relationships", alice_token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(pending[0]["type"], 3);
+    let accept = with_token(
+        Request::builder()
+            .method("PUT")
+            .uri(format!("/api/v1/users/@me/relationships/{bob_id}")),
+        alice_token,
+    )
+    .body(Body::empty())
+    .unwrap();
+    assert_eq!(send(&app, accept).await.0, StatusCode::NO_CONTENT);
+    let favourite = with_token(
+        Request::builder()
+            .method("PUT")
+            .uri(format!("/api/v1/users/@me/favourites/{bob_id}")),
+        alice_token,
+    )
+    .body(Body::empty())
+    .unwrap();
+    assert_eq!(send(&app, favourite).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        send(&app, get("/api/v1/users/@me/favourites", alice_token))
+            .await
+            .1,
+        json!([bob_id])
+    );
+    assert_eq!(
+        send(&app, get("/api/v1/users/@me/favourites", bob_token))
+            .await
+            .1,
+        json!([])
+    );
+    let remove = with_token(
+        Request::builder()
+            .method("DELETE")
+            .uri(format!("/api/v1/users/@me/relationships/{alice_id}")),
+        bob_token,
+    )
+    .body(Body::empty())
+    .unwrap();
+    assert_eq!(send(&app, remove).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        send(&app, get("/api/v1/users/@me/favourites", alice_token))
+            .await
+            .1,
+        json!([])
+    );
+    let revoke = with_token(
+        Request::builder()
+            .method("DELETE")
+            .uri("/api/v1/users/@me/friend-invites"),
+        alice_token,
+    )
+    .body(Body::empty())
+    .unwrap();
+    assert_eq!(send(&app, revoke).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        send(
+            &app,
+            post_json("/api/v1/friend-invites", bob_token, json!({"token":code}))
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let (_, expired) = send(
+        &app,
+        post_json("/api/v1/users/@me/friend-invites", alice_token, json!({})),
+    )
+    .await;
+    sqlx::query("UPDATE friend_invites SET expires_at = now() - interval '1 second'")
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        send(
+            &app,
+            post_json(
+                "/api/v1/friend-invites",
+                bob_token,
+                json!({"token": expired["token"]})
+            )
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+}

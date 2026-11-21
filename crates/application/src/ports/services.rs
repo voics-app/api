@@ -131,6 +131,25 @@ pub trait MessageService: Send + Sync {
         channel_id: Snowflake,
         message_id: Snowflake,
     ) -> AppResult<Option<StoredMessage>>;
+    async fn mark_crossposted(
+        &self,
+        _channel_id: Snowflake,
+        _message_id: Snowflake,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable(
+            "message publication marker unavailable".into(),
+        ))
+    }
+    /// Sends a journalled follower delivery. Errors after dispatch may be ambiguous.
+    async fn deliver_crosspost(
+        &self,
+        _channel_id: Snowflake,
+        _body: Value,
+    ) -> AppResult<StoredMessage> {
+        Err(AppError::Unavailable(
+            "crosspost delivery unavailable".into(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

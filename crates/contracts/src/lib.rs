@@ -11,6 +11,7 @@ pub mod internal;
 pub mod objects;
 pub mod passkeys;
 pub mod requests;
+pub mod screening;
 pub mod vanity;
 pub mod wire;
 

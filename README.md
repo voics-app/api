@@ -15,6 +15,20 @@ user-targeted outbox records and the desktop rechecks access and interest before
 The proposed notifier consumer sends generic mobile pushes after a second eligibility check,
 but its restart and overload delivery guarantees are limited. These paths need integrated
 verification before release; see `http_scheduled_events` and `postgres_scheduled_events` tests.
+Announcement follows and publication (api#36) are gated by
+`ANNOUNCEMENT_DELIVERY_ENABLED`, default `false`. A follower is a non-executable
+type-2 webhook; publication reserves one delivery per source message and target
+channel in Postgres. The relay checks the reserved destination after a lost
+response and never blindly re-sends an unknown result. This work remains in
+review pending cross-service verification and an operator recovery procedure.
+For the isolated bridge test, build `announcement_fixture` from the companion
+messages worktree (`cargo build --locked -p discordy-messages-interface --example
+announcement_fixture`), set `MESSAGES_FIXTURE_BIN` to that binary, and run
+`cargo test --locked -p infrastructure --test http_announcement_bridge -- --ignored`.
+It starts one disposable PostgreSQL container and a loopback messages fixture;
+it exercises a lost response after the destination was stored. The regular PR
+job cannot check out the private messages repository with its repository-scoped
+token, so it does not run this cross-repository test.
 Thread members and browse routes use migration `0084_thread_members.sql`. The gateway must
 support and strip versioned internal membership state before this API change is deployed;
 otherwise private membership data could reach clients. A private thread inherits its parent
@@ -101,8 +115,27 @@ The admin queue receives public name/description/category/tags, guild ID and the
 owner at filing. No private channel/member/message data is copied. Resolving a
 report does not automatically delist the server. See the central
 [discovery specification](https://github.com/voics-app/docs/blob/develop/specs/2026-11-03-server-discovery.md).
-No new configuration or infrastructure is needed. Membership screening remains
-a separate feature; Community setup does not implement api#40.
+No new configuration or infrastructure is needed. Community setup and rules
+screening are configured separately.
+
+`GET /guilds/{id}/member-verification` returns the current rules, revision and
+the caller's pending status. `PUT` requires `MANAGE_GUILD`; enable screening
+with one to twenty rules. New invite and discovery members become pending and
+cannot send until they `POST /guilds/{id}/member-verification/accept` with the
+revision they reviewed. If rules change concurrently the request returns 409;
+fetch and display the new version before another acceptance. Migration 0092
+stores the configuration and serializes configuration changes with joins and
+acceptance. Pending members also cannot create threads, which generate a system
+message. Existing members are not made pending when screening is enabled.
+
+`GET|PUT /guilds/{id}/onboarding` reads or replaces up to five optional
+questions; options can suggest a channel and grant an eligible role. Managers
+configuring role options also need `MANAGE_ROLES` and must outrank the role.
+`POST /guilds/{id}/onboarding/complete` takes the reviewed revision and one
+option index per question, once per membership and after accepting rules. Roles
+with privileged base permissions or channel overwrites cannot be self-assigned.
+`GET|PUT /guilds/{id}/welcome-screen` configures a description and up to five
+suggested text channels. GET omits channels the caller cannot view.
 
 Members with `MANAGE_GUILD` can use `GET|PATCH /guilds/{id}/vanity-url` to read,
 set or remove a permanent invite. Send `{"code":"study-club"}` or
