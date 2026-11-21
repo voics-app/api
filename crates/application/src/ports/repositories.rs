@@ -328,7 +328,6 @@ pub struct ScheduledEventDelivery {
 
 #[async_trait]
 pub trait GuildRepository: Send + Sync {
-<<<<<<< HEAD
     async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>>;
     async fn set_appeal_form(&self, guild_id: Snowflake, question: &str) -> AppResult<()>;
     async fn submit_appeal(
@@ -345,7 +344,6 @@ pub trait GuildRepository: Send + Sync {
         id: Snowflake,
     ) -> AppResult<Option<domain::ban_appeal::BanAppeal>>;
     async fn appeals(&self, guild_id: Snowflake) -> AppResult<Vec<domain::ban_appeal::BanAppeal>>;
-=======
     async fn claim_scheduled_event_delivery(&self) -> AppResult<Option<ScheduledEventDelivery>>;
     async fn scheduled_event_delivery(
         &self,
@@ -372,7 +370,6 @@ pub trait GuildRepository: Send + Sync {
         event_id: Snowflake,
         user_id: Snowflake,
     ) -> AppResult<bool>;
->>>>>>> origin/develop
     async fn onboarding(&self, guild_id: Snowflake) -> AppResult<(serde_json::Value, i64)>;
     async fn set_onboarding(
         &self,

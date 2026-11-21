@@ -253,7 +253,6 @@ const APPEAL_COLUMNS: &str =
 
 #[async_trait]
 impl GuildRepository for PgStore {
-<<<<<<< HEAD
     async fn appeal_form(&self, guild_id: Snowflake) -> AppResult<Option<String>> {
         sqlx::query_scalar("SELECT question FROM ban_appeal_forms WHERE guild_id = $1")
             .bind(guild_id.as_i64())
@@ -316,7 +315,6 @@ impl GuildRepository for PgStore {
         let rows: Vec<AppealRow> = sqlx::query_as(&format!("SELECT {APPEAL_COLUMNS} FROM ban_appeals WHERE guild_id=$1 ORDER BY (status='open') DESC, id DESC LIMIT 100"))
             .bind(guild_id.as_i64()).fetch_all(&self.pool).await.map_err(db)?;
         Ok(rows.into_iter().map(Into::into).collect())
-=======
     async fn claim_scheduled_event_delivery(
         &self,
     ) -> AppResult<Option<application::ports::ScheduledEventDelivery>> {
@@ -366,7 +364,6 @@ impl GuildRepository for PgStore {
         user_id: Snowflake,
     ) -> AppResult<bool> {
         super::scheduled_events::interested(&self.pool, event_id, user_id).await
->>>>>>> origin/develop
     }
 
     async fn onboarding(&self, guild_id: Snowflake) -> AppResult<(serde_json::Value, i64)> {
