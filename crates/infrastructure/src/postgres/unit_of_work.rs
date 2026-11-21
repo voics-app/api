@@ -44,6 +44,7 @@ impl UnitOfWork for PgUnitOfWork {
         }
         let mut tx = self.pool.begin().await.map_err(db)?;
         let conn = &mut *tx;
+        let mut conditional_events = Vec::new();
         let mut membership_events = Vec::new();
         if let Some((id, token)) = &writes.forum_guard {
             let valid: Option<i64> = sqlx::query_scalar("SELECT id FROM channels WHERE id = $1 AND forum_settings->>'pending' = 'true' AND forum_settings->>'status' = 'publishing' AND forum_settings->>'lease_token' = $2 FOR UPDATE")
@@ -56,6 +57,33 @@ impl UnitOfWork for PgUnitOfWork {
             }
         }
         for mutation in &writes.mutations {
+            if let Mutation::SetScheduledEventInterest {
+                guild_id,
+                event_id,
+                user_id,
+                channel_id,
+                interested,
+            } = mutation
+            {
+                if super::scheduled_events::set_interest(
+                    conn,
+                    *guild_id,
+                    *event_id,
+                    *user_id,
+                    *interested,
+                )
+                .await?
+                {
+                    conditional_events.push(DomainEvent::ScheduledEventInterest {
+                        guild_id: *guild_id,
+                        event_id: *event_id,
+                        user_id: *user_id,
+                        channel_id: *channel_id,
+                        interested: *interested,
+                    });
+                }
+                continue;
+            }
             if !matches!(mutation, Mutation::InsertAudit(_)) {
                 let removed_threads: Vec<i64> = if let Mutation::DeleteMember {
                     guild_id,
@@ -102,7 +130,12 @@ impl UnitOfWork for PgUnitOfWork {
             }
         }
         let now = Utc::now();
-        for event in writes.events.iter().chain(&membership_events) {
+        for event in writes
+            .events
+            .iter()
+            .chain(&membership_events)
+            .chain(&conditional_events)
+        {
             if matches!(event, DomainEvent::AuditLogEntryCreate(entry) if !recorded.contains(&entry.id))
             {
                 continue;
@@ -196,6 +229,17 @@ impl UnitOfWork for PgUnitOfWork {
 
 async fn apply(conn: &mut sqlx::PgConnection, mutation: &Mutation) -> AppResult<()> {
     match mutation {
+        Mutation::UpdateScheduledEvent {
+            event,
+            expected_revision,
+        } => super::scheduled_events::update(conn, event, *expected_revision).await,
+        Mutation::DeleteScheduledEvent {
+            guild_id,
+            event_id,
+            expected_revision,
+        } => super::scheduled_events::delete(conn, *guild_id, *event_id, *expected_revision).await,
+        Mutation::SetScheduledEventInterest { .. } => unreachable!("interest handled in commit"),
+        Mutation::InsertScheduledEvent(event) => super::scheduled_events::insert(conn, event).await,
         Mutation::InsertUser {
             user,
             credentials,
