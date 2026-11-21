@@ -315,6 +315,8 @@ impl GuildRepository for PgStore {
         let rows: Vec<AppealRow> = sqlx::query_as(&format!("SELECT {APPEAL_COLUMNS} FROM ban_appeals WHERE guild_id=$1 ORDER BY (status='open') DESC, id DESC LIMIT 100"))
             .bind(guild_id.as_i64()).fetch_all(&self.pool).await.map_err(db)?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     async fn claim_scheduled_event_delivery(
         &self,
     ) -> AppResult<Option<application::ports::ScheduledEventDelivery>> {
