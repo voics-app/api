@@ -1,6 +1,6 @@
 .PHONY: dev test lint build docker
 
-IMAGE ?= ghcr.io/discordy-voics/api
+IMAGE ?= ghcr.io/voics-app/api
 VERSION ?= 0.1.0
 REVISION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
